@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pydantic
+pydantic-settings
+google-generativeai
+celery
+redis
+structlog

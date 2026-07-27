@@ -55,6 +55,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # Utils
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
+reqwest = { version = "0.13.4", features = ["json"] }
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
