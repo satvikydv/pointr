@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "app",
+  "productName": "Pointr",
   "version": "0.1.0",
-  "identifier": "com.satvik-yadav.app",
+  "identifier": "dev.pointr.app",
   "build": {
     "frontendDist": "../src"
   },
@@ -10,9 +10,15 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "app",
+        "title": "Pointr Overlay",
+        "label": "main",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "transparent": true,
+        "decorations": false,
+        "visible": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true
       }
     ],
     "security": {
