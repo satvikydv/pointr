@@ -84,12 +84,36 @@ btnCancel.addEventListener('click', async () => {
     resetSelection();
 });
 
-btnSubmit.addEventListener('click', () => {
+btnSubmit.addEventListener('click', async () => {
     if (currentRect) {
         console.log("Processing rect:", currentRect);
-        // Next: Send rect and image to Rust via invoke
-        // invoke('process_crop', { rect: currentRect });
-        alert(`Processing crop: ${currentRect.width}x${currentRect.height}`);
+        
+        // Show loading state
+        btnSubmit.disabled = true;
+        btnSubmit.innerText = "Processing...";
+        btnCancel.disabled = true;
+
+        try {
+            const response = await invoke('process_crop', { 
+                rect: currentRect,
+                query: null // For now, no text input in UI
+            });
+            
+            alert(`Response: ${response.answer_text}`);
+        } catch (error) {
+            console.error("Error calling process_crop:", error);
+            alert(`Error: ${error}`);
+        } finally {
+            // Reset loading state
+            btnSubmit.disabled = false;
+            btnSubmit.innerText = "Process";
+            btnCancel.disabled = false;
+            
+            // Hide overlay
+            const appWindow = Window.getCurrent();
+            await appWindow.hide();
+            resetSelection();
+        }
     }
 });
 

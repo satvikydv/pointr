@@ -1,3 +1,5 @@
 .agents
 .vscode
 implementation-tracking.md
+backend/.env
+.env
