@@ -63,19 +63,30 @@ container.addEventListener('mouseup', (e) => {
     if (!isDrawing) return;
     isDrawing = false;
 
-    // Show toolbar near the bottom right of the selection
-    if (selectionBox.offsetWidth > 10 && selectionBox.offsetHeight > 10) {
-        toolbar.classList.remove('hidden');
-        
-        currentRect = {
-            x: parseInt(selectionBox.style.left),
-            y: parseInt(selectionBox.style.top),
-            width: selectionBox.offsetWidth,
-            height: selectionBox.offsetHeight
-        };
-    } else {
-        resetSelection();
+    // If the user just clicked without dragging, make a default 100x100 box
+    if (selectionBox.offsetWidth <= 10 || selectionBox.offsetHeight <= 10) {
+        const size = 100;
+        selectionBox.style.width = size + 'px';
+        selectionBox.style.height = size + 'px';
+        selectionBox.style.left = (startX - size/2) + 'px';
+        selectionBox.style.top = (startY - size/2) + 'px';
     }
+
+    toolbar.classList.remove('hidden');
+    
+    // Position toolbar just below the selection box
+    const boxRect = selectionBox.getBoundingClientRect();
+    toolbar.style.bottom = 'auto';
+    toolbar.style.right = 'auto';
+    toolbar.style.left = boxRect.left + 'px';
+    toolbar.style.top = (boxRect.bottom + 10) + 'px';
+    
+    currentRect = {
+        x: parseInt(selectionBox.style.left),
+        y: parseInt(selectionBox.style.top),
+        width: selectionBox.offsetWidth,
+        height: selectionBox.offsetHeight
+    };
 });
 
 btnCancel.addEventListener('click', async () => {
