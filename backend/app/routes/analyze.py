@@ -39,7 +39,7 @@ async def analyze_screen(
         import re
         
         # Clean up possible markdown formatting
-        cleaned_text = result_text.replace("```json", "").replace("```", "").strip()
+        cleaned_text = re.sub(r'```(?:json)?\n?', '', result_text, flags=re.IGNORECASE).strip()
         parsed = json.loads(cleaned_text)
         
         answer_text = parsed.get("answer_text", "Sorry, I couldn't understand the request.")
