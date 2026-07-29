@@ -21,6 +21,7 @@ listen('show-overlay', (event) => {
 });
 
 function resetSelection() {
+    img.style.display = 'block';
     selectionBox.style.display = 'none';
     toolbar.classList.add('hidden');
     currentRect = null;
@@ -99,10 +100,18 @@ btnSubmit.addEventListener('click', async () => {
     if (currentRect) {
         console.log("Processing rect:", currentRect);
         
-        // Show loading state
+        // Disable buttons
         btnSubmit.disabled = true;
         btnSubmit.innerText = "Processing...";
         btnCancel.disabled = true;
+
+        // Hide overlay UI and hide the entire window so user can keep working
+        img.style.display = 'none';
+        selectionBox.style.display = 'none';
+        toolbar.classList.add('hidden');
+        
+        const appWindow = Window.getCurrent();
+        await appWindow.hide();
 
         try {
             const response = await invoke('process_crop', { 
@@ -110,17 +119,18 @@ btnSubmit.addEventListener('click', async () => {
                 query: null // For now, no text input in UI
             });
             
+            // Show window again to render the result
+            await appWindow.show();
+            // Ensure window is brought to front
+            await appWindow.setFocus();
+            
             renderResponse(response, currentRect);
         } catch (error) {
             console.error("Error calling process_crop:", error);
             alert(`Error: ${error}`);
-            
-            // Hide overlay only on error
-            const appWindow = Window.getCurrent();
-            await appWindow.hide();
             resetSelection();
         } finally {
-            // Reset loading state
+            // Reset loading state for next time
             btnSubmit.disabled = false;
             btnSubmit.innerText = "Process";
             btnCancel.disabled = false;
