@@ -110,23 +110,83 @@ btnSubmit.addEventListener('click', async () => {
                 query: null // For now, no text input in UI
             });
             
-            alert(`Response: ${response.answer_text}`);
+            renderResponse(response, currentRect);
         } catch (error) {
             console.error("Error calling process_crop:", error);
             alert(`Error: ${error}`);
+            
+            // Hide overlay only on error
+            const appWindow = Window.getCurrent();
+            await appWindow.hide();
+            resetSelection();
         } finally {
             // Reset loading state
             btnSubmit.disabled = false;
             btnSubmit.innerText = "Process";
             btnCancel.disabled = false;
-            
-            // Hide overlay
-            const appWindow = Window.getCurrent();
-            await appWindow.hide();
-            resetSelection();
         }
     }
 });
+
+function renderResponse(response, rect) {
+    // Remove old marker/tooltip if any
+    const oldMarker = document.getElementById('pointer-marker');
+    if (oldMarker) oldMarker.remove();
+    const oldTooltip = document.getElementById('answer-tooltip');
+    if (oldTooltip) oldTooltip.remove();
+
+    // Calculate position
+    let targetX = rect.x + (rect.width / 2);
+    let targetY = rect.y + (rect.height / 2);
+
+    if (response.pointer_target) {
+        // x_norm and y_norm are relative to the crop!
+        targetX = rect.x + (response.pointer_target.x_norm * rect.width);
+        targetY = rect.y + (response.pointer_target.y_norm * rect.height);
+        
+        // Render marker
+        const marker = document.createElement('div');
+        marker.id = 'pointer-marker';
+        marker.className = 'pointer-marker';
+        marker.style.left = targetX + 'px';
+        marker.style.top = targetY + 'px';
+        container.appendChild(marker);
+    }
+
+    // Render tooltip
+    const tooltip = document.createElement('div');
+    tooltip.id = 'answer-tooltip';
+    tooltip.className = 'answer-tooltip';
+    tooltip.innerText = response.answer_text;
+    
+    // Position tooltip near the target
+    tooltip.style.left = (targetX + 20) + 'px';
+    tooltip.style.top = (targetY + 20) + 'px';
+    
+    // Add close button to tooltip
+    const closeBtn = document.createElement('div');
+    closeBtn.innerText = '×';
+    closeBtn.style.position = 'absolute';
+    closeBtn.style.top = '4px';
+    closeBtn.style.right = '8px';
+    closeBtn.style.cursor = 'pointer';
+    closeBtn.style.fontWeight = 'bold';
+    closeBtn.onclick = async () => {
+        const appWindow = Window.getCurrent();
+        await appWindow.hide();
+        resetSelection();
+        tooltip.remove();
+        const marker = document.getElementById('pointer-marker');
+        if (marker) marker.remove();
+    };
+    tooltip.appendChild(closeBtn);
+
+    container.appendChild(tooltip);
+    
+    // Hide the selection box and toolbar so the user can see the result clearly
+    selectionBox.style.display = 'none';
+    toolbar.classList.add('hidden');
+}
 
 // Close overlay on Escape
 document.addEventListener('keydown', async (e) => {
@@ -134,5 +194,10 @@ document.addEventListener('keydown', async (e) => {
         const appWindow = Window.getCurrent();
         await appWindow.hide();
         resetSelection();
+        
+        const oldMarker = document.getElementById('pointer-marker');
+        if (oldMarker) oldMarker.remove();
+        const oldTooltip = document.getElementById('answer-tooltip');
+        if (oldTooltip) oldTooltip.remove();
     }
 });

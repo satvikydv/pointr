@@ -27,7 +27,8 @@ async def analyze_screen(
         "Format your answer EXACTLY as JSON:\n"
         "{\n"
         '  "answer_text": "your text here",\n'
-        '  "pointer_target": {"x_norm": 0.5, "y_norm": 0.5, "confidence": "high"} // optional\n'
+        '  // pointer_target is optional. x_norm and y_norm must be floats between 0.0 and 1.0 relative to the top-left of the provided image.\n'
+        '  "pointer_target": {"x_norm": 0.5, "y_norm": 0.5, "confidence": "high"}\n'
         "}"
     )
 
