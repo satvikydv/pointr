@@ -13,9 +13,15 @@ let isDrawing = false;
 let startX = 0;
 let startY = 0;
 let currentRect = null;
+let closeTimer = null;
 
 // Listen for the overlay trigger
-listen('show-overlay', (event) => {
+listen('show-overlay', async (event) => {
+    if (closeTimer) clearTimeout(closeTimer);
+    
+    const appWindow = Window.getCurrent();
+    await appWindow.setIgnoreCursorEvents(false);
+    
     img.src = event.payload;
     resetSelection();
 });
@@ -120,6 +126,7 @@ btnSubmit.addEventListener('click', async () => {
             });
             
             // Show window again to render the result
+            await appWindow.setIgnoreCursorEvents(true);
             await appWindow.show();
             // Ensure window is brought to front
             await appWindow.setFocus();
@@ -173,29 +180,24 @@ function renderResponse(response, rect) {
     tooltip.style.left = (targetX + 20) + 'px';
     tooltip.style.top = (targetY + 20) + 'px';
     
-    // Add close button to tooltip
-    const closeBtn = document.createElement('div');
-    closeBtn.innerText = '×';
-    closeBtn.style.position = 'absolute';
-    closeBtn.style.top = '4px';
-    closeBtn.style.right = '8px';
-    closeBtn.style.cursor = 'pointer';
-    closeBtn.style.fontWeight = 'bold';
-    closeBtn.onclick = async () => {
-        const appWindow = Window.getCurrent();
-        await appWindow.hide();
-        resetSelection();
-        tooltip.remove();
-        const marker = document.getElementById('pointer-marker');
-        if (marker) marker.remove();
-    };
-    tooltip.appendChild(closeBtn);
-
     container.appendChild(tooltip);
     
     // Hide the selection box and toolbar so the user can see the result clearly
     selectionBox.style.display = 'none';
     toolbar.classList.add('hidden');
+    
+    // Automatically close and hide window after 15 seconds 
+    // since the user can't click it (ignoreCursorEvents is true)
+    if (closeTimer) clearTimeout(closeTimer);
+    closeTimer = setTimeout(async () => {
+        if (tooltip) tooltip.remove();
+        const marker = document.getElementById('pointer-marker');
+        if (marker) marker.remove();
+        
+        const appWindow = Window.getCurrent();
+        await appWindow.hide();
+        await appWindow.setIgnoreCursorEvents(false);
+    }, 15000);
 }
 
 // Close overlay on Escape
@@ -203,6 +205,7 @@ document.addEventListener('keydown', async (e) => {
     if (e.key === 'Escape') {
         const appWindow = Window.getCurrent();
         await appWindow.hide();
+        await appWindow.setIgnoreCursorEvents(false);
         resetSelection();
         
         const oldMarker = document.getElementById('pointer-marker');
