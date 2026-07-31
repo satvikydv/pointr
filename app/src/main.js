@@ -15,16 +15,52 @@ let startX = 0;
 let startY = 0;
 let currentRect = null;
 let closeTimer = null;
+// 'region' = manual drag-to-crop flow (secondary hotkey, Ctrl+Alt+Shift+Space)
+// 'direct' = single-press capture + auto-send flow (primary hotkey, Ctrl+Alt+Space)
+let mode = 'region';
 
-// Listen for the overlay trigger
+// Secondary hotkey: manual region-select flow. Shows the full screenshot and
+// waits for the user to drag a crop box before doing anything.
 listen('show-overlay', async (event) => {
     if (closeTimer) clearTimeout(closeTimer);
-    
+    mode = 'region';
+
     const appWindow = Window.getCurrent();
     await appWindow.setIgnoreCursorEvents(false);
-    
+
     img.src = event.payload;
     resetSelection();
+});
+
+// Primary hotkey: fires immediately on hotkey press with no user input needed.
+// Rust has already captured the screen, burned a marker in at the cursor
+// position, and stashed it — we just kick off the backend call and render
+// whatever comes back.
+listen('show-overlay-direct', async () => {
+    if (closeTimer) clearTimeout(closeTimer);
+    mode = 'direct';
+
+    img.style.display = 'none';
+    selectionBox.style.display = 'none';
+    toolbar.classList.add('hidden');
+    currentRect = null;
+
+    const appWindow = Window.getCurrent();
+
+    try {
+        const response = await invoke('process_direct');
+
+        await appWindow.setIgnoreCursorEvents(true);
+        await appWindow.show();
+        await appWindow.setFocus();
+
+        const rect = { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
+        renderResponse(response, rect);
+    } catch (error) {
+        console.error("Error calling process_direct:", error);
+        alert(`Error: ${error}`);
+        await appWindow.hide();
+    }
 });
 
 function resetSelection() {
@@ -35,6 +71,8 @@ function resetSelection() {
 }
 
 container.addEventListener('mousedown', (e) => {
+    // Region-select drag only applies in the secondary (manual crop) flow.
+    if (mode !== 'region') return;
     // If clicking on toolbar, ignore
     if (e.target.closest('#toolbar')) return;
 

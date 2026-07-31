@@ -240,3 +240,55 @@ Tray app behavior, settings screen (hotkey rebind, privacy note, quit), Windows 
 2. Should the marker-burned-into-image vs. coords-only prompting approach be decided via a quick internal eval before M3, or deferred to post-MVP A/B testing?
 3. Auth: is a single shared API key sufficient for MVP, or does each install need its own key/account from day one?
 4. Target minimum Windows version — confirmed as 1903+ for WinRT capture; confirm this doesn't exclude a meaningful chunk of target users.
+
+---
+
+## 13. Gap Analysis vs. HeyClicky & What's Left
+
+**Added:** 2026-08-01. Reflects current implementation status (see `implementation-tracking.md`) against the reference product this PRD is modeled on.
+
+### 13.1 Where this PRD intentionally diverges from HeyClicky
+
+HeyClicky's actual shipped product is voice-first and includes a working autonomous agent mode. This PRD scoped both out for MVP deliberately (§3 Non-Goals), trading interaction fidelity for a shippable Windows skeleton first. Concretely:
+
+| Area | HeyClicky (actual) | This PRD (MVP) | Verdict |
+|---|---|---|---|
+| Input | Push-to-talk: hold hotkey, speak, get spoken reply | Press hotkey, type question in overlay box | Deliberate cut — voice is fast-follow (§3) |
+| Trigger | Hold-to-talk | Single press | Behavioral gap, not just a feature gap — affects hotkey plugin choice later |
+| Agent mode | "heyclicky agent" actually executes the task | Stub queues Celery task, returns canned "not implemented" message | Deliberate cut (§3 Non-Goals) — plumbing only |
+| Context memory | Keeps lightweight text summaries across interactions for continuity | No persistence beyond a single request unless opt-in history (§7) | Deliberate, stricter privacy default |
+| Privacy model | Screen seen only on hotkey press, screenshots never stored | Same | Matches — no gap |
+
+None of the above are bugs in the PRD — they're scope decisions. Listed here so future milestones (post-M6) know what "closing the gap with HeyClicky" actually requires: a real voice pipeline and a real agent executor, not just UI polish.
+
+### 13.2 What's actually left to build (from current repo state)
+
+Pulled from `implementation-tracking.md` as of 2026-07-29, plus in-flight uncommitted work as of 2026-08-01.
+
+**M5 — Agent stub plumbing (in progress, uncommitted)**
+- `backend/app/routes/agent.py`, `backend/app/models/agent.py`, `backend/app/worker/{celery_app,tasks}.py` written — Celery task queue + poll endpoints wired end to end.
+- Frontend hook (`app/src/main.js`) is a manual test button ("Test Agent") with a hardcoded `session_id` and task description — needs to become a real UI entry point (e.g. an "agent:" prefix in the query box per PRD §4 step 10) before this counts as done, not just plumbing-validated.
+- Polling loop in `main.js` has no timeout/max-attempt cap — will hang indefinitely if the worker container is down or a task never reaches a terminal Celery state. PRD §8 requires a client-side timeout (20s) for backend-unreachable cases; this path doesn't have one yet.
+
+**M1 — Capture pipeline (open items)**
+- Real `Windows.Graphics.Capture` (WinRT) path is stubbed (`capture_wgc` always errors) — GDI `BitBlt` is the only working path today. Means DRM/hardware-accelerated content still can't be captured, and the "log a warning on fallback" behavior is effectively always-on rather than a fallback.
+- DPI reconciliation unit-test harness (100%/150%, §6.4) not written — this is the PRD-flagged highest-risk correctness bug and remains unverified.
+- Disk-dump-for-inspection step from original M1 spec was dropped in favor of feeding the overlay in-memory — fine for product, but means there's no manual capture-inspection tool if a capture bug needs debugging.
+
+**M2 — Overlay shell (design deviation, not a defect)**
+- Shipped UX is fullscreen screenshot + drag-to-crop + Process/Cancel toolbar, not the PRD's small focused input box near the cursor. Functionally complete but worth a conscious decision: keep the crop-tool UX permanently, or still migrate toward the lighter PRD design before M6 polish.
+- Click-outside-to-dismiss only partially implemented (Esc + Cancel button work; clicking outside the overlay bounds does not dismiss it).
+
+**M6 — Packaging & installer (not started)**
+- No tray app behavior, no settings screen (hotkey rebind UI, privacy note, quit action), no Windows installer build. All of §6.8/§9's packaging requirements and the last three MVP acceptance criteria in §11 are still open.
+
+**Cross-cutting**
+- Marker-burned-into-image mode (`MARKER_MODE=burned_in`) exists only as a config flag; the route always uses coords-in-prompt today, so the A/B in Open Question #2 hasn't actually started.
+- No auth beyond implicit trust of `localhost:8000` — Open Question #3 (single shared key vs. per-install key) still unresolved and currently moot since there's no key check at all on the FastAPI side.
+
+### 13.3 Suggested next-up order
+
+1. Fix agent poll timeout + wire a real "agent:" trigger in the query UI (finishes M5 to the PRD's actual bar, not just plumbing).
+2. Write the DPI test harness (§6.4) — highest-risk item, cheapest to defer accidentally.
+3. Decide overlay UX direction (keep crop-tool vs. migrate to PRD's input-box design) before sinking more time into either.
+4. M6 packaging pass once the above are stable.
