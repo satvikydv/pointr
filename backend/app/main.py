@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import analyze
+from app.routes import analyze, agent
 
 app = FastAPI(title="Pointr API")
 
@@ -13,6 +13,7 @@ app.add_middleware(
 )
 
 app.include_router(analyze.router, prefix="/api")
+app.include_router(agent.router, prefix="/api/agent")
 
 @app.get("/health")
 def health():

@@ -8,6 +8,7 @@ const selectionBox = document.getElementById('selection-box');
 const toolbar = document.getElementById('toolbar');
 const btnCancel = document.getElementById('btn-cancel');
 const btnSubmit = document.getElementById('btn-submit');
+const btnAgent = document.getElementById('btn-agent');
 
 let isDrawing = false;
 let startX = 0;
@@ -140,6 +141,77 @@ btnSubmit.addEventListener('click', async () => {
             // Reset loading state for next time
             btnSubmit.disabled = false;
             btnSubmit.innerText = "Process";
+            btnCancel.disabled = false;
+        }
+    }
+});
+
+btnAgent.addEventListener('click', async () => {
+    if (currentRect) {
+        console.log("Testing Agent on rect:", currentRect);
+        
+        btnSubmit.disabled = true;
+        btnAgent.disabled = true;
+        btnAgent.innerText = "Queueing...";
+        btnCancel.disabled = true;
+
+        img.style.display = 'none';
+        selectionBox.style.display = 'none';
+        toolbar.classList.add('hidden');
+        
+        const appWindow = Window.getCurrent();
+        await appWindow.hide();
+
+        try {
+            // 1. Queue task
+            const postRes = await fetch("http://localhost:8000/api/agent/task", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    task_description: "Analyze this UI area for agent actions",
+                    session_id: "test-session-123"
+                })
+            });
+            const { task_id } = await postRes.json();
+            
+            // 2. Poll for completion
+            let isDone = false;
+            let finalResult = null;
+            
+            while (!isDone) {
+                await new Promise(r => setTimeout(r, 1000));
+                
+                const getRes = await fetch(`http://localhost:8000/api/agent/task/${task_id}`);
+                const statusData = await getRes.json();
+                
+                if (statusData.status === "SUCCESS") {
+                    isDone = true;
+                    finalResult = statusData.result;
+                } else if (statusData.status === "FAILURE") {
+                    isDone = true;
+                    throw new Error("Task failed: " + statusData.result);
+                }
+            }
+            
+            // Show window again
+            await appWindow.setIgnoreCursorEvents(true);
+            await appWindow.show();
+            await appWindow.setFocus();
+            
+            // Re-use renderResponse
+            renderResponse({
+                answer_text: finalResult.result,
+                pointer_target: finalResult.pointer_target
+            }, currentRect);
+            
+        } catch (error) {
+            console.error("Agent error:", error);
+            alert(`Agent Error: ${error}`);
+            resetSelection();
+        } finally {
+            btnSubmit.disabled = false;
+            btnAgent.disabled = false;
+            btnAgent.innerText = "Test Agent";
             btnCancel.disabled = false;
         }
     }
