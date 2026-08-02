@@ -122,8 +122,28 @@ fn disable_escape_dismiss(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|e| format!("Failed to unregister Escape: {}", e))
 }
 
+/// Without this, the process defaults to DPI-unaware on Windows, which makes
+/// `GetCursorPos` (capture/cursor.rs) return coordinates virtualized/scaled
+/// to 96 DPI — while `GetMonitorInfoW`'s monitor rect (used for the same
+/// normalization) is always real physical pixels. At any scaling other than
+/// 100% that mismatch puts the cursor marker in the wrong place (e.g. at
+/// 125%/120 DPI, systematically shifted toward the top-left). Must be called
+/// before any window is created, so this runs first thing in `run()`.
+fn set_dpi_awareness() {
+    use windows::Win32::UI::HiDpi::{
+        SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+    };
+    unsafe {
+        if let Err(e) = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) {
+            eprintln!("Failed to set per-monitor DPI awareness: {}", e);
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    set_dpi_awareness();
+
     tauri::Builder::default()
         .manage(Mutex::new(CaptureState {
             image_bytes: Vec::new(),
@@ -181,4 +201,62 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod dpi_tests {
+    use super::*;
+    use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
+
+    /// Regression test for the DPI-awareness bug: moves the real system
+    /// cursor to known fractional positions on the current monitor (whatever
+    /// DPI scaling this machine actually has) and asserts our own
+    /// get_cursor_and_monitor + normalize_cursor pipeline reports those same
+    /// fractions back. Without set_dpi_awareness(), GetCursorPos returns
+    /// coordinates virtualized to 96 DPI while the monitor rect stays
+    /// physical, so at any scaling != 100% this would fail by roughly the
+    /// scale-factor ratio (e.g. ~0.8x at 125%) — well outside the tolerance.
+    #[test]
+    fn cursor_normalization_matches_at_current_dpi_scaling() {
+        set_dpi_awareness();
+
+        let (_, monitor) = capture::cursor::get_cursor_and_monitor()
+            .expect("failed to read initial cursor/monitor");
+        println!(
+            "Testing against monitor {}x{}@{} DPI, origin ({}, {})",
+            monitor.width_px, monitor.height_px, monitor.dpi, monitor.origin_x, monitor.origin_y
+        );
+
+        let test_fractions: [(f32, f32); 4] = [(0.1, 0.1), (0.5, 0.5), (0.9, 0.75), (0.25, 0.6)];
+        let tolerance = 0.02; // 2% of screen dimension
+
+        for (x_frac, y_frac) in test_fractions {
+            let target_x = monitor.origin_x + (x_frac * monitor.width_px as f32) as i32;
+            let target_y = monitor.origin_y + (y_frac * monitor.height_px as f32) as i32;
+
+            unsafe {
+                SetCursorPos(target_x, target_y).expect("SetCursorPos failed");
+            }
+
+            let (pos, monitor_after) = capture::cursor::get_cursor_and_monitor()
+                .expect("failed to read cursor/monitor after move");
+            let coords = capture::coords::normalize_cursor(pos.x, pos.y, &monitor_after);
+
+            println!(
+                "target=({:.2},{:.2}) -> physical=({}, {}) -> normalized=({:.4},{:.4})",
+                x_frac, y_frac, pos.x, pos.y, coords.x_norm, coords.y_norm
+            );
+
+            assert!(
+                (coords.x_norm - x_frac).abs() < tolerance,
+                "x_norm mismatch at target ({}, {}): got {}, expected ~{} (tolerance {})",
+                x_frac, y_frac, coords.x_norm, x_frac, tolerance
+            );
+            assert!(
+                (coords.y_norm - y_frac).abs() < tolerance,
+                "y_norm mismatch at target ({}, {}): got {}, expected ~{} (tolerance {})",
+                x_frac, y_frac, coords.y_norm, y_frac, tolerance
+            );
+        }
+    }
 }
