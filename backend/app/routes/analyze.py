@@ -98,6 +98,17 @@ def _build_stream_prompt(request: AnalyzeRequest) -> str:
     )
 
 
+def _clamp_unit(value) -> float:
+    # Gemini is asked for 0.0-1.0 but isn't a hard contract — it occasionally
+    # returns something else entirely (e.g. a pixel-space number like 690).
+    # Left unclamped, that lands the tooltip thousands of px off-screen.
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(1.0, value))
+
+
 async def _stream_analyze_events(request: AnalyzeRequest, gemini: GeminiService):
     prompt = _build_stream_prompt(request)
     image_bytes = base64.b64decode(request.screenshot_base64)
@@ -134,8 +145,8 @@ async def _stream_analyze_events(request: AnalyzeRequest, gemini: GeminiService)
         try:
             pointer_json = json.loads(pointer_line)
             pointer_target = {
-                "x_norm": pointer_json.get("x_norm", 0.0),
-                "y_norm": pointer_json.get("y_norm", 0.0),
+                "x_norm": _clamp_unit(pointer_json.get("x_norm", 0.0)),
+                "y_norm": _clamp_unit(pointer_json.get("y_norm", 0.0)),
                 "confidence": pointer_json.get("confidence", "medium"),
             }
         except Exception:

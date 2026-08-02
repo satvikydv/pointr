@@ -164,10 +164,27 @@ async function runDirectAnalysis(queryText) {
         if (requestId !== activeRequestId) return; // superseded by a later press
 
         loadingIndicator.classList.add('hidden');
+        // Re-assert show()/alwaysOnTop, not just setFocus(). alwaysOnTop is
+        // set once at window creation — if any other topmost window (a
+        // fullscreen video, a PiP player, DevTools) has since grabbed
+        // topmost status, our window can end up genuinely behind it in
+        // z-order even though Tauri still considers it "shown". Forcing it
+        // here re-asserts frontmost at the exact moment we display the answer.
+        await appWindow.show();
+        await appWindow.setAlwaysOnTop(true);
         await appWindow.setFocus();
 
         const rect = { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
         renderResponse(response, rect);
+
+        console.log('[runDirectAnalysis] post-render window state', {
+            requestId,
+            visible: await appWindow.isVisible(),
+            minimized: await appWindow.isMinimized(),
+            position: await appWindow.outerPosition(),
+            size: await appWindow.outerSize(),
+            tooltipRect: document.getElementById('answer-tooltip')?.getBoundingClientRect(),
+        });
     } catch (error) {
         console.log('[runDirectAnalysis] process_direct rejected', { requestId, activeRequestId, error });
         if (requestId !== activeRequestId) return;
@@ -176,6 +193,7 @@ async function runDirectAnalysis(queryText) {
         loadingIndicator.classList.add('hidden');
         // Window may still be click-through from the setIgnoreCursorEvents(true)
         // above — flip it off *before* alert() so the OK button is reachable.
+        await appWindow.show();
         await appWindow.setFocus();
         await appWindow.setIgnoreCursorEvents(false);
         alert(`Error: ${error}`);
@@ -405,6 +423,12 @@ async function dismissOverlay() {
     await disableEscapeDismiss();
 }
 
+// Backend clamps pointer_target to [0, 1] before it's sent, but that's not a
+// hard contract on what Gemini actually returns — defend here too, since an
+// unclamped value multiplied into rect.width/height can throw the tooltip
+// thousands of px off-screen (silent, no error, just nothing visible).
+const clampUnit = (n) => Math.max(0, Math.min(1, Number(n) || 0));
+
 function renderResponse(response, rect) {
     // Remove any leftover marker from a previous cycle
     const oldMarker = document.getElementById('pointer-marker');
@@ -416,8 +440,8 @@ function renderResponse(response, rect) {
 
     if (response.pointer_target) {
         // x_norm and y_norm are relative to the crop!
-        targetX = rect.x + (response.pointer_target.x_norm * rect.width);
-        targetY = rect.y + (response.pointer_target.y_norm * rect.height);
+        targetX = rect.x + (clampUnit(response.pointer_target.x_norm) * rect.width);
+        targetY = rect.y + (clampUnit(response.pointer_target.y_norm) * rect.height);
 
         // Render marker
         const marker = document.createElement('div');
@@ -442,9 +466,14 @@ function renderResponse(response, rect) {
         container.appendChild(tooltip);
     }
     tooltip.textContent = response.answer_text; // resync: authoritative final text
-    tooltip.style.transform = '';
-    tooltip.style.left = (targetX + 20) + 'px';
-    tooltip.style.top = (targetY + 20) + 'px';
+    // Always centered — anchoring next to pointer_target risked pushing the
+    // box past the viewport edge (clipped by overflow:hidden, invisible with
+    // no error) whenever the model's coordinate landed near a corner. The
+    // marker dot still goes to the actual pointer_target location; the text
+    // box itself doesn't need to move with it to stay readable.
+    tooltip.style.left = '50%';
+    tooltip.style.top = '40%';
+    tooltip.style.transform = 'translate(-50%, -50%)';
 
     // Hide the selection box and toolbar so the user can see the result clearly
     selectionBox.style.display = 'none';
