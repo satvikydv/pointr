@@ -30,6 +30,8 @@ fn capture_now() -> anyhow::Result<(Vec<u8>, MonitorInfo, (f32, f32), &'static s
 fn trigger_capture(app: tauri::AppHandle, state: tauri::State<'_, Mutex<CaptureState>>) -> Result<String, String> {
     let (image_bytes, monitor, cursor_norm, method_str) = capture_now()
         .map_err(|e| format!("Capture failed: {}", e))?;
+    let image_bytes = capture::resize::cap_long_edge(&image_bytes)
+        .map_err(|e| format!("Failed to resize capture: {}", e))?;
 
     {
         let mut state_lock = state.lock().unwrap();
@@ -64,6 +66,12 @@ fn trigger_capture_direct(app: &tauri::AppHandle, state: &tauri::State<'_, Mutex
     let cursor_px_y = (cursor_norm.1 * monitor.height_px as f32) as i64;
     let marked_bytes = capture::marker::draw_cursor_marker(&image_bytes, cursor_px_x, cursor_px_y)
         .map_err(|e| format!("Failed to draw cursor marker: {}", e))?;
+    // Resize after the marker is burned in — cursor_px_x/y are computed
+    // against the full-resolution monitor dimensions, so the marker must be
+    // drawn there first; a uniform resize afterward keeps it in the same
+    // relative position, just smaller.
+    let marked_bytes = capture::resize::cap_long_edge(&marked_bytes)
+        .map_err(|e| format!("Failed to resize capture: {}", e))?;
 
     {
         let mut state_lock = state.lock().unwrap();
@@ -85,8 +93,34 @@ fn trigger_capture_direct(app: &tauri::AppHandle, state: &tauri::State<'_, Mutex
     ))
 }
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
+
+fn escape_shortcut() -> tauri_plugin_global_shortcut::Shortcut {
+    use tauri_plugin_global_shortcut::{Code, Shortcut};
+    Shortcut::new(None, Code::Escape)
+}
+
+/// Click-through windows (`setIgnoreCursorEvents(true)`, used while the answer
+/// is shown so the overlay never blocks the app underneath) are unreliable
+/// about keeping OS keyboard focus on Windows — the DOM `keydown` listener for
+/// Escape can silently stop firing. Routed through the global-shortcut plugin
+/// instead, since that's how the hotkeys already work regardless of focus.
+/// Registered only while the overlay is actually showing a response, so it
+/// doesn't swallow Escape presses meant for other apps the rest of the time.
+#[tauri::command]
+fn enable_escape_dismiss(app: tauri::AppHandle) -> Result<(), String> {
+    app.global_shortcut()
+        .register(escape_shortcut())
+        .map_err(|e| format!("Failed to register Escape: {}", e))
+}
+
+#[tauri::command]
+fn disable_escape_dismiss(app: tauri::AppHandle) -> Result<(), String> {
+    app.global_shortcut()
+        .unregister(escape_shortcut())
+        .map_err(|e| format!("Failed to unregister Escape: {}", e))
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -99,7 +133,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             trigger_capture,
             commands::analyze::process_crop,
-            commands::analyze::process_direct
+            commands::analyze::process_direct,
+            enable_escape_dismiss,
+            disable_escape_dismiss
         ])
         .setup(|app| {
             use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
@@ -107,6 +143,7 @@ pub fn run() {
             let primary = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::Space);
             // Secondary: manual drag-to-crop flow, demoted behind an extra modifier.
             let region_select = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SHIFT), Code::Space);
+            let escape = escape_shortcut();
 
             app.handle().plugin(
                 tauri_plugin_global_shortcut::Builder::new()
@@ -128,6 +165,11 @@ pub fn run() {
                                 Ok(res) => println!("{}", res),
                                 Err(e) => eprintln!("Capture error: {}", e),
                             }
+                        } else if shortcut == &escape {
+                            // Only registered while an answer is showing (see
+                            // enable_escape_dismiss) — just tell the frontend
+                            // to run its existing dismiss path.
+                            let _ = _app.emit("dismiss-overlay", ());
                         }
                     })
                     .build(),
