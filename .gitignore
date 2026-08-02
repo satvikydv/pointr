@@ -3,3 +3,5 @@
 implementation-tracking.md
 backend/.env
 .env
+__pycache__/
+*.pyc
