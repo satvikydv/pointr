@@ -53,6 +53,24 @@ body, html {
   user-select: none;
 }
 
+.direct-query-box {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1003;
+}
+
+.direct-query-box.hidden {
+  display: none;
+}
+
+.direct-query-input {
+  width: 380px;
+  font-size: 16px;
+  padding: 12px 16px;
+}
+
 .loading-indicator {
   position: absolute;
   bottom: 20px;

@@ -10,6 +10,8 @@ const btnCancel = document.getElementById('btn-cancel');
 const btnSubmit = document.getElementById('btn-submit');
 const queryInput = document.getElementById('query-input');
 const loadingIndicator = document.getElementById('loading-indicator');
+const directQueryBox = document.getElementById('direct-query-box');
+const directQueryInput = document.getElementById('direct-query-input');
 
 let isDrawing = false;
 let startX = 0;
@@ -17,14 +19,22 @@ let startY = 0;
 let currentRect = null;
 let closeTimer = null;
 // 'region' = manual drag-to-crop flow (secondary hotkey, Ctrl+Alt+Shift+Space)
-// 'direct' = single-press capture + auto-send flow (primary hotkey, Ctrl+Alt+Space)
+// 'direct' = single-press capture + ask-a-question flow (primary hotkey, Ctrl+Alt+Space)
 let mode = 'region';
+
+// Shared across both flows: tags each in-flight backend request so a stale
+// one (superseded by a newer press/submission, or outlived by a manual
+// dismiss) can be told apart from the current one and ignored instead of
+// resurrecting the overlay with old content (PRD §8: "second press should
+// refresh capture... not stack a second overlay").
+let activeRequestId = 0;
 
 // Secondary hotkey: manual region-select flow. Shows the full screenshot and
 // waits for the user to drag a crop box before doing anything.
 listen('show-overlay', async (event) => {
     if (closeTimer) clearTimeout(closeTimer);
     mode = 'region';
+    activeRequestId++;
 
     const appWindow = Window.getCurrent();
     await appWindow.setIgnoreCursorEvents(false);
@@ -60,45 +70,98 @@ listen('dismiss-overlay', async () => {
     resetSelection();
 });
 
-// Guards against overlapping presses: each press fires this handler again
-// independently, so if a prior press's backend call is still pending when a
-// new one starts, both run concurrently and whichever resolves last would
-// otherwise win the render — showing a stale answer from an earlier press
-// (PRD §8: "second press should refresh capture... not stack a second
-// overlay"). Only the response matching the most recent press is rendered.
-let activeDirectRequestId = 0;
+// Live answer streaming: the Rust command forwards each chunk from the
+// backend's streaming endpoint here, tagged with the request_id it was
+// called with. Only chunks matching the current request are applied — a
+// superseded request's trailing chunks are dropped, same idea as the
+// requestId guard on the final response.
+listen('analyze-stream-chunk', (event) => {
+    const { request_id, text } = event.payload;
+    console.log('[analyze-stream-chunk]', { request_id, activeRequestId, matched: String(activeRequestId) === request_id, textLen: text?.length });
+    if (String(activeRequestId) !== request_id) return;
 
-// Primary hotkey: fires immediately on hotkey press with no user input needed.
-// Rust has already captured the screen, burned a marker in at the cursor
-// position, and stashed it — we just kick off the backend call and render
-// whatever comes back.
+    loadingIndicator.classList.add('hidden');
+
+    let tooltip = document.getElementById('answer-tooltip');
+    if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.id = 'answer-tooltip';
+        tooltip.className = 'answer-tooltip';
+        // No pointer_target yet (only known once the stream finishes), so
+        // anchor the growing answer centered; renderResponse() repositions
+        // it next to the marker once the final response arrives.
+        tooltip.style.left = '50%';
+        tooltip.style.top = '40%';
+        tooltip.style.transform = 'translate(-50%, -50%)';
+        container.appendChild(tooltip);
+    }
+    tooltip.textContent += text;
+});
+
+// Primary hotkey: fires immediately on hotkey press. Rust has already
+// captured the screen, burned a marker in at the cursor position, and
+// stashed it — this just opens a small input for the user's question. The
+// actual backend call only fires once they submit (see runDirectAnalysis).
 listen('show-overlay-direct', async () => {
     if (closeTimer) clearTimeout(closeTimer);
     mode = 'direct';
-
-    const requestId = ++activeDirectRequestId;
+    activeRequestId++; // invalidate anything still in flight from before
 
     img.style.display = 'none';
     selectionBox.style.display = 'none';
     toolbar.classList.add('hidden');
     currentRect = null;
+    loadingIndicator.classList.add('hidden');
+    const oldTooltip = document.getElementById('answer-tooltip');
+    if (oldTooltip) oldTooltip.remove();
+    const oldMarker = document.getElementById('pointer-marker');
+    if (oldMarker) oldMarker.remove();
 
     const appWindow = Window.getCurrent();
 
-    // Show the window right away with a "Thinking..." badge so the user gets
-    // immediate feedback that the hotkey registered and a request is in
-    // flight, instead of staring at nothing until the backend responds.
-    // Stays click-through (ignoreCursorEvents true) — it's status-only, not
-    // interactive, so it must not block clicks to whatever's underneath.
+    // Question step is interactive — unlike the click-through answer-display
+    // phase, the user needs to actually type here, so the window must accept
+    // keyboard/mouse input.
+    await appWindow.setIgnoreCursorEvents(false);
+    await appWindow.show();
+    await appWindow.setFocus();
+
+    directQueryInput.value = '';
+    directQueryBox.classList.remove('hidden');
+    directQueryInput.focus();
+});
+
+directQueryInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const text = directQueryInput.value.trim();
+        directQueryBox.classList.add('hidden');
+        runDirectAnalysis(text);
+    }
+    // Escape falls through to the document-level keydown handler below —
+    // the window is interactive at this point, so it's reliably delivered.
+});
+
+async function runDirectAnalysis(queryText) {
+    const requestId = ++activeRequestId;
+    const appWindow = Window.getCurrent();
+
+    loadingIndicator.textContent = 'Thinking…';
     loadingIndicator.classList.remove('hidden');
     await appWindow.setIgnoreCursorEvents(true);
-    await appWindow.show();
     await enableEscapeDismiss();
 
-    try {
-        const response = await invoke('process_direct');
+    console.log('[runDirectAnalysis] invoking process_direct', { requestId, queryText });
 
-        if (requestId !== activeDirectRequestId) return; // superseded by a later press
+    try {
+        const response = await invoke('process_direct', {
+            query: queryText || null,
+            requestId: String(requestId)
+        });
+
+        console.log('[runDirectAnalysis] process_direct resolved', { requestId, activeRequestId, response });
+
+        if (requestId !== activeRequestId) return; // superseded by a later press
 
         loadingIndicator.classList.add('hidden');
         await appWindow.setFocus();
@@ -106,7 +169,8 @@ listen('show-overlay-direct', async () => {
         const rect = { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
         renderResponse(response, rect);
     } catch (error) {
-        if (requestId !== activeDirectRequestId) return;
+        console.log('[runDirectAnalysis] process_direct rejected', { requestId, activeRequestId, error });
+        if (requestId !== activeRequestId) return;
 
         console.error("Error calling process_direct:", error);
         loadingIndicator.classList.add('hidden');
@@ -119,7 +183,7 @@ listen('show-overlay-direct', async () => {
         await appWindow.setIgnoreCursorEvents(false);
         await disableEscapeDismiss();
     }
-});
+}
 
 function resetSelection() {
     img.style.display = 'block';
@@ -127,6 +191,8 @@ function resetSelection() {
     toolbar.classList.add('hidden');
     currentRect = null;
     queryInput.value = '';
+    directQueryBox.classList.add('hidden');
+    directQueryInput.value = '';
 }
 
 container.addEventListener('mousedown', (e) => {
@@ -138,7 +204,7 @@ container.addEventListener('mousedown', (e) => {
     isDrawing = true;
     startX = e.clientX;
     startY = e.clientY;
-    
+
     selectionBox.style.left = startX + 'px';
     selectionBox.style.top = startY + 'px';
     selectionBox.style.width = '0px';
@@ -254,6 +320,7 @@ btnSubmit.addEventListener('click', async () => {
     // the backend. Reading currentRect again after the await (as this used
     // to) could hand renderResponse a null rect and throw.
     const rect = currentRect;
+    const requestId = ++activeRequestId;
 
     const rawQuery = queryInput.value.trim();
     const agentMatch = rawQuery.match(/^agent:\s*(.*)$/i);
@@ -277,9 +344,12 @@ btnSubmit.addEventListener('click', async () => {
         } else {
             response = await invoke('process_crop', {
                 rect,
-                query: rawQuery || null
+                query: rawQuery || null,
+                requestId: String(requestId)
             });
         }
+
+        if (requestId !== activeRequestId) return; // superseded while we were waiting
 
         // Show window again to render the result
         await appWindow.setIgnoreCursorEvents(true);
@@ -289,6 +359,8 @@ btnSubmit.addEventListener('click', async () => {
 
         renderResponse(response, rect);
     } catch (error) {
+        if (requestId !== activeRequestId) return;
+
         console.error("Error processing request:", error);
         // Window may be hidden (error before the show() above) or already
         // click-through (error from renderResponse, after it) — cover both
@@ -307,19 +379,19 @@ btnSubmit.addEventListener('click', async () => {
 });
 
 // Shared dismiss path for the answer tooltip: auto-timeout, Escape, and the
-// tooltip's own close button all funnel through here so the window always
-// ends up hidden and non-ignoring (ready for the next hotkey press).
+// global-shortcut Escape all funnel through here so the window always ends
+// up hidden and non-ignoring (ready for the next hotkey press).
 async function dismissOverlay() {
     if (closeTimer) {
         clearTimeout(closeTimer);
         closeTimer = null;
     }
 
-    // Invalidate any direct-mode request still in flight — without this, a
-    // response that arrives after the user has already dismissed would still
-    // pass the requestId check (no *newer* press has started) and re-show
-    // the window with a stale answer.
-    activeDirectRequestId++;
+    // Invalidate any request still in flight — without this, a response (or
+    // stream chunk) that arrives after the user has already dismissed would
+    // still pass the requestId check (no *newer* request has started) and
+    // re-show the window with a stale answer.
+    activeRequestId++;
 
     const tooltip = document.getElementById('answer-tooltip');
     if (tooltip) tooltip.remove();
@@ -334,11 +406,9 @@ async function dismissOverlay() {
 }
 
 function renderResponse(response, rect) {
-    // Remove old marker/tooltip if any
+    // Remove any leftover marker from a previous cycle
     const oldMarker = document.getElementById('pointer-marker');
     if (oldMarker) oldMarker.remove();
-    const oldTooltip = document.getElementById('answer-tooltip');
-    if (oldTooltip) oldTooltip.remove();
 
     // Calculate position
     let targetX = rect.x + (rect.width / 2);
@@ -358,22 +428,23 @@ function renderResponse(response, rect) {
         container.appendChild(marker);
     }
 
-    // Render tooltip
+    // Reuse the tooltip the streaming listener already built up live, if any
+    // (falls back to creating one — e.g. a response with zero chunks).
     // No close button: the window runs with setIgnoreCursorEvents(true) while
     // the answer is shown (deliberate "fully click-through" behavior so the
     // overlay never blocks the app underneath), which means the OS drops all
-    // mouse events before they reach the webview — a button here would never
-    // actually receive a click. Esc is the dismiss path instead.
-    const tooltip = document.createElement('div');
-    tooltip.id = 'answer-tooltip';
-    tooltip.className = 'answer-tooltip';
-    tooltip.innerText = response.answer_text;
-
-    // Position tooltip near the target
+    // mouse events before they reach the webview. Esc is the dismiss path.
+    let tooltip = document.getElementById('answer-tooltip');
+    if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.id = 'answer-tooltip';
+        tooltip.className = 'answer-tooltip';
+        container.appendChild(tooltip);
+    }
+    tooltip.textContent = response.answer_text; // resync: authoritative final text
+    tooltip.style.transform = '';
     tooltip.style.left = (targetX + 20) + 'px';
     tooltip.style.top = (targetY + 20) + 'px';
-
-    container.appendChild(tooltip);
 
     // Hide the selection box and toolbar so the user can see the result clearly
     selectionBox.style.display = 'none';
