@@ -51,13 +51,53 @@ function getOrCreateTooltip() {
     tooltip.className = 'answer-tooltip';
     tooltip.innerHTML = `
         <div class="answer-header">
-            <div class="dot"></div>
+            <div class="avatar">
+                <div class="dot"></div>
+                <div class="speaking-orb">
+                    <div class="orb-bloom"></div>
+                    <div class="orb-core">
+                        <div class="orb-swirl1"></div>
+                        <div class="orb-swirl2"></div>
+                        <div class="orb-nebula"></div>
+                        <div class="orb-particle p1"></div>
+                        <div class="orb-particle p2"></div>
+                        <div class="orb-particle p3"></div>
+                        <div class="orb-highlight"></div>
+                    </div>
+                </div>
+            </div>
             <div class="label">Pointr</div>
         </div>
         <div class="answer-body"><span id="answer-text"></span><span id="answer-caret" class="answer-caret"></span></div>
     `;
     container.appendChild(tooltip);
     return tooltip;
+}
+
+let speakingTimer = null;
+
+// Swaps the header's plain dot for the animated "speaking" orb. There's no
+// real MediaEnded event surfaced from Rust yet (see TTS notes), so duration
+// is an estimate from word count — same ~2.5 words/sec assumption used for
+// the auto-dismiss timer, just applied to speaking time alone rather than
+// total on-screen time.
+function startSpeakingIndicator(text) {
+    stopSpeakingIndicator();
+    const header = document.querySelector('#answer-tooltip .answer-header');
+    if (!header) return;
+    header.classList.add('speaking');
+    const wordCount = text ? text.split(/\s+/).length : 0;
+    const speakingMs = Math.max(1200, (wordCount / 2.5) * 1000);
+    speakingTimer = setTimeout(() => stopSpeakingIndicator(), speakingMs);
+}
+
+function stopSpeakingIndicator() {
+    if (speakingTimer) {
+        clearTimeout(speakingTimer);
+        speakingTimer = null;
+    }
+    const header = document.querySelector('#answer-tooltip .answer-header');
+    if (header) header.classList.remove('speaking');
 }
 
 let isDrawing = false;
@@ -472,6 +512,7 @@ async function dismissOverlay() {
     errorToast.classList.add('hidden');
 
     invoke('stop_speech').catch((e) => console.error("Failed to stop speech:", e));
+    stopSpeakingIndicator();
 
     const appWindow = Window.getCurrent();
     await appWindow.hide();
@@ -527,10 +568,14 @@ function renderResponse(response, rect) {
         invoke('get_speech_enabled')
             .then((enabled) => {
                 if (enabled) {
+                    startSpeakingIndicator(response.answer_text);
                     return invoke('speak_text', { text: response.answer_text, voiceId: null });
                 }
             })
-            .catch((e) => console.error("TTS failed:", e));
+            .catch((e) => {
+                console.error("TTS failed:", e);
+                stopSpeakingIndicator();
+            });
     }
 
     // Hide the selection box and toolbar so the user can see the result clearly
