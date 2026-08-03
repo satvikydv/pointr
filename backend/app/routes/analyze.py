@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse
 from app.models.analyze import AnalyzeRequest, AnalyzeResponse, PointerTarget
 from app.dependencies import get_gemini_service
 from app.services.gemini import GeminiService
+from app.services.session_memory import build_session_context_block, record_exchange
 
 router = APIRouter()
 
@@ -24,11 +25,14 @@ async def analyze_screen(
     except Exception as e:
         raise HTTPException(status_code=400, detail="Invalid base64 image")
 
+    session_context = build_session_context_block(request)
+
     prompt = (
         f"The user's cursor is at normalized position x={request.cursor_position.x_norm:.2f}, "
         f"y={request.cursor_position.y_norm:.2f}. "
         f"Active window (reported by the OS, not a guess — trust it over anything you infer from the image): '{request.active_window_title}'. "
-        f"The user asked: '{request.query_text}'. "
+        + (f"{session_context}\n" if session_context else "")
+        + f"The user asked: '{request.query_text}'. "
         "Answer their question concisely, referring to what's near the cursor if relevant. "
         "If a specific UI element should be pointed at in your answer, return its approximate bounding box center in the same normalized coordinate space. "
         "Format your answer EXACTLY as JSON:\n"
@@ -60,7 +64,9 @@ async def analyze_screen(
                 y_norm=pointer.get("y_norm", 0.0),
                 confidence=pointer.get("confidence", "medium")
             )
-            
+
+        record_exchange(request.session_id, request.query_text, answer_text)
+
         return AnalyzeResponse(
             answer_text=answer_text,
             pointer_target=pointer_target,
@@ -83,11 +89,14 @@ def _build_stream_prompt(request: AnalyzeRequest) -> str:
     # streaming partial JSON would show the user broken, half-typed syntax.
     # The optional pointer is instead a trailing line the client strips out
     # before displaying anything (see stream_analyze below).
+    session_context = build_session_context_block(request)
+
     return (
         f"The user's cursor is at normalized position x={request.cursor_position.x_norm:.2f}, "
         f"y={request.cursor_position.y_norm:.2f}. "
         f"Active window (reported by the OS, not a guess — trust it over anything you infer from the image): '{request.active_window_title}'. "
-        f"The user asked: '{request.query_text}'. "
+        + (f"{session_context}\n" if session_context else "")
+        + f"The user asked: '{request.query_text}'. "
         "Answer their question concisely in plain text, referring to what's near the cursor if relevant. "
         "Do not use markdown or JSON in your answer.\n"
         "If — and only if — a specific UI element should be pointed at, end your response with exactly "
@@ -160,6 +169,8 @@ async def _stream_analyze_events(request: AnalyzeRequest, gemini: GeminiService)
         remaining = answer_text[emitted_len:]
         if remaining:
             yield json.dumps({"type": "chunk", "text": remaining}) + "\n"
+
+    record_exchange(request.session_id, request.query_text, answer_text)
 
     yield json.dumps({
         "type": "done",

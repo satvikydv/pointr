@@ -1,6 +1,5 @@
 use tauri::{AppHandle, Emitter, State};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use crate::CaptureState;
 use base64::Engine;
 use futures_util::StreamExt;
@@ -115,14 +114,21 @@ pub async fn process_crop(
     request_id: String,
     state: State<'_, Mutex<CaptureState>>,
 ) -> Result<AnalyzeResponse, String> {
-    let (monitor, image_base64, active_window_title) = {
+    let (monitor, image_base64, active_window_title, app_name, session_id, session_duration_secs) = {
         let state_lock = state.lock().unwrap();
         if state_lock.image_bytes.is_empty() {
             return Err("No image captured".into());
         }
         let monitor = state_lock.monitor.clone().unwrap();
         let image_base64 = base64::engine::general_purpose::STANDARD.encode(&state_lock.image_bytes);
-        (monitor, image_base64, state_lock.active_window_title.clone())
+        (
+            monitor,
+            image_base64,
+            state_lock.active_window_title.clone(),
+            state_lock.app_name.clone(),
+            state_lock.session_id.clone(),
+            state_lock.session_duration_secs,
+        )
     };
 
     // Calculate normalized cursor from the center of the crop
@@ -135,7 +141,6 @@ pub async fn process_crop(
     );
 
     let query_text = query.unwrap_or_else(|| "What is this?".to_string());
-    let session_id = Uuid::new_v4().to_string();
     let timestamp = chrono::Utc::now().to_rfc3339();
 
     let payload = serde_json::json!({
@@ -149,6 +154,8 @@ pub async fn process_crop(
             "height": monitor.height_px
         },
         "active_window_title": active_window_title,
+        "app_name": app_name,
+        "session_duration_secs": session_duration_secs,
         "query_text": query_text,
         "session_id": session_id,
         "timestamp": timestamp
@@ -167,7 +174,7 @@ pub async fn process_direct(
     request_id: String,
     state: State<'_, Mutex<CaptureState>>,
 ) -> Result<AnalyzeResponse, String> {
-    let (monitor, image_base64, cursor_norm, active_window_title) = {
+    let (monitor, image_base64, cursor_norm, active_window_title, app_name, session_id, session_duration_secs) = {
         let state_lock = state.lock().unwrap();
         if state_lock.image_bytes.is_empty() {
             return Err("No image captured".into());
@@ -177,13 +184,20 @@ pub async fn process_direct(
             .cursor_norm
             .ok_or_else(|| "No cursor position captured".to_string())?;
         let image_base64 = base64::engine::general_purpose::STANDARD.encode(&state_lock.image_bytes);
-        (monitor, image_base64, cursor_norm, state_lock.active_window_title.clone())
+        (
+            monitor,
+            image_base64,
+            cursor_norm,
+            state_lock.active_window_title.clone(),
+            state_lock.app_name.clone(),
+            state_lock.session_id.clone(),
+            state_lock.session_duration_secs,
+        )
     };
 
     let query_text = query
         .filter(|q| !q.trim().is_empty())
         .unwrap_or_else(|| "What is this?".to_string());
-    let session_id = Uuid::new_v4().to_string();
     let timestamp = chrono::Utc::now().to_rfc3339();
 
     let payload = serde_json::json!({
@@ -197,6 +211,8 @@ pub async fn process_direct(
             "height": monitor.height_px
         },
         "active_window_title": active_window_title,
+        "app_name": app_name,
+        "session_duration_secs": session_duration_secs,
         "query_text": query_text,
         "session_id": session_id,
         "timestamp": timestamp
