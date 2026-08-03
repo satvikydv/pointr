@@ -254,6 +254,8 @@ pub fn run() {
             trigger_capture,
             commands::analyze::process_crop,
             commands::analyze::process_direct,
+            commands::clipboard::read_clipboard,
+            commands::clipboard::write_clipboard,
             enable_escape_dismiss,
             disable_escape_dismiss
         ])

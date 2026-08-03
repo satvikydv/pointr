@@ -27,6 +27,23 @@ class GeminiService:
             traceback.print_exc()
             return f"Error communicating with Gemini: {str(e)}"
 
+    def analyze_text_sync(self, prompt: str) -> str:
+        """Text-only, blocking call — for the Celery worker, which runs
+        tasks in a plain sync context rather than an asyncio event loop."""
+        if not self.client:
+            return "Gemini API key not configured."
+
+        try:
+            response = self.client.models.generate_content(
+                model=settings.gemini_model,
+                contents=[prompt],
+            )
+            return response.text
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return f"Error communicating with Gemini: {str(e)}"
+
     async def analyze_stream(self, image_bytes: bytes, prompt: str):
         """Yields the answer as it's generated, instead of waiting for the
         full response. Used by the streaming route so the overlay can show

@@ -58,6 +58,7 @@ base64 = "0.22"
 reqwest = { version = "0.13.4", features = ["json", "stream"] }
 chrono = "0.4.45"
 futures-util = "0.3"
+arboard = "3"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

@@ -180,16 +180,20 @@ async function runDirectAnalysis(queryText) {
     const requestId = ++activeRequestId;
     const appWindow = Window.getCurrent();
 
-    loadingLabel.textContent = 'Thinking…';
+    const agentMatch = queryText.trim().match(/^agent:\s*(.*)$/i);
+
+    loadingLabel.textContent = agentMatch ? 'Queueing…' : 'Thinking…';
     loadingIndicator.classList.remove('hidden');
     await appWindow.setIgnoreCursorEvents(true);
     await enableEscapeDismiss();
 
     try {
-        const response = await invoke('process_direct', {
-            query: queryText || null,
-            requestId: String(requestId)
-        });
+        const response = agentMatch
+            ? await runAgentTask(agentMatch[1] || "Analyze this for agent actions")
+            : await invoke('process_direct', {
+                query: queryText || null,
+                requestId: String(requestId)
+            });
 
         if (requestId !== activeRequestId) return; // superseded by a later press
 
@@ -209,7 +213,7 @@ async function runDirectAnalysis(queryText) {
     } catch (error) {
         if (requestId !== activeRequestId) return;
 
-        console.error("Error calling process_direct:", error);
+        console.error("Error in direct analysis:", error);
         loadingIndicator.classList.add('hidden');
         // Window may still be click-through from the setIgnoreCursorEvents(true)
         // above — flip it off *before* showing the toast so it's dismissable.
@@ -330,12 +334,21 @@ const AGENT_POLL_INTERVAL_MS = 1000;
 async function runAgentTask(taskDescription) {
     const sessionId = crypto.randomUUID();
 
+    let clipboardText = "";
+    try {
+        clipboardText = await invoke('read_clipboard');
+        console.log(`[agent] clipboard read: ${clipboardText.length} chars, preview="${clipboardText.slice(0, 40)}"`);
+    } catch (e) {
+        console.error("[agent] Failed to read clipboard:", e);
+    }
+
     const postRes = await fetch("http://localhost:8000/api/agent/task", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             task_description: taskDescription,
-            session_id: sessionId
+            session_id: sessionId,
+            clipboard_text: clipboardText
         })
     });
     const { task_id } = await postRes.json();
@@ -347,6 +360,14 @@ async function runAgentTask(taskDescription) {
         const statusData = await getRes.json();
 
         if (statusData.status === "SUCCESS") {
+            const clipboardWrite = statusData.result.clipboard_write;
+            if (typeof clipboardWrite === 'string') {
+                try {
+                    await invoke('write_clipboard', { text: clipboardWrite });
+                } catch (e) {
+                    console.error("Failed to write clipboard:", e);
+                }
+            }
             return {
                 answer_text: statusData.result.result,
                 pointer_target: statusData.result.pointer_target

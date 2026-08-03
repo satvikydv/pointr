@@ -8,7 +8,7 @@ router = APIRouter()
 @router.post("/task", response_model=AgentTaskResponse)
 async def create_agent_task(request: AgentTaskRequest):
     # Queue the Celery task
-    task = run_agent_task.delay(request.task_description, request.session_id)
+    task = run_agent_task.delay(request.task_description, request.session_id, request.clipboard_text)
     return AgentTaskResponse(task_id=task.id)
 
 @router.get("/task/{task_id}", response_model=AgentTaskStatusResponse)
