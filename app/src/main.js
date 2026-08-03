@@ -471,6 +471,8 @@ async function dismissOverlay() {
     if (errorTimer) { clearTimeout(errorTimer); errorTimer = null; }
     errorToast.classList.add('hidden');
 
+    invoke('stop_speech').catch((e) => console.error("Failed to stop speech:", e));
+
     const appWindow = Window.getCurrent();
     await appWindow.hide();
     await appWindow.setIgnoreCursorEvents(false);
@@ -521,13 +523,23 @@ function renderResponse(response, rect) {
     document.getElementById('answer-text').textContent = response.answer_text; // resync: authoritative final text
     document.getElementById('answer-caret').classList.add('hidden');
 
+    if (response.answer_text) {
+        invoke('speak_text', { text: response.answer_text })
+            .catch((e) => console.error("TTS failed:", e));
+    }
+
     // Hide the selection box and toolbar so the user can see the result clearly
     selectionBox.style.display = 'none';
     toolbar.classList.add('hidden');
 
-    // Automatically close and hide window after 15 seconds
+    // Automatically close and hide window after the answer's had time to be
+    // read AND spoken — a fixed 15s cut narration off mid-sentence on longer
+    // answers, since dismissOverlay() also stops TTS playback. ~2.5 words/sec
+    // is a conservative speaking-rate estimate, plus a fixed reading buffer.
     if (closeTimer) clearTimeout(closeTimer);
-    closeTimer = setTimeout(() => dismissOverlay(), 15000);
+    const wordCount = response.answer_text ? response.answer_text.split(/\s+/).length : 0;
+    const displayMs = Math.max(15000, (wordCount / 2.5) * 1000 + 4000);
+    closeTimer = setTimeout(() => dismissOverlay(), displayMs);
 }
 
 // Close overlay on Escape

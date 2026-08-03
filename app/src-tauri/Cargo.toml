@@ -31,6 +31,11 @@ windows = { version = "0.58", features = [
     "Graphics_Capture",
     "Graphics_DirectX",
     "Win32_System_WinRT",
+    "Media_SpeechSynthesis",
+    "Media_Playback",
+    "Media_Core",
+    "Storage_Streams",
+    "Foundation_Collections",
 ] }
 windows-capture = "1"
 

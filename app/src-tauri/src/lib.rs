@@ -250,12 +250,15 @@ pub fn run() {
             session_duration_secs: 0.0,
         }))
         .manage(Mutex::new(SessionState::new()))
+        .manage(commands::tts::TtsState::new())
         .invoke_handler(tauri::generate_handler![
             trigger_capture,
             commands::analyze::process_crop,
             commands::analyze::process_direct,
             commands::clipboard::read_clipboard,
             commands::clipboard::write_clipboard,
+            commands::tts::speak_text,
+            commands::tts::stop_speech,
             enable_escape_dismiss,
             disable_escape_dismiss
         ])
