@@ -5,13 +5,60 @@ const { Window } = window.__TAURI__.window;
 const container = document.getElementById('overlay-container');
 const img = document.getElementById('screenshot-img');
 const selectionBox = document.getElementById('selection-box');
+const selectionLabel = document.getElementById('selection-label');
 const toolbar = document.getElementById('toolbar');
 const btnCancel = document.getElementById('btn-cancel');
 const btnSubmit = document.getElementById('btn-submit');
 const queryInput = document.getElementById('query-input');
 const loadingIndicator = document.getElementById('loading-indicator');
+const loadingLabel = document.getElementById('loading-label');
 const directQueryBox = document.getElementById('direct-query-box');
 const directQueryInput = document.getElementById('direct-query-input');
+const errorToast = document.getElementById('error-toast');
+const errorMessage = document.getElementById('error-message');
+const errorClose = document.getElementById('error-close');
+
+let errorTimer = null;
+
+// Unlike the alert() this replaced, the toast doesn't block — so whatever
+// should happen once the user's done with it (typically hiding the window
+// again) has to run from here, on close or timeout, not right after the
+// call that raised it.
+function showError(message, onDismissed) {
+    if (errorTimer) clearTimeout(errorTimer);
+    errorMessage.textContent = message;
+    errorToast.classList.remove('hidden');
+    const dismiss = () => {
+        errorToast.classList.add('hidden');
+        if (onDismissed) onDismissed();
+    };
+    errorClose.onclick = () => {
+        clearTimeout(errorTimer);
+        dismiss();
+    };
+    errorTimer = setTimeout(dismiss, 6000);
+}
+
+// Builds (or returns the existing) answer bubble: a small "POINTR" header
+// plus a body span the streaming listener appends into. Kept as one helper
+// so the stream-chunk listener and renderResponse never disagree on shape.
+function getOrCreateTooltip() {
+    let tooltip = document.getElementById('answer-tooltip');
+    if (tooltip) return tooltip;
+
+    tooltip = document.createElement('div');
+    tooltip.id = 'answer-tooltip';
+    tooltip.className = 'answer-tooltip';
+    tooltip.innerHTML = `
+        <div class="answer-header">
+            <div class="dot"></div>
+            <div class="label">Pointr</div>
+        </div>
+        <div class="answer-body"><span id="answer-text"></span><span id="answer-caret" class="answer-caret"></span></div>
+    `;
+    container.appendChild(tooltip);
+    return tooltip;
+}
 
 let isDrawing = false;
 let startX = 0;
@@ -77,25 +124,11 @@ listen('dismiss-overlay', async () => {
 // requestId guard on the final response.
 listen('analyze-stream-chunk', (event) => {
     const { request_id, text } = event.payload;
-    console.log('[analyze-stream-chunk]', { request_id, activeRequestId, matched: String(activeRequestId) === request_id, textLen: text?.length });
     if (String(activeRequestId) !== request_id) return;
 
     loadingIndicator.classList.add('hidden');
-
-    let tooltip = document.getElementById('answer-tooltip');
-    if (!tooltip) {
-        tooltip = document.createElement('div');
-        tooltip.id = 'answer-tooltip';
-        tooltip.className = 'answer-tooltip';
-        // No pointer_target yet (only known once the stream finishes), so
-        // anchor the growing answer centered; renderResponse() repositions
-        // it next to the marker once the final response arrives.
-        tooltip.style.left = '50%';
-        tooltip.style.top = '40%';
-        tooltip.style.transform = 'translate(-50%, -50%)';
-        container.appendChild(tooltip);
-    }
-    tooltip.textContent += text;
+    getOrCreateTooltip();
+    document.getElementById('answer-text').textContent += text;
 });
 
 // Primary hotkey: fires immediately on hotkey press. Rust has already
@@ -109,6 +142,7 @@ listen('show-overlay-direct', async () => {
 
     img.style.display = 'none';
     selectionBox.style.display = 'none';
+    selectionLabel.classList.add('hidden');
     toolbar.classList.add('hidden');
     currentRect = null;
     loadingIndicator.classList.add('hidden');
@@ -146,20 +180,16 @@ async function runDirectAnalysis(queryText) {
     const requestId = ++activeRequestId;
     const appWindow = Window.getCurrent();
 
-    loadingIndicator.textContent = 'Thinking…';
+    loadingLabel.textContent = 'Thinking…';
     loadingIndicator.classList.remove('hidden');
     await appWindow.setIgnoreCursorEvents(true);
     await enableEscapeDismiss();
-
-    console.log('[runDirectAnalysis] invoking process_direct', { requestId, queryText });
 
     try {
         const response = await invoke('process_direct', {
             query: queryText || null,
             requestId: String(requestId)
         });
-
-        console.log('[runDirectAnalysis] process_direct resolved', { requestId, activeRequestId, response });
 
         if (requestId !== activeRequestId) return; // superseded by a later press
 
@@ -176,36 +206,28 @@ async function runDirectAnalysis(queryText) {
 
         const rect = { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
         renderResponse(response, rect);
-
-        console.log('[runDirectAnalysis] post-render window state', {
-            requestId,
-            visible: await appWindow.isVisible(),
-            minimized: await appWindow.isMinimized(),
-            position: await appWindow.outerPosition(),
-            size: await appWindow.outerSize(),
-            tooltipRect: document.getElementById('answer-tooltip')?.getBoundingClientRect(),
-        });
     } catch (error) {
-        console.log('[runDirectAnalysis] process_direct rejected', { requestId, activeRequestId, error });
         if (requestId !== activeRequestId) return;
 
         console.error("Error calling process_direct:", error);
         loadingIndicator.classList.add('hidden');
         // Window may still be click-through from the setIgnoreCursorEvents(true)
-        // above — flip it off *before* alert() so the OK button is reachable.
+        // above — flip it off *before* showing the toast so it's dismissable.
         await appWindow.show();
         await appWindow.setFocus();
         await appWindow.setIgnoreCursorEvents(false);
-        alert(`Error: ${error}`);
-        await appWindow.hide();
-        await appWindow.setIgnoreCursorEvents(false);
         await disableEscapeDismiss();
+        showError(`${error}`, async () => {
+            await appWindow.hide();
+            await appWindow.setIgnoreCursorEvents(false);
+        });
     }
 }
 
 function resetSelection() {
     img.style.display = 'block';
     selectionBox.style.display = 'none';
+    selectionLabel.classList.add('hidden');
     toolbar.classList.add('hidden');
     currentRect = null;
     queryInput.value = '';
@@ -229,6 +251,7 @@ container.addEventListener('mousedown', (e) => {
     selectionBox.style.height = '0px';
     selectionBox.style.display = 'block';
     toolbar.classList.add('hidden');
+    selectionLabel.classList.remove('hidden');
 });
 
 container.addEventListener('mousemove', (e) => {
@@ -246,6 +269,10 @@ container.addEventListener('mousemove', (e) => {
     selectionBox.style.height = height + 'px';
     selectionBox.style.left = left + 'px';
     selectionBox.style.top = top + 'px';
+
+    selectionLabel.textContent = `${Math.round(width)} × ${Math.round(height)}`;
+    selectionLabel.style.left = left + 'px';
+    selectionLabel.style.top = (top - 20) + 'px';
 });
 
 container.addEventListener('mouseup', (e) => {
@@ -262,6 +289,7 @@ container.addEventListener('mouseup', (e) => {
     }
 
     toolbar.classList.remove('hidden');
+    selectionLabel.classList.add('hidden');
 
     // Position toolbar just below the selection box
     const boxRect = selectionBox.getBoundingClientRect();
@@ -387,8 +415,11 @@ btnSubmit.addEventListener('click', async () => {
         await appWindow.setFocus();
         await appWindow.setIgnoreCursorEvents(false);
         await disableEscapeDismiss();
-        alert(`Error: ${error}`);
         resetSelection();
+        showError(`${error}`, async () => {
+            await appWindow.hide();
+            await appWindow.setIgnoreCursorEvents(false);
+        });
     } finally {
         btnSubmit.disabled = false;
         btnSubmit.innerText = "Process";
@@ -416,6 +447,8 @@ async function dismissOverlay() {
     const marker = document.getElementById('pointer-marker');
     if (marker) marker.remove();
     loadingIndicator.classList.add('hidden');
+    if (errorTimer) { clearTimeout(errorTimer); errorTimer = null; }
+    errorToast.classList.add('hidden');
 
     const appWindow = Window.getCurrent();
     await appWindow.hide();
@@ -454,26 +487,18 @@ function renderResponse(response, rect) {
 
     // Reuse the tooltip the streaming listener already built up live, if any
     // (falls back to creating one — e.g. a response with zero chunks).
-    // No close button: the window runs with setIgnoreCursorEvents(true) while
-    // the answer is shown (deliberate "fully click-through" behavior so the
-    // overlay never blocks the app underneath), which means the OS drops all
-    // mouse events before they reach the webview. Esc is the dismiss path.
-    let tooltip = document.getElementById('answer-tooltip');
-    if (!tooltip) {
-        tooltip = document.createElement('div');
-        tooltip.id = 'answer-tooltip';
-        tooltip.className = 'answer-tooltip';
-        container.appendChild(tooltip);
-    }
-    tooltip.textContent = response.answer_text; // resync: authoritative final text
-    // Always centered — anchoring next to pointer_target risked pushing the
-    // box past the viewport edge (clipped by overflow:hidden, invisible with
-    // no error) whenever the model's coordinate landed near a corner. The
-    // marker dot still goes to the actual pointer_target location; the text
-    // box itself doesn't need to move with it to stay readable.
-    tooltip.style.left = '50%';
-    tooltip.style.top = '40%';
-    tooltip.style.transform = 'translate(-50%, -50%)';
+    // No close button on the bubble itself: the window runs with
+    // setIgnoreCursorEvents(true) while the answer is shown (deliberate
+    // "fully click-through" behavior so the overlay never blocks the app
+    // underneath), which means the OS drops all mouse events before they
+    // reach the webview — a close button here couldn't be clicked. Esc is
+    // the dismiss path. Position is fixed via CSS (top-anchored, centered)
+    // rather than anchored to pointer_target — anchoring next to it risked
+    // pushing the box past the viewport edge (clipped, invisible, no error)
+    // whenever the model's coordinate landed near a corner.
+    getOrCreateTooltip();
+    document.getElementById('answer-text').textContent = response.answer_text; // resync: authoritative final text
+    document.getElementById('answer-caret').classList.add('hidden');
 
     // Hide the selection box and toolbar so the user can see the result clearly
     selectionBox.style.display = 'none';

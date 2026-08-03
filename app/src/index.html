@@ -10,18 +10,34 @@
     <div id="overlay-container">
       <img id="screenshot-img" src="" alt="Screenshot" />
       <div id="selection-box" style="display: none;"></div>
-      <div id="loading-indicator" class="loading-indicator hidden">Thinking&hellip;</div>
+      <div id="selection-label" class="selection-label hidden"></div>
+
+      <div id="loading-indicator" class="loading-indicator hidden">
+        <div class="dot-bounce">
+          <span></span><span></span><span></span>
+        </div>
+        <span id="loading-label">Thinking&hellip;</span>
+      </div>
+
       <div id="direct-query-box" class="direct-query-box hidden">
-        <input id="direct-query-input" class="query-input direct-query-input" type="text" placeholder="What do you want to know? (Enter to send, Esc to cancel)" autocomplete="off" />
+        <input id="direct-query-input" class="query-input direct-query-input" type="text" placeholder="What do you want to know?" autocomplete="off" />
+        <div class="query-hint">Enter to send &middot; Esc to cancel</div>
       </div>
 
       <div id="toolbar" class="toolbar hidden">
-        <button id="btn-cancel" class="btn">Cancel (Esc)</button>
-        <input id="query-input" class="query-input" type="text" placeholder="What is this? (or &quot;agent: &lt;task&gt;&quot;)" autocomplete="off" />
+        <button id="btn-cancel" class="toolbar-cancel">Cancel</button>
+        <div class="toolbar-divider"></div>
+        <input id="query-input" class="query-input toolbar-input" type="text" placeholder="Ask about this region&hellip; (or &quot;agent: &lt;task&gt;&quot;)" autocomplete="off" />
         <button id="btn-submit" class="btn btn-primary">Process</button>
       </div>
+
+      <div id="error-toast" class="error-toast hidden">
+        <div class="error-icon">!</div>
+        <div id="error-message" class="error-message"></div>
+        <div id="error-close" class="error-close">&times;</div>
+      </div>
     </div>
-    
+
     <script type="module" src="/main.js"></script>
   </body>
 </html>
