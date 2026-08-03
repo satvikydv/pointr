@@ -1,5 +1,5 @@
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{AppHandle, State};
 use windows::core::HSTRING;
 use windows::Media::Core::MediaSource;
 use windows::Media::Playback::MediaPlayer;
@@ -21,22 +21,27 @@ impl TtsState {
     }
 }
 
-/// Picks the best available installed voice: a neural "Natural" voice if one
-/// is installed (Windows 11 optional download, Settings > Time & Language >
-/// Speech > Manage voices — far better quality than the legacy SAPI/OneCore
-/// voices below), else the least-robotic of the legacy ones (Zira/David
-/// tested better than the default Heera on this machine), else whatever the
-/// system default is.
-fn select_best_voice() -> Option<windows::Media::SpeechSynthesis::VoiceInformation> {
+/// Voice priority: whatever the user explicitly picked in Settings, else a
+/// neural "Natural" voice if one is installed (Windows 11 optional download —
+/// far better quality than the legacy SAPI/OneCore voices below), else the
+/// least-robotic of the legacy ones (Zira/David tested better than the
+/// default Heera on this machine), else whatever the system default is.
+fn select_voice(app: &AppHandle) -> Option<windows::Media::SpeechSynthesis::VoiceInformation> {
     let voices = SpeechSynthesizer::AllVoices().ok()?;
+
+    if let Ok(Some(selected_id)) = crate::commands::settings::get_selected_voice(app.clone()) {
+        for voice in &voices {
+            if voice.Id().map(|id| id.to_string()).as_deref() == Ok(selected_id.as_str()) {
+                return Some(voice);
+            }
+        }
+    }
+
     let mut any_natural = None;
     let mut zira = None;
-
     for voice in &voices {
         let display = voice.DisplayName().unwrap_or_default().to_string();
         let is_natural = display.contains("Natural");
-        // Known female neural voice names — return immediately, this is the
-        // best case available.
         if is_natural && (display.contains("Aria") || display.contains("Jenny") || display.contains("Zira")) {
             return Some(voice);
         }
@@ -61,8 +66,16 @@ fn ensure_winrt_initialized() {
     }
 }
 
+/// `voice_id` lets a caller (the Settings "Test" button) preview a voice
+/// immediately, before it's saved as the persisted choice — normal overlay
+/// narration omits it and gets whatever `select_voice` resolves to.
 #[tauri::command]
-pub fn speak_text(text: String, state: State<'_, TtsState>) -> Result<(), String> {
+pub fn speak_text(
+    app: AppHandle,
+    text: String,
+    voice_id: Option<String>,
+    state: State<'_, TtsState>,
+) -> Result<(), String> {
     let text = text.trim();
     if text.is_empty() {
         return Ok(());
@@ -72,7 +85,14 @@ pub fn speak_text(text: String, state: State<'_, TtsState>) -> Result<(), String
 
     let synth = SpeechSynthesizer::new()
         .map_err(|e| format!("Failed to create speech synthesizer: {}", e))?;
-    if let Some(voice) = select_best_voice() {
+
+    let voice = match &voice_id {
+        Some(id) => SpeechSynthesizer::AllVoices()
+            .ok()
+            .and_then(|voices| voices.into_iter().find(|v| v.Id().map(|i| i.to_string()).as_deref() == Ok(id.as_str()))),
+        None => select_voice(&app),
+    };
+    if let Some(voice) = voice {
         let _ = synth.SetVoice(&voice);
     }
     // .get() blocks this (Tauri-managed, off the main/webview thread) thread

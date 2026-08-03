@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pointr Settings</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+        background: #16181d;
+        color: #e8e8ec;
+        padding: 20px;
+      }
+      h1 {
+        font-size: 15px;
+        font-weight: 600;
+        margin: 0 0 4px;
+      }
+      p.hint {
+        font-size: 12px;
+        color: #9a9ba3;
+        margin: 0 0 16px;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        color: #c4c5cc;
+        margin-bottom: 6px;
+      }
+      select {
+        width: 100%;
+        padding: 8px 10px;
+        font-size: 13px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.06);
+        color: #e8e8ec;
+        margin-bottom: 14px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+      }
+      button {
+        flex: 1;
+        padding: 9px 12px;
+        font-size: 13px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.06);
+        color: #e8e8ec;
+        cursor: pointer;
+      }
+      button.primary {
+        background: #5b8cff;
+        border-color: #5b8cff;
+        color: #0c0d10;
+        font-weight: 600;
+      }
+      button:hover {
+        filter: brightness(1.1);
+      }
+      #status {
+        margin-top: 12px;
+        font-size: 12px;
+        color: #7ee787;
+        min-height: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Narration voice</h1>
+    <p class="hint">Choose which installed voice reads answers aloud. Use Test to preview before saving.</p>
+
+    <label for="voice-select">Voice</label>
+    <select id="voice-select"></select>
+
+    <div class="row">
+      <button id="btn-test">Test</button>
+      <button id="btn-save" class="primary">Save</button>
+    </div>
+    <div id="status"></div>
+
+    <script type="module" src="/settings.js"></script>
+  </body>
+</html>

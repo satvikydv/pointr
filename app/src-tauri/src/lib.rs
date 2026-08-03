@@ -259,6 +259,9 @@ pub fn run() {
             commands::clipboard::write_clipboard,
             commands::tts::speak_text,
             commands::tts::stop_speech,
+            commands::settings::list_voices,
+            commands::settings::get_selected_voice,
+            commands::settings::set_selected_voice,
             enable_escape_dismiss,
             disable_escape_dismiss
         ])
@@ -304,6 +307,32 @@ pub fn run() {
 
             app.global_shortcut().register(primary)?;
             app.global_shortcut().register(region_select)?;
+
+            // Tray icon: the only way to reach Settings or quit cleanly,
+            // since the overlay window itself is borderless/hidden-by-default
+            // and there was previously no exit path other than Task Manager.
+            use tauri::menu::{Menu, MenuItem};
+            use tauri::tray::TrayIconBuilder;
+
+            let settings_item = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit Pointr", true, None::<&str>)?;
+            let tray_menu = Menu::with_items(app, &[&settings_item, &quit_item])?;
+
+            TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&tray_menu)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "settings" => {
+                        if let Some(win) = app.get_webview_window("settings") {
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        }
+                    }
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .build(app)?;
+
             Ok(())
         })
         .run(tauri::generate_context!())
