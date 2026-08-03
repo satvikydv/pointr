@@ -75,20 +75,41 @@ function getOrCreateTooltip() {
 }
 
 let speakingTimer = null;
+let ttsEndedUnlisten = null;
+let speakingOnEnded = null;
 
-// Swaps the header's plain dot for the animated "speaking" orb. There's no
-// real MediaEnded event surfaced from Rust yet (see TTS notes), so duration
-// is an estimate from word count — same ~2.5 words/sec assumption used for
-// the auto-dismiss timer, just applied to speaking time alone rather than
-// total on-screen time.
-function startSpeakingIndicator(text) {
+// Swaps the header's plain dot for the animated "speaking" orb, synced to
+// Rust's real `tts-ended` event (emitted from MediaPlayer's MediaEnded) —
+// registered *before* speak_text is invoked so there's no race with a very
+// short utterance finishing before the listener attaches. The word-count
+// timer is now just a safety ceiling in case the event is ever missed
+// (playback error swallowed, event lost), generous enough to never fire
+// before real narration of that length would plausibly finish.
+async function startSpeakingIndicator(text, onEnded) {
     stopSpeakingIndicator();
     const header = document.querySelector('#answer-tooltip .answer-header');
     if (!header) return;
     header.classList.add('speaking');
+    speakingOnEnded = onEnded || null;
+
+    try {
+        ttsEndedUnlisten = await listen('tts-ended', () => finishSpeakingIndicator());
+    } catch (e) {
+        console.error('Failed to listen for tts-ended:', e);
+    }
+
     const wordCount = text ? text.split(/\s+/).length : 0;
-    const speakingMs = Math.max(1200, (wordCount / 2.5) * 1000);
-    speakingTimer = setTimeout(() => stopSpeakingIndicator(), speakingMs);
+    const fallbackMs = Math.max(4000, (wordCount / 2.5) * 1000 * 2.5);
+    speakingTimer = setTimeout(() => finishSpeakingIndicator(), fallbackMs);
+}
+
+// Natural end (real event or fallback timeout) — runs the caller's onEnded
+// callback exactly once, unlike stopSpeakingIndicator() which is a hard stop
+// (dismiss) with no callback.
+function finishSpeakingIndicator() {
+    const cb = speakingOnEnded;
+    stopSpeakingIndicator();
+    if (cb) cb();
 }
 
 function stopSpeakingIndicator() {
@@ -96,6 +117,11 @@ function stopSpeakingIndicator() {
         clearTimeout(speakingTimer);
         speakingTimer = null;
     }
+    if (ttsEndedUnlisten) {
+        ttsEndedUnlisten();
+        ttsEndedUnlisten = null;
+    }
+    speakingOnEnded = null;
     const header = document.querySelector('#answer-tooltip .answer-header');
     if (header) header.classList.remove('speaking');
 }
@@ -566,9 +592,16 @@ function renderResponse(response, rect) {
 
     if (response.answer_text) {
         invoke('get_speech_enabled')
-            .then((enabled) => {
+            .then(async (enabled) => {
                 if (enabled) {
-                    startSpeakingIndicator(response.answer_text);
+                    // Once narration actually finishes (real tts-ended event,
+                    // or the fallback ceiling), give the user a short moment
+                    // to glance at the text, then dismiss — replaces the old
+                    // pure word-count guess for the whole on-screen duration.
+                    await startSpeakingIndicator(response.answer_text, () => {
+                        if (closeTimer) clearTimeout(closeTimer);
+                        closeTimer = setTimeout(() => dismissOverlay(), 3000);
+                    });
                     return invoke('speak_text', { text: response.answer_text, voiceId: null });
                 }
             })
@@ -582,10 +615,9 @@ function renderResponse(response, rect) {
     selectionBox.style.display = 'none';
     toolbar.classList.add('hidden');
 
-    // Automatically close and hide window after the answer's had time to be
-    // read AND spoken — a fixed 15s cut narration off mid-sentence on longer
-    // answers, since dismissOverlay() also stops TTS playback. ~2.5 words/sec
-    // is a conservative speaking-rate estimate, plus a fixed reading buffer.
+    // Initial auto-dismiss estimate — acts as the real timer when speech is
+    // disabled/fails, and as a starting point otherwise (shortened once
+    // narration's real end is known, above).
     if (closeTimer) clearTimeout(closeTimer);
     const wordCount = response.answer_text ? response.answer_text.split(/\s+/).length : 0;
     const displayMs = Math.max(15000, (wordCount / 2.5) * 1000 + 4000);

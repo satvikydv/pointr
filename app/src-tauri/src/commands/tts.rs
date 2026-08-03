@@ -1,6 +1,7 @@
 use std::sync::Mutex;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use windows::core::HSTRING;
+use windows::Foundation::TypedEventHandler;
 use windows::Media::Core::MediaSource;
 use windows::Media::Playback::MediaPlayer;
 use windows::Media::SpeechSynthesis::SpeechSynthesizer;
@@ -112,6 +113,16 @@ pub fn speak_text(
 
     let player =
         MediaPlayer::new().map_err(|e| format!("Failed to create media player: {}", e))?;
+
+    // Real end-of-playback signal for the frontend (replaces a pure
+    // word-count time guess) — the orb indicator and the auto-dismiss timer
+    // both key off this instead of estimating when narration finishes.
+    let app_for_event = app.clone();
+    let _ = player.MediaEnded(&TypedEventHandler::new(move |_sender, _args| {
+        let _ = app_for_event.emit("tts-ended", ());
+        Ok(())
+    }));
+
     player
         .SetSource(&source)
         .map_err(|e| format!("Failed to set media source: {}", e))?;

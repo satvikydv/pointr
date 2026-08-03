@@ -23,7 +23,10 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
 
     prompt = (
         "You are an agent completing a small task for the user, using their clipboard "
-        "as context and optionally producing a new clipboard value.\n"
+        "as context and optionally producing a new clipboard value. You have access to "
+        "live Google Search — use it for anything time-sensitive, current, or outside "
+        "what you'd otherwise know (news, prices, current versions, recent events, facts "
+        "you're unsure of). Don't search for things you can already answer confidently.\n"
         f"{clipboard_block}"
         f"Task: {task_description}\n\n"
         "Format your answer EXACTLY as JSON, no markdown fences:\n"
@@ -34,7 +37,7 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
         "}"
     )
 
-    raw = gemini.analyze_text_sync(prompt)
+    raw = gemini.analyze_text_sync(prompt, use_search=True)
 
     try:
         cleaned = re.sub(r"```(?:json)?\n?", "", raw, flags=re.IGNORECASE).strip()
