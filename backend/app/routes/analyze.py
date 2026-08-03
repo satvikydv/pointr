@@ -27,7 +27,7 @@ async def analyze_screen(
     prompt = (
         f"The user's cursor is at normalized position x={request.cursor_position.x_norm:.2f}, "
         f"y={request.cursor_position.y_norm:.2f}. "
-        f"The active application is '{request.active_window_title}'. "
+        f"Active window (reported by the OS, not a guess — trust it over anything you infer from the image): '{request.active_window_title}'. "
         f"The user asked: '{request.query_text}'. "
         "Answer their question concisely, referring to what's near the cursor if relevant. "
         "If a specific UI element should be pointed at in your answer, return its approximate bounding box center in the same normalized coordinate space. "
@@ -86,7 +86,7 @@ def _build_stream_prompt(request: AnalyzeRequest) -> str:
     return (
         f"The user's cursor is at normalized position x={request.cursor_position.x_norm:.2f}, "
         f"y={request.cursor_position.y_norm:.2f}. "
-        f"The active application is '{request.active_window_title}'. "
+        f"Active window (reported by the OS, not a guess — trust it over anything you infer from the image): '{request.active_window_title}'. "
         f"The user asked: '{request.query_text}'. "
         "Answer their question concisely in plain text, referring to what's near the cursor if relevant. "
         "Do not use markdown or JSON in your answer.\n"

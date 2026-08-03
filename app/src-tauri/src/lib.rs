@@ -9,6 +9,7 @@ pub struct CaptureState {
     pub image_bytes: Vec<u8>,
     pub monitor: Option<MonitorInfo>,
     pub cursor_norm: Option<(f32, f32)>,
+    pub active_window_title: String,
 }
 
 /// Shared first step for both hotkey paths: where's the cursor, which monitor
@@ -32,12 +33,14 @@ fn trigger_capture(app: tauri::AppHandle, state: tauri::State<'_, Mutex<CaptureS
         .map_err(|e| format!("Capture failed: {}", e))?;
     let image_bytes = capture::resize::cap_long_edge(&image_bytes)
         .map_err(|e| format!("Failed to resize capture: {}", e))?;
+    let active_window_title = capture::context::get_foreground_app_context().describe();
 
     {
         let mut state_lock = state.lock().unwrap();
         state_lock.image_bytes = image_bytes.clone();
         state_lock.monitor = Some(monitor.clone());
         state_lock.cursor_norm = Some(cursor_norm);
+        state_lock.active_window_title = active_window_title;
     }
 
     overlay::window::show_overlay(&app, &monitor, &image_bytes)
@@ -61,6 +64,10 @@ fn trigger_capture(app: tauri::AppHandle, state: tauri::State<'_, Mutex<CaptureS
 fn trigger_capture_direct(app: &tauri::AppHandle, state: &tauri::State<'_, Mutex<CaptureState>>) -> Result<String, String> {
     let (image_bytes, monitor, cursor_norm, method_str) = capture_now()
         .map_err(|e| format!("Capture failed: {}", e))?;
+    // Read this now, not after the overlay is shown — once show_overlay_direct
+    // focuses our own window below, GetForegroundWindow would report Pointr
+    // itself instead of whatever the user was actually looking at.
+    let active_window_title = capture::context::get_foreground_app_context().describe();
 
     let cursor_px_x = (cursor_norm.0 * monitor.width_px as f32) as i64;
     let cursor_px_y = (cursor_norm.1 * monitor.height_px as f32) as i64;
@@ -78,6 +85,7 @@ fn trigger_capture_direct(app: &tauri::AppHandle, state: &tauri::State<'_, Mutex
         state_lock.image_bytes = marked_bytes.clone();
         state_lock.monitor = Some(monitor.clone());
         state_lock.cursor_norm = Some(cursor_norm);
+        state_lock.active_window_title = active_window_title;
     }
 
     overlay::window::show_overlay_direct(app, &monitor)
@@ -149,6 +157,7 @@ pub fn run() {
             image_bytes: Vec::new(),
             monitor: None,
             cursor_norm: None,
+            active_window_title: String::new(),
         }))
         .invoke_handler(tauri::generate_handler![
             trigger_capture,
