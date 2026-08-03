@@ -262,6 +262,8 @@ pub fn run() {
             commands::settings::list_voices,
             commands::settings::get_selected_voice,
             commands::settings::set_selected_voice,
+            commands::settings::get_speech_enabled,
+            commands::settings::set_speech_enabled,
             enable_escape_dismiss,
             disable_escape_dismiss
         ])

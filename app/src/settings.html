@@ -5,85 +5,314 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pointr Settings</title>
     <style>
-      :root {
-        color-scheme: light dark;
+      @keyframes pointrFadeIn {
+        from { opacity: 0; transform: translateY(6px); }
+        to { opacity: 1; transform: translateY(0); }
       }
-      body {
+      @keyframes pointrDotBounce {
+        0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
+        40% { opacity: 1; transform: scale(1); }
+      }
+      html, body {
         margin: 0;
+        padding: 0;
+        background: transparent;
         font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
-        background: #16181d;
-        color: #e8e8ec;
-        padding: 20px;
+        user-select: none;
+        overflow: hidden;
       }
-      h1 {
-        font-size: 15px;
-        font-weight: 600;
-        margin: 0 0 4px;
-      }
-      p.hint {
-        font-size: 12px;
-        color: #9a9ba3;
-        margin: 0 0 16px;
-      }
-      label {
-        display: block;
-        font-size: 12px;
-        color: #c4c5cc;
-        margin-bottom: 6px;
-      }
-      select {
-        width: 100%;
-        padding: 8px 10px;
-        font-size: 13px;
-        border-radius: 8px;
+      #panel {
+        width: 420px;
+        height: 380px;
+        box-sizing: border-box;
+        background: rgba(22, 24, 29, 0.86);
+        backdrop-filter: blur(30px) saturate(160%);
         border: 1px solid rgba(255, 255, 255, 0.14);
-        background: rgba(255, 255, 255, 0.06);
-        color: #e8e8ec;
-        margin-bottom: 14px;
+        border-radius: 14px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 255, 255, 0.07) inset;
+        display: flex;
+        flex-direction: column;
+        animation: pointrFadeIn 0.16s ease;
+        color: rgba(255, 255, 255, 0.92);
       }
-      .row {
+      #titlebar {
+        height: 40px;
+        min-height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 12px 0 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      #titlebar .brand {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      #titlebar .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #5b8cff;
+      }
+      #titlebar .label {
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        color: rgba(255, 255, 255, 0.5);
+        text-transform: uppercase;
+      }
+      #btn-close {
+        width: 22px;
+        height: 22px;
+        border-radius: 5px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: rgba(255, 255, 255, 0.45);
+        cursor: pointer;
+        font-size: 14px;
+        background: transparent;
+        border: none;
+      }
+      #btn-close:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.85);
+      }
+      #content {
+        flex: 1;
+        padding: 18px 20px 20px;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+      }
+      .toggle-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .toggle-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.92);
+      }
+      .toggle-hint {
+        margin-top: 6px;
+        font-size: 12px;
+        line-height: 1.45;
+        color: rgba(255, 255, 255, 0.45);
+      }
+      #toggle-track {
+        width: 38px;
+        height: 22px;
+        border-radius: 11px;
+        position: relative;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease;
+        flex-shrink: 0;
+      }
+      #toggle-knob {
+        position: absolute;
+        top: 1px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+        transition: left 0.15s ease;
+      }
+      .divider {
+        height: 1px;
+        background: rgba(255, 255, 255, 0.08);
+        margin: 16px 0;
+      }
+      #voice-section {
+        transition: opacity 0.15s ease;
+      }
+      .section-label {
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        color: rgba(255, 255, 255, 0.45);
+        text-transform: uppercase;
+        margin-bottom: 8px;
+      }
+      #voice-picker-wrap {
+        position: relative;
+      }
+      #voice-trigger {
+        width: 100%;
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 10px 12px;
+        cursor: pointer;
+      }
+      #voice-trigger .label {
+        font-size: 13.5px;
+        color: rgba(255, 255, 255, 0.92);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+      #voice-trigger .chevron {
+        width: 8px;
+        height: 8px;
+        border-right: 1.5px solid rgba(255, 255, 255, 0.5);
+        border-bottom: 1.5px solid rgba(255, 255, 255, 0.5);
+        transform: rotate(45deg);
+        transition: transform 0.12s ease;
+        flex-shrink: 0;
+        margin-left: 8px;
+      }
+      #voice-dropdown {
+        position: absolute;
+        left: 0;
+        top: 44px;
+        width: 100%;
+        box-sizing: border-box;
+        max-height: 160px;
+        overflow-y: auto;
+        background: rgba(28, 30, 36, 0.97);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 10px;
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+        padding: 5px;
+        z-index: 5;
+        animation: pointrFadeIn 0.12s ease;
+      }
+      #voice-dropdown.hidden {
+        display: none;
+      }
+      .voice-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 10px;
+        border-radius: 6px;
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.85);
+        cursor: pointer;
+      }
+      .voice-row .name {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+      .voice-row .check {
+        color: #5b8cff;
+        font-size: 13px;
+      }
+      #footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 14px;
+      }
+      #status {
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        min-height: 16px;
+      }
+      #footer-actions {
         display: flex;
         gap: 8px;
       }
-      button {
-        flex: 1;
-        padding: 9px 12px;
-        font-size: 13px;
-        border-radius: 8px;
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        background: rgba(255, 255, 255, 0.06);
-        color: #e8e8ec;
-        cursor: pointer;
-      }
-      button.primary {
-        background: #5b8cff;
-        border-color: #5b8cff;
-        color: #0c0d10;
+      #btn-test {
+        font-size: 12.5px;
         font-weight: 600;
+        color: rgba(255, 255, 255, 0.85);
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 8px 14px;
+        border-radius: 7px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        transition: opacity 0.15s ease;
       }
-      button:hover {
-        filter: brightness(1.1);
+      #btn-save {
+        font-size: 12.5px;
+        font-weight: 600;
+        color: #0b1220;
+        background: #5b8cff;
+        padding: 8px 16px;
+        border-radius: 7px;
+        cursor: pointer;
+        border: none;
       }
-      #status {
-        margin-top: 12px;
-        font-size: 12px;
-        color: #7ee787;
-        min-height: 16px;
+      .dots {
+        display: none;
+        gap: 3px;
       }
+      .dots.visible {
+        display: flex;
+      }
+      .dots span {
+        width: 3px;
+        height: 9px;
+        border-radius: 1px;
+        background: #5b8cff;
+        animation: pointrDotBounce 0.7s ease infinite;
+      }
+      .dots span:nth-child(2) { animation-delay: 0.12s; }
+      .dots span:nth-child(3) { animation-delay: 0.24s; }
     </style>
   </head>
   <body>
-    <h1>Narration voice</h1>
-    <p class="hint">Choose which installed voice reads answers aloud. Use Test to preview before saving.</p>
+    <div id="panel">
+      <div id="titlebar" data-tauri-drag-region>
+        <div class="brand" data-tauri-drag-region>
+          <div class="dot"></div>
+          <div class="label">Pointr Settings</div>
+        </div>
+        <button id="btn-close">&times;</button>
+      </div>
 
-    <label for="voice-select">Voice</label>
-    <select id="voice-select"></select>
+      <div id="content">
+        <div class="toggle-row">
+          <div class="toggle-title">Read answers aloud</div>
+          <div id="toggle-track">
+            <div id="toggle-knob"></div>
+          </div>
+        </div>
+        <div class="toggle-hint">Controls whether Pointr speaks its answers out loud as they arrive.</div>
 
-    <div class="row">
-      <button id="btn-test">Test</button>
-      <button id="btn-save" class="primary">Save</button>
+        <div class="divider"></div>
+
+        <div id="voice-section">
+          <div class="section-label">Narration voice</div>
+          <div id="voice-picker-wrap">
+            <div id="voice-trigger">
+              <div class="label" id="voice-trigger-label">Loading voices…</div>
+              <div class="chevron"></div>
+            </div>
+            <div id="voice-dropdown" class="hidden"></div>
+          </div>
+        </div>
+
+        <div style="flex: 1"></div>
+
+        <div id="footer">
+          <div id="status"></div>
+          <div id="footer-actions">
+            <button id="btn-test">
+              <div class="dots" id="test-dots"><span></span><span></span><span></span></div>
+              <div id="test-label">Test</div>
+            </button>
+            <button id="btn-save">Save</button>
+          </div>
+        </div>
+      </div>
     </div>
-    <div id="status"></div>
 
     <script type="module" src="/settings.js"></script>
   </body>

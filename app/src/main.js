@@ -524,7 +524,12 @@ function renderResponse(response, rect) {
     document.getElementById('answer-caret').classList.add('hidden');
 
     if (response.answer_text) {
-        invoke('speak_text', { text: response.answer_text, voiceId: null })
+        invoke('get_speech_enabled')
+            .then((enabled) => {
+                if (enabled) {
+                    return invoke('speak_text', { text: response.answer_text, voiceId: null });
+                }
+            })
             .catch((e) => console.error("TTS failed:", e));
     }
 

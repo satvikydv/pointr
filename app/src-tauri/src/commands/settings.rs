@@ -11,9 +11,24 @@ pub struct VoiceOption {
     pub language: String,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct PersistedSettings {
     voice_id: Option<String>,
+    #[serde(default = "default_speech_enabled")]
+    speech_enabled: bool,
+}
+
+fn default_speech_enabled() -> bool {
+    true
+}
+
+impl Default for PersistedSettings {
+    fn default() -> Self {
+        Self {
+            voice_id: None,
+            speech_enabled: true,
+        }
+    }
 }
 
 fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -62,7 +77,19 @@ pub fn get_selected_voice(app: AppHandle) -> Result<Option<String>, String> {
 
 #[tauri::command]
 pub fn set_selected_voice(app: AppHandle, voice_id: String) -> Result<(), String> {
-    save_settings(&app, &PersistedSettings {
-        voice_id: Some(voice_id),
-    })
+    let mut settings = load_settings(&app);
+    settings.voice_id = Some(voice_id);
+    save_settings(&app, &settings)
+}
+
+#[tauri::command]
+pub fn get_speech_enabled(app: AppHandle) -> Result<bool, String> {
+    Ok(load_settings(&app).speech_enabled)
+}
+
+#[tauri::command]
+pub fn set_speech_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = load_settings(&app);
+    settings.speech_enabled = enabled;
+    save_settings(&app, &settings)
 }
