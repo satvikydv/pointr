@@ -1,6 +1,7 @@
 .agents
 .vscode
 implementation-tracking.md
+PRD.md
 backend/.env
 .env
 __pycache__/
