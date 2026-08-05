@@ -12,6 +12,16 @@
       <div id="selection-box" style="display: none;"></div>
       <div id="selection-label" class="selection-label hidden"></div>
 
+      <!-- "explain:" storyboard mode — line/arrow annotations only, box and
+           point markers are plain positioned divs created in main.js. -->
+      <svg id="storyboard-svg">
+        <defs>
+          <marker id="pointr-arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" fill="#5B8CFF"></path>
+          </marker>
+        </defs>
+      </svg>
+
       <div id="loading-indicator" class="loading-indicator hidden">
         <div class="dot-bounce">
           <span></span><span></span><span></span>
@@ -20,7 +30,7 @@
       </div>
 
       <div id="direct-query-box" class="direct-query-box hidden">
-        <input id="direct-query-input" class="query-input direct-query-input" type="text" placeholder="What do you want to know?" autocomplete="off" />
+        <input id="direct-query-input" class="query-input direct-query-input" type="text" placeholder="What do you want to know? (or &quot;agent: &lt;task&gt;&quot;, &quot;explain: &lt;topic&gt;&quot;)" autocomplete="off" />
         <div class="query-hint">Enter to send &middot; Esc to cancel</div>
       </div>
 

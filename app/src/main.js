@@ -51,13 +51,79 @@ function getOrCreateTooltip() {
     tooltip.className = 'answer-tooltip';
     tooltip.innerHTML = `
         <div class="answer-header">
-            <div class="dot"></div>
+            <div class="avatar">
+                <div class="dot"></div>
+                <div class="speaking-orb">
+                    <div class="orb-bloom"></div>
+                    <div class="orb-core">
+                        <div class="orb-swirl1"></div>
+                        <div class="orb-swirl2"></div>
+                        <div class="orb-nebula"></div>
+                        <div class="orb-particle p1"></div>
+                        <div class="orb-particle p2"></div>
+                        <div class="orb-particle p3"></div>
+                        <div class="orb-highlight"></div>
+                    </div>
+                </div>
+            </div>
             <div class="label">Pointr</div>
         </div>
         <div class="answer-body"><span id="answer-text"></span><span id="answer-caret" class="answer-caret"></span></div>
     `;
     container.appendChild(tooltip);
     return tooltip;
+}
+
+let speakingTimer = null;
+let ttsEndedUnlisten = null;
+let speakingOnEnded = null;
+
+// Swaps the header's plain dot for the animated "speaking" orb, synced to
+// Rust's real `tts-ended` event (emitted from MediaPlayer's MediaEnded) —
+// registered *before* speak_text is invoked so there's no race with a very
+// short utterance finishing before the listener attaches. The word-count
+// timer is now just a safety ceiling in case the event is ever missed
+// (playback error swallowed, event lost), generous enough to never fire
+// before real narration of that length would plausibly finish.
+async function startSpeakingIndicator(text, onEnded) {
+    stopSpeakingIndicator();
+    const header = document.querySelector('#answer-tooltip .answer-header');
+    if (!header) return;
+    header.classList.add('speaking');
+    speakingOnEnded = onEnded || null;
+
+    try {
+        ttsEndedUnlisten = await listen('tts-ended', () => finishSpeakingIndicator());
+    } catch (e) {
+        console.error('Failed to listen for tts-ended:', e);
+    }
+
+    const wordCount = text ? text.split(/\s+/).length : 0;
+    const fallbackMs = Math.max(4000, (wordCount / 2.5) * 1000 * 2.5);
+    speakingTimer = setTimeout(() => finishSpeakingIndicator(), fallbackMs);
+}
+
+// Natural end (real event or fallback timeout) — runs the caller's onEnded
+// callback exactly once, unlike stopSpeakingIndicator() which is a hard stop
+// (dismiss) with no callback.
+function finishSpeakingIndicator() {
+    const cb = speakingOnEnded;
+    stopSpeakingIndicator();
+    if (cb) cb();
+}
+
+function stopSpeakingIndicator() {
+    if (speakingTimer) {
+        clearTimeout(speakingTimer);
+        speakingTimer = null;
+    }
+    if (ttsEndedUnlisten) {
+        ttsEndedUnlisten();
+        ttsEndedUnlisten = null;
+    }
+    speakingOnEnded = null;
+    const header = document.querySelector('#answer-tooltip .answer-header');
+    if (header) header.classList.remove('speaking');
 }
 
 let isDrawing = false;
@@ -180,16 +246,37 @@ async function runDirectAnalysis(queryText) {
     const requestId = ++activeRequestId;
     const appWindow = Window.getCurrent();
 
-    loadingLabel.textContent = 'Thinking…';
+    const agentMatch = queryText.trim().match(/^agent:\s*(.*)$/i);
+    const explainMatch = queryText.trim().match(/^explain:\s*(.*)$/i);
+
+    loadingLabel.textContent = agentMatch ? 'Queueing…' : (explainMatch ? 'Preparing…' : 'Thinking…');
     loadingIndicator.classList.remove('hidden');
     await appWindow.setIgnoreCursorEvents(true);
     await enableEscapeDismiss();
 
     try {
-        const response = await invoke('process_direct', {
-            query: queryText || null,
-            requestId: String(requestId)
-        });
+        if (explainMatch) {
+            const topic = explainMatch[1] || queryText;
+            const storyboard = await invoke('process_explain', { topic });
+            console.log('[explain] storyboard steps:', JSON.stringify(storyboard.steps, null, 2));
+
+            if (requestId !== activeRequestId) return; // superseded by a later press
+
+            loadingIndicator.classList.add('hidden');
+            await appWindow.show();
+            await appWindow.setAlwaysOnTop(true);
+            await appWindow.setFocus();
+
+            await playStoryboard(storyboard.steps, requestId);
+            return;
+        }
+
+        const response = agentMatch
+            ? await runAgentTask(agentMatch[1] || "Analyze this for agent actions")
+            : await invoke('process_direct', {
+                query: queryText || null,
+                requestId: String(requestId)
+            });
 
         if (requestId !== activeRequestId) return; // superseded by a later press
 
@@ -209,7 +296,7 @@ async function runDirectAnalysis(queryText) {
     } catch (error) {
         if (requestId !== activeRequestId) return;
 
-        console.error("Error calling process_direct:", error);
+        console.error("Error in direct analysis:", error);
         loadingIndicator.classList.add('hidden');
         // Window may still be click-through from the setIgnoreCursorEvents(true)
         // above — flip it off *before* showing the toast so it's dismissable.
@@ -222,6 +309,118 @@ async function runDirectAnalysis(queryText) {
             await appWindow.setIgnoreCursorEvents(false);
         });
     }
+}
+
+// "explain: <topic>" storyboard playback — sequentially shows each step's
+// narration + optional point marker, waiting for that step's narration to
+// actually finish speaking (real tts-ended event, or the fallback estimate —
+// see startSpeakingIndicator) before advancing, rather than a fixed delay per
+// step. `requestId` guards against a dismiss/new-request superseding this
+// mid-playback (checked between every step, not just at the start).
+async function playStoryboard(steps, requestId) {
+    getOrCreateTooltip();
+    document.getElementById('answer-caret').classList.add('hidden');
+
+    for (const step of steps) {
+        if (requestId !== activeRequestId) return;
+
+        document.getElementById('answer-text').textContent = step.narration;
+        renderStoryboardShape(step);
+
+        await speakStepAndWait(step.narration);
+    }
+
+    if (requestId !== activeRequestId) return;
+    clearStoryboardShapes();
+    if (closeTimer) clearTimeout(closeTimer);
+    closeTimer = setTimeout(() => dismissOverlay(), 3000);
+}
+
+function clearStoryboardShapes() {
+    const oldMarker = document.getElementById('pointer-marker');
+    if (oldMarker) oldMarker.remove();
+    const oldBox = document.getElementById('storyboard-box');
+    if (oldBox) oldBox.remove();
+    const oldLine = document.getElementById('storyboard-line');
+    if (oldLine) oldLine.remove();
+}
+
+// Renders whichever single shape a storyboard step carries — "point" reuses
+// the same marker the normal single-answer flow already draws; "box" and
+// "line" are new (line/arrow drawn as an SVG element in #storyboard-svg,
+// since CSS alone can't do an arbitrary-angle line+arrowhead cleanly).
+function renderStoryboardShape(step) {
+    clearStoryboardShapes();
+    if (!step.shape) return;
+
+    const x1 = clampUnit(step.x_norm) * window.innerWidth;
+    const y1 = clampUnit(step.y_norm) * window.innerHeight;
+
+    if (step.shape === 'point') {
+        const marker = document.createElement('div');
+        marker.id = 'pointer-marker';
+        marker.className = 'pointer-marker';
+        marker.style.left = x1 + 'px';
+        marker.style.top = y1 + 'px';
+        container.appendChild(marker);
+        return;
+    }
+
+    if (step.x2_norm == null || step.y2_norm == null) return;
+    const x2 = clampUnit(step.x2_norm) * window.innerWidth;
+    const y2 = clampUnit(step.y2_norm) * window.innerHeight;
+
+    if (step.shape === 'box') {
+        const box = document.createElement('div');
+        box.id = 'storyboard-box';
+        box.className = 'storyboard-box';
+        box.style.left = Math.min(x1, x2) + 'px';
+        box.style.top = Math.min(y1, y2) + 'px';
+        box.style.width = Math.abs(x2 - x1) + 'px';
+        box.style.height = Math.abs(y2 - y1) + 'px';
+        container.appendChild(box);
+    } else if (step.shape === 'line') {
+        const svg = document.getElementById('storyboard-svg');
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.id = 'storyboard-line';
+        line.classList.add('storyboard-line');
+        line.setAttribute('x1', x1);
+        line.setAttribute('y1', y1);
+        line.setAttribute('x2', x2);
+        line.setAttribute('y2', y2);
+        line.setAttribute('marker-end', 'url(#pointr-arrowhead)');
+        svg.appendChild(line);
+
+        // Draw-on animation: start with the stroke fully "retracted" via
+        // dash-offset, then animate it to 0 — a plain CSS transition can't
+        // animate SVG line geometry directly, but stroke-dash* is just a
+        // regular animatable property.
+        const length = Math.hypot(x2 - x1, y2 - y1);
+        line.style.strokeDasharray = String(length);
+        line.style.strokeDashoffset = String(length);
+        line.getBoundingClientRect(); // force layout so the next line isn't coalesced into this one
+        line.style.transition = 'stroke-dashoffset 0.35s ease';
+        requestAnimationFrame(() => {
+            line.style.strokeDashoffset = '0';
+        });
+    }
+}
+
+// Resolves once this step's narration has finished (or a fixed pause, if
+// narration is off/fails) — the thing playStoryboard awaits between steps.
+function speakStepAndWait(text) {
+    return new Promise((resolve) => {
+        invoke('get_speech_enabled')
+            .then(async (enabled) => {
+                if (!enabled) {
+                    setTimeout(resolve, 1800);
+                    return;
+                }
+                await startSpeakingIndicator(text, resolve);
+                invoke('speak_text', { text, voiceId: null }).catch(() => resolve());
+            })
+            .catch(() => setTimeout(resolve, 1800));
+    });
 }
 
 function resetSelection() {
@@ -330,12 +529,21 @@ const AGENT_POLL_INTERVAL_MS = 1000;
 async function runAgentTask(taskDescription) {
     const sessionId = crypto.randomUUID();
 
+    let clipboardText = "";
+    try {
+        clipboardText = await invoke('read_clipboard');
+        console.log(`[agent] clipboard read: ${clipboardText.length} chars, preview="${clipboardText.slice(0, 40)}"`);
+    } catch (e) {
+        console.error("[agent] Failed to read clipboard:", e);
+    }
+
     const postRes = await fetch("http://localhost:8000/api/agent/task", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             task_description: taskDescription,
-            session_id: sessionId
+            session_id: sessionId,
+            clipboard_text: clipboardText
         })
     });
     const { task_id } = await postRes.json();
@@ -347,6 +555,14 @@ async function runAgentTask(taskDescription) {
         const statusData = await getRes.json();
 
         if (statusData.status === "SUCCESS") {
+            const clipboardWrite = statusData.result.clipboard_write;
+            if (typeof clipboardWrite === 'string') {
+                try {
+                    await invoke('write_clipboard', { text: clipboardWrite });
+                } catch (e) {
+                    console.error("Failed to write clipboard:", e);
+                }
+            }
             return {
                 answer_text: statusData.result.result,
                 pointer_target: statusData.result.pointer_target
@@ -444,11 +660,13 @@ async function dismissOverlay() {
 
     const tooltip = document.getElementById('answer-tooltip');
     if (tooltip) tooltip.remove();
-    const marker = document.getElementById('pointer-marker');
-    if (marker) marker.remove();
+    clearStoryboardShapes();
     loadingIndicator.classList.add('hidden');
     if (errorTimer) { clearTimeout(errorTimer); errorTimer = null; }
     errorToast.classList.add('hidden');
+
+    invoke('stop_speech').catch((e) => console.error("Failed to stop speech:", e));
+    stopSpeakingIndicator();
 
     const appWindow = Window.getCurrent();
     await appWindow.hide();
@@ -500,13 +718,38 @@ function renderResponse(response, rect) {
     document.getElementById('answer-text').textContent = response.answer_text; // resync: authoritative final text
     document.getElementById('answer-caret').classList.add('hidden');
 
+    if (response.answer_text) {
+        invoke('get_speech_enabled')
+            .then(async (enabled) => {
+                if (enabled) {
+                    // Once narration actually finishes (real tts-ended event,
+                    // or the fallback ceiling), give the user a short moment
+                    // to glance at the text, then dismiss — replaces the old
+                    // pure word-count guess for the whole on-screen duration.
+                    await startSpeakingIndicator(response.answer_text, () => {
+                        if (closeTimer) clearTimeout(closeTimer);
+                        closeTimer = setTimeout(() => dismissOverlay(), 3000);
+                    });
+                    return invoke('speak_text', { text: response.answer_text, voiceId: null });
+                }
+            })
+            .catch((e) => {
+                console.error("TTS failed:", e);
+                stopSpeakingIndicator();
+            });
+    }
+
     // Hide the selection box and toolbar so the user can see the result clearly
     selectionBox.style.display = 'none';
     toolbar.classList.add('hidden');
 
-    // Automatically close and hide window after 15 seconds
+    // Initial auto-dismiss estimate — acts as the real timer when speech is
+    // disabled/fails, and as a starting point otherwise (shortened once
+    // narration's real end is known, above).
     if (closeTimer) clearTimeout(closeTimer);
-    closeTimer = setTimeout(() => dismissOverlay(), 15000);
+    const wordCount = response.answer_text ? response.answer_text.split(/\s+/).length : 0;
+    const displayMs = Math.max(15000, (wordCount / 2.5) * 1000 + 4000);
+    closeTimer = setTimeout(() => dismissOverlay(), displayMs);
 }
 
 // Close overlay on Escape

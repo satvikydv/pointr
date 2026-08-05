@@ -205,11 +205,153 @@ body, html {
   margin-bottom: 8px;
 }
 
+.answer-header .avatar {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
 .answer-header .dot {
+  position: absolute;
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: #5B8CFF;
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 0.4s cubic-bezier(.4, 0, .2, 1), transform 0.4s cubic-bezier(.4, 0, .2, 1);
+}
+
+/* Swirling "speaking" orb — swapped in for the plain dot while TTS narration
+   is playing (see startSpeakingIndicator/stopSpeakingIndicator in main.js).
+   Layered radial/conic gradients with mix-blend-mode:screen simulate a small
+   glowing nebula rather than a flat spinner. */
+.answer-header .speaking-orb {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: scale(0.3);
+  transition: opacity 0.4s cubic-bezier(.4, 0, .2, 1), transform 0.4s cubic-bezier(.4, 0, .2, 1);
+}
+
+.answer-header.speaking .dot {
+  opacity: 0;
+  transform: scale(0.3);
+}
+
+.answer-header.speaking .speaking-orb {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.orb-bloom {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(140, 180, 255, 0.55), rgba(91, 140, 255, 0.18) 45%, rgba(91, 140, 255, 0) 70%);
+  filter: blur(6px);
+  animation: orb-bloom-breathe 2.6s ease-in-out infinite;
+}
+
+.orb-core {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  overflow: hidden;
+  isolation: isolate;
+  box-shadow: 0 0 10px rgba(91, 140, 255, 0.55), inset 0 -3px 5px rgba(0, 0, 0, 0.35), inset 0 2px 3px rgba(255, 255, 255, 0.25);
+  background: radial-gradient(circle at 32% 28%, rgba(210, 225, 255, 0.9), rgba(91, 140, 255, 0.5) 40%, rgba(30, 45, 90, 0.85) 78%, rgba(10, 14, 26, 0.95) 100%);
+}
+
+.orb-swirl1 {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  left: -4px;
+  top: -4px;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(143, 180, 255, 0) 0%, rgba(143, 180, 255, 0.9) 15%, rgba(58, 99, 204, 0) 35%, rgba(185, 143, 255, 0.6) 55%, rgba(58, 99, 204, 0) 75%, rgba(143, 180, 255, 0.7) 95%);
+  mix-blend-mode: screen;
+  animation: orb-swirl-1 3.2s linear infinite;
+}
+
+.orb-swirl2 {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  left: 2px;
+  top: 2px;
+  border-radius: 50%;
+  background: conic-gradient(from 90deg, rgba(91, 140, 255, 0) 10%, rgba(220, 235, 255, 0.5) 30%, rgba(91, 140, 255, 0) 50%, rgba(58, 99, 204, 0.6) 70%, rgba(91, 140, 255, 0) 90%);
+  mix-blend-mode: screen;
+  animation: orb-swirl-2 4.5s linear infinite;
+}
+
+.orb-nebula {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 4px;
+  top: 5px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(185, 143, 255, 0.5), rgba(185, 143, 255, 0) 70%);
+  mix-blend-mode: screen;
+  filter: blur(1.5px);
+  animation: orb-nebula-drift 5s ease-in-out infinite;
+}
+
+.orb-particle {
+  position: absolute;
+  border-radius: 50%;
+  background: #fff;
+  animation: orb-particle-float 2.4s ease-in-out infinite;
+}
+
+.orb-particle.p1 { width: 2px; height: 2px; left: 6px; top: 8px; }
+.orb-particle.p2 { width: 1.5px; height: 1.5px; left: 15px; top: 6px; animation-duration: 2.8s; animation-delay: 0.4s; }
+.orb-particle.p3 { width: 1.5px; height: 1.5px; left: 11px; top: 15px; animation-duration: 2.1s; animation-delay: 0.8s; }
+
+.orb-highlight {
+  position: absolute;
+  width: 9px;
+  height: 6px;
+  left: 4px;
+  top: 3px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0) 75%);
+}
+
+@keyframes orb-bloom-breathe {
+  0%, 100% { transform: scale(0.85); opacity: 0.55; }
+  50% { transform: scale(1.35); opacity: 0.9; }
+}
+
+@keyframes orb-swirl-1 {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes orb-swirl-2 {
+  to { transform: rotate(-360deg); }
+}
+
+@keyframes orb-nebula-drift {
+  0%, 100% { transform: translate(-2px, -1px) scale(1); }
+  33% { transform: translate(2px, 2px) scale(1.15); }
+  66% { transform: translate(-1px, 3px) scale(0.95); }
+}
+
+@keyframes orb-particle-float {
+  0%, 100% { transform: translate(0, 0); opacity: 0.35; }
+  50% { transform: translate(2px, -3px); opacity: 0.95; }
 }
 
 .answer-header .label {
@@ -263,6 +405,41 @@ body, html {
   border-radius: 50%;
   border: 2px solid #ff5470;
   animation: pointr-pulse-ring 1.6s ease-out infinite;
+}
+
+/* ---------- "explain:" storyboard shapes (point/box/line) ---------- */
+/* Same accent (#ff5470) as .pointer-marker above — all three are the same
+   "here's what I'm talking about" annotation family, just different shapes. */
+
+#storyboard-svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+.storyboard-box {
+  position: absolute;
+  border: 2px solid #ff5470;
+  background: rgba(255, 84, 112, 0.1);
+  border-radius: 6px;
+  pointer-events: none;
+  z-index: 1000;
+  animation: pointr-box-in 0.25s cubic-bezier(.4, 0, .2, 1);
+}
+
+@keyframes pointr-box-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.storyboard-line {
+  stroke: #ff5470;
+  stroke-width: 3;
+  stroke-linecap: round;
 }
 
 /* ---------- Region-select toolbar ---------- */

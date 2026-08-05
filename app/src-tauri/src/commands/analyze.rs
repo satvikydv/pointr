@@ -1,6 +1,5 @@
 use tauri::{AppHandle, Emitter, State};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use crate::CaptureState;
 use base64::Engine;
 use futures_util::StreamExt;
@@ -18,6 +17,21 @@ pub struct Rect {
 pub struct AnalyzeResponse {
     pub answer_text: String,
     pub pointer_target: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct StoryboardStep {
+    pub narration: String,
+    pub shape: Option<String>,
+    pub x_norm: Option<f32>,
+    pub y_norm: Option<f32>,
+    pub x2_norm: Option<f32>,
+    pub y2_norm: Option<f32>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct StoryboardResponse {
+    pub steps: Vec<StoryboardStep>,
 }
 
 /// POSTs to the backend's streaming endpoint and forwards each answer chunk
@@ -115,14 +129,21 @@ pub async fn process_crop(
     request_id: String,
     state: State<'_, Mutex<CaptureState>>,
 ) -> Result<AnalyzeResponse, String> {
-    let (monitor, image_base64, active_window_title) = {
+    let (monitor, image_base64, active_window_title, app_name, session_id, session_duration_secs) = {
         let state_lock = state.lock().unwrap();
         if state_lock.image_bytes.is_empty() {
             return Err("No image captured".into());
         }
         let monitor = state_lock.monitor.clone().unwrap();
         let image_base64 = base64::engine::general_purpose::STANDARD.encode(&state_lock.image_bytes);
-        (monitor, image_base64, state_lock.active_window_title.clone())
+        (
+            monitor,
+            image_base64,
+            state_lock.active_window_title.clone(),
+            state_lock.app_name.clone(),
+            state_lock.session_id.clone(),
+            state_lock.session_duration_secs,
+        )
     };
 
     // Calculate normalized cursor from the center of the crop
@@ -135,7 +156,6 @@ pub async fn process_crop(
     );
 
     let query_text = query.unwrap_or_else(|| "What is this?".to_string());
-    let session_id = Uuid::new_v4().to_string();
     let timestamp = chrono::Utc::now().to_rfc3339();
 
     let payload = serde_json::json!({
@@ -149,12 +169,83 @@ pub async fn process_crop(
             "height": monitor.height_px
         },
         "active_window_title": active_window_title,
+        "app_name": app_name,
+        "session_duration_secs": session_duration_secs,
         "query_text": query_text,
         "session_id": session_id,
         "timestamp": timestamp
     });
 
     post_and_stream(&app, &request_id, payload).await
+}
+
+/// "explain: <topic>" mode — non-streaming, since the client needs the whole
+/// ordered step list up front to play it back sequentially (marker + TTS per
+/// step), not a growing block of text. Reuses the same capture state as the
+/// primary direct-ask flow (current full-monitor screenshot, real cursor
+/// position) — v1 is direct-hotkey only, not wired into the region-select
+/// toolbar.
+#[tauri::command]
+pub async fn process_explain(
+    topic: String,
+    state: State<'_, Mutex<CaptureState>>,
+) -> Result<StoryboardResponse, String> {
+    let (monitor, image_base64, cursor_norm, active_window_title, app_name, session_id, session_duration_secs) = {
+        let state_lock = state.lock().unwrap();
+        if state_lock.image_bytes.is_empty() {
+            return Err("No image captured".into());
+        }
+        let monitor = state_lock.monitor.clone().unwrap();
+        let cursor_norm = state_lock
+            .cursor_norm
+            .ok_or_else(|| "No cursor position captured".to_string())?;
+        let image_base64 = base64::engine::general_purpose::STANDARD.encode(&state_lock.image_bytes);
+        (
+            monitor,
+            image_base64,
+            cursor_norm,
+            state_lock.active_window_title.clone(),
+            state_lock.app_name.clone(),
+            state_lock.session_id.clone(),
+            state_lock.session_duration_secs,
+        )
+    };
+
+    let timestamp = chrono::Utc::now().to_rfc3339();
+    let payload = serde_json::json!({
+        "screenshot_base64": image_base64,
+        "cursor_position": {
+            "x_norm": cursor_norm.0,
+            "y_norm": cursor_norm.1
+        },
+        "screen_resolution": {
+            "width": monitor.width_px,
+            "height": monitor.height_px
+        },
+        "active_window_title": active_window_title,
+        "app_name": app_name,
+        "session_duration_secs": session_duration_secs,
+        "query_text": topic,
+        "session_id": session_id,
+        "timestamp": timestamp
+    });
+
+    let client = reqwest::Client::new();
+    let res = client
+        .post("http://localhost:8000/api/analyze-explain")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("HTTP request failed: {}", e))?;
+
+    if !res.status().is_success() {
+        let err_text = res.text().await.unwrap_or_default();
+        return Err(format!("Backend error: {}", err_text));
+    }
+
+    res.json::<StoryboardResponse>()
+        .await
+        .map_err(|e| format!("Failed to parse storyboard response: {}", e))
 }
 
 /// Primary hotkey path: no rect, no crop. Sends the full monitor capture
@@ -167,7 +258,7 @@ pub async fn process_direct(
     request_id: String,
     state: State<'_, Mutex<CaptureState>>,
 ) -> Result<AnalyzeResponse, String> {
-    let (monitor, image_base64, cursor_norm, active_window_title) = {
+    let (monitor, image_base64, cursor_norm, active_window_title, app_name, session_id, session_duration_secs) = {
         let state_lock = state.lock().unwrap();
         if state_lock.image_bytes.is_empty() {
             return Err("No image captured".into());
@@ -177,13 +268,20 @@ pub async fn process_direct(
             .cursor_norm
             .ok_or_else(|| "No cursor position captured".to_string())?;
         let image_base64 = base64::engine::general_purpose::STANDARD.encode(&state_lock.image_bytes);
-        (monitor, image_base64, cursor_norm, state_lock.active_window_title.clone())
+        (
+            monitor,
+            image_base64,
+            cursor_norm,
+            state_lock.active_window_title.clone(),
+            state_lock.app_name.clone(),
+            state_lock.session_id.clone(),
+            state_lock.session_duration_secs,
+        )
     };
 
     let query_text = query
         .filter(|q| !q.trim().is_empty())
         .unwrap_or_else(|| "What is this?".to_string());
-    let session_id = Uuid::new_v4().to_string();
     let timestamp = chrono::Utc::now().to_rfc3339();
 
     let payload = serde_json::json!({
@@ -197,6 +295,8 @@ pub async fn process_direct(
             "height": monitor.height_px
         },
         "active_window_title": active_window_title,
+        "app_name": app_name,
+        "session_duration_secs": session_duration_secs,
         "query_text": query_text,
         "session_id": session_id,
         "timestamp": timestamp

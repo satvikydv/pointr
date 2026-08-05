@@ -27,6 +27,43 @@ class GeminiService:
             traceback.print_exc()
             return f"Error communicating with Gemini: {str(e)}"
 
+    def analyze_text_sync(self, prompt: str, use_search: bool = False) -> str:
+        """Text-only, blocking call — for the Celery worker, which runs
+        tasks in a plain sync context rather than an asyncio event loop.
+        `use_search` grounds the response in live Google Search results
+        (Gemini decides per-request whether a search is actually needed —
+        this just makes the tool available), for agent tasks that reference
+        anything time-sensitive or outside the model's training data.
+
+        Grounding has its own separate quota from plain generation — a
+        free-tier key can have zero of it while still having plenty of room
+        on the base model (confirmed: identical prompt succeeds without
+        `use_search`, 429s with it). Falls back to a non-grounded call on
+        that specific failure rather than surfacing an error for something
+        the base model quota would've handled fine."""
+        if not self.client:
+            return "Gemini API key not configured."
+
+        try:
+            config = None
+            if use_search:
+                config = types.GenerateContentConfig(
+                    tools=[types.Tool(google_search=types.GoogleSearch())]
+                )
+            response = self.client.models.generate_content(
+                model=settings.gemini_model,
+                contents=[prompt],
+                config=config,
+            )
+            return response.text
+        except Exception as e:
+            if use_search and "RESOURCE_EXHAUSTED" in str(e):
+                print("[gemini] search grounding quota exhausted, retrying without search")
+                return self.analyze_text_sync(prompt, use_search=False)
+            import traceback
+            traceback.print_exc()
+            return f"Error communicating with Gemini: {str(e)}"
+
     async def analyze_stream(self, image_bytes: bytes, prompt: str):
         """Yields the answer as it's generated, instead of waiting for the
         full response. Used by the streaming route so the overlay can show

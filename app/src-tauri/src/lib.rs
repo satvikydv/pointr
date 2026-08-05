@@ -10,6 +10,77 @@ pub struct CaptureState {
     pub monitor: Option<MonitorInfo>,
     pub cursor_norm: Option<(f32, f32)>,
     pub active_window_title: String,
+    pub app_name: String,
+    pub session_id: String,
+    pub session_duration_secs: f64,
+}
+
+/// One app's ongoing session: when it started, and when it was last touched
+/// (used to decide whether returning to this app resumes it or starts over).
+struct AppSession {
+    session_id: String,
+    started_at: std::time::Instant,
+    last_active_at: std::time::Instant,
+}
+
+const SESSION_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+/// Safety cap on distinct apps tracked at once — realistically dozens at
+/// most in a single run, but bounds memory if something churns through many.
+const MAX_TRACKED_APPS: usize = 50;
+
+/// Keyed by app_name, so switching away and back (e.g. Chrome -> VS Code ->
+/// Chrome) resumes the same session_id and dwell-time clock for VS Code
+/// rather than starting a fresh one — as long as it hasn't been more than
+/// SESSION_IDLE_TIMEOUT since that app was last active, in which case it's
+/// treated as stale and a new session starts. Backend builds up a short
+/// history of recent Q&A per session_id instead of treating every capture as
+/// a cold start (see session_memory.py).
+struct SessionState {
+    sessions: std::collections::HashMap<String, AppSession>,
+}
+
+impl SessionState {
+    fn new() -> Self {
+        Self {
+            sessions: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Returns (session_id, seconds since this app's session started).
+    fn resolve(&mut self, current_app_name: &str) -> (String, f64) {
+        let now = std::time::Instant::now();
+
+        let expired = match self.sessions.get(current_app_name) {
+            Some(s) => now.duration_since(s.last_active_at) > SESSION_IDLE_TIMEOUT,
+            None => true,
+        };
+
+        if expired {
+            if self.sessions.len() >= MAX_TRACKED_APPS {
+                if let Some(oldest_key) = self
+                    .sessions
+                    .iter()
+                    .min_by_key(|(_, s)| s.last_active_at)
+                    .map(|(k, _)| k.clone())
+                {
+                    self.sessions.remove(&oldest_key);
+                }
+            }
+            self.sessions.insert(
+                current_app_name.to_string(),
+                AppSession {
+                    session_id: uuid::Uuid::new_v4().to_string(),
+                    started_at: now,
+                    last_active_at: now,
+                },
+            );
+        } else if let Some(s) = self.sessions.get_mut(current_app_name) {
+            s.last_active_at = now;
+        }
+
+        let s = self.sessions.get(current_app_name).unwrap();
+        (s.session_id.clone(), s.started_at.elapsed().as_secs_f64())
+    }
 }
 
 /// Shared first step for both hotkey paths: where's the cursor, which monitor
@@ -28,19 +99,27 @@ fn capture_now() -> anyhow::Result<(Vec<u8>, MonitorInfo, (f32, f32), &'static s
 /// Secondary (region-select) hotkey path — unchanged behavior: capture the
 /// monitor, show the full-screenshot overlay, let the user drag a crop box.
 #[tauri::command]
-fn trigger_capture(app: tauri::AppHandle, state: tauri::State<'_, Mutex<CaptureState>>) -> Result<String, String> {
+fn trigger_capture(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Mutex<CaptureState>>,
+    session: tauri::State<'_, Mutex<SessionState>>,
+) -> Result<String, String> {
     let (image_bytes, monitor, cursor_norm, method_str) = capture_now()
         .map_err(|e| format!("Capture failed: {}", e))?;
     let image_bytes = capture::resize::cap_long_edge(&image_bytes)
         .map_err(|e| format!("Failed to resize capture: {}", e))?;
-    let active_window_title = capture::context::get_foreground_app_context().describe();
+    let ctx = capture::context::get_foreground_app_context();
+    let (session_id, session_duration_secs) = session.lock().unwrap().resolve(&ctx.app_name);
 
     {
         let mut state_lock = state.lock().unwrap();
         state_lock.image_bytes = image_bytes.clone();
         state_lock.monitor = Some(monitor.clone());
         state_lock.cursor_norm = Some(cursor_norm);
-        state_lock.active_window_title = active_window_title;
+        state_lock.active_window_title = ctx.describe();
+        state_lock.app_name = ctx.app_name;
+        state_lock.session_id = session_id;
+        state_lock.session_duration_secs = session_duration_secs;
     }
 
     overlay::window::show_overlay(&app, &monitor, &image_bytes)
@@ -61,13 +140,18 @@ fn trigger_capture(app: tauri::AppHandle, state: tauri::State<'_, Mutex<CaptureS
 /// Primary hotkey path: capture, burn a marker into the image at the actual
 /// cursor position, and hand off to the frontend to send it straight to the
 /// backend — no region selection in the loop.
-fn trigger_capture_direct(app: &tauri::AppHandle, state: &tauri::State<'_, Mutex<CaptureState>>) -> Result<String, String> {
+fn trigger_capture_direct(
+    app: &tauri::AppHandle,
+    state: &tauri::State<'_, Mutex<CaptureState>>,
+    session: &tauri::State<'_, Mutex<SessionState>>,
+) -> Result<String, String> {
     let (image_bytes, monitor, cursor_norm, method_str) = capture_now()
         .map_err(|e| format!("Capture failed: {}", e))?;
     // Read this now, not after the overlay is shown — once show_overlay_direct
     // focuses our own window below, GetForegroundWindow would report Pointr
     // itself instead of whatever the user was actually looking at.
-    let active_window_title = capture::context::get_foreground_app_context().describe();
+    let ctx = capture::context::get_foreground_app_context();
+    let (session_id, session_duration_secs) = session.lock().unwrap().resolve(&ctx.app_name);
 
     let cursor_px_x = (cursor_norm.0 * monitor.width_px as f32) as i64;
     let cursor_px_y = (cursor_norm.1 * monitor.height_px as f32) as i64;
@@ -85,7 +169,10 @@ fn trigger_capture_direct(app: &tauri::AppHandle, state: &tauri::State<'_, Mutex
         state_lock.image_bytes = marked_bytes.clone();
         state_lock.monitor = Some(monitor.clone());
         state_lock.cursor_norm = Some(cursor_norm);
-        state_lock.active_window_title = active_window_title;
+        state_lock.active_window_title = ctx.describe();
+        state_lock.app_name = ctx.app_name;
+        state_lock.session_id = session_id;
+        state_lock.session_duration_secs = session_duration_secs;
     }
 
     overlay::window::show_overlay_direct(app, &monitor)
@@ -158,11 +245,26 @@ pub fn run() {
             monitor: None,
             cursor_norm: None,
             active_window_title: String::new(),
+            app_name: String::new(),
+            session_id: String::new(),
+            session_duration_secs: 0.0,
         }))
+        .manage(Mutex::new(SessionState::new()))
+        .manage(commands::tts::TtsState::new())
         .invoke_handler(tauri::generate_handler![
             trigger_capture,
             commands::analyze::process_crop,
             commands::analyze::process_direct,
+            commands::analyze::process_explain,
+            commands::clipboard::read_clipboard,
+            commands::clipboard::write_clipboard,
+            commands::tts::speak_text,
+            commands::tts::stop_speech,
+            commands::settings::list_voices,
+            commands::settings::get_selected_voice,
+            commands::settings::set_selected_voice,
+            commands::settings::get_speech_enabled,
+            commands::settings::set_speech_enabled,
             enable_escape_dismiss,
             disable_escape_dismiss
         ])
@@ -183,14 +285,16 @@ pub fn run() {
                         if shortcut == &primary {
                             println!("Primary hotkey pressed — direct capture + analyze...");
                             let state = _app.state::<Mutex<CaptureState>>();
-                            match trigger_capture_direct(_app, &state) {
+                            let session = _app.state::<Mutex<SessionState>>();
+                            match trigger_capture_direct(_app, &state, &session) {
                                 Ok(res) => println!("{}", res),
                                 Err(e) => eprintln!("Direct capture error: {}", e),
                             }
                         } else if shortcut == &region_select {
                             println!("Region-select hotkey pressed — manual crop flow...");
                             let state = _app.state::<Mutex<CaptureState>>();
-                            match trigger_capture(_app.clone(), state) {
+                            let session = _app.state::<Mutex<SessionState>>();
+                            match trigger_capture(_app.clone(), state, session) {
                                 Ok(res) => println!("{}", res),
                                 Err(e) => eprintln!("Capture error: {}", e),
                             }
@@ -206,6 +310,32 @@ pub fn run() {
 
             app.global_shortcut().register(primary)?;
             app.global_shortcut().register(region_select)?;
+
+            // Tray icon: the only way to reach Settings or quit cleanly,
+            // since the overlay window itself is borderless/hidden-by-default
+            // and there was previously no exit path other than Task Manager.
+            use tauri::menu::{Menu, MenuItem};
+            use tauri::tray::TrayIconBuilder;
+
+            let settings_item = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit Pointr", true, None::<&str>)?;
+            let tray_menu = Menu::with_items(app, &[&settings_item, &quit_item])?;
+
+            TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&tray_menu)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "settings" => {
+                        if let Some(win) = app.get_webview_window("settings") {
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        }
+                    }
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .build(app)?;
+
             Ok(())
         })
         .run(tauri::generate_context!())

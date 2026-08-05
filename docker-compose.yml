@@ -14,6 +14,8 @@ services:
     build: ./backend
     command: celery -A app.worker.celery_app worker --loglevel=info
     environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.1-flash-lite}
       - REDIS_URL=redis://redis:6379/0
     depends_on: [redis]
 

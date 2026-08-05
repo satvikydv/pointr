@@ -19,6 +19,19 @@
         "visible": false,
         "alwaysOnTop": true,
         "skipTaskbar": true
+      },
+      {
+        "title": "Pointr Settings",
+        "label": "settings",
+        "url": "settings.html",
+        "width": 420,
+        "height": 380,
+        "resizable": false,
+        "visible": false,
+        "center": true,
+        "skipTaskbar": false,
+        "transparent": true,
+        "decorations": false
       }
     ],
     "security": {
