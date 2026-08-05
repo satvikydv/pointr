@@ -325,24 +325,85 @@ async function playStoryboard(steps, requestId) {
         if (requestId !== activeRequestId) return;
 
         document.getElementById('answer-text').textContent = step.narration;
-
-        const oldMarker = document.getElementById('pointer-marker');
-        if (oldMarker) oldMarker.remove();
-        if (step.x_norm != null && step.y_norm != null) {
-            const marker = document.createElement('div');
-            marker.id = 'pointer-marker';
-            marker.className = 'pointer-marker';
-            marker.style.left = (clampUnit(step.x_norm) * window.innerWidth) + 'px';
-            marker.style.top = (clampUnit(step.y_norm) * window.innerHeight) + 'px';
-            container.appendChild(marker);
-        }
+        renderStoryboardShape(step);
 
         await speakStepAndWait(step.narration);
     }
 
     if (requestId !== activeRequestId) return;
+    clearStoryboardShapes();
     if (closeTimer) clearTimeout(closeTimer);
     closeTimer = setTimeout(() => dismissOverlay(), 3000);
+}
+
+function clearStoryboardShapes() {
+    const oldMarker = document.getElementById('pointer-marker');
+    if (oldMarker) oldMarker.remove();
+    const oldBox = document.getElementById('storyboard-box');
+    if (oldBox) oldBox.remove();
+    const oldLine = document.getElementById('storyboard-line');
+    if (oldLine) oldLine.remove();
+}
+
+// Renders whichever single shape a storyboard step carries — "point" reuses
+// the same marker the normal single-answer flow already draws; "box" and
+// "line" are new (line/arrow drawn as an SVG element in #storyboard-svg,
+// since CSS alone can't do an arbitrary-angle line+arrowhead cleanly).
+function renderStoryboardShape(step) {
+    clearStoryboardShapes();
+    if (!step.shape) return;
+
+    const x1 = clampUnit(step.x_norm) * window.innerWidth;
+    const y1 = clampUnit(step.y_norm) * window.innerHeight;
+
+    if (step.shape === 'point') {
+        const marker = document.createElement('div');
+        marker.id = 'pointer-marker';
+        marker.className = 'pointer-marker';
+        marker.style.left = x1 + 'px';
+        marker.style.top = y1 + 'px';
+        container.appendChild(marker);
+        return;
+    }
+
+    if (step.x2_norm == null || step.y2_norm == null) return;
+    const x2 = clampUnit(step.x2_norm) * window.innerWidth;
+    const y2 = clampUnit(step.y2_norm) * window.innerHeight;
+
+    if (step.shape === 'box') {
+        const box = document.createElement('div');
+        box.id = 'storyboard-box';
+        box.className = 'storyboard-box';
+        box.style.left = Math.min(x1, x2) + 'px';
+        box.style.top = Math.min(y1, y2) + 'px';
+        box.style.width = Math.abs(x2 - x1) + 'px';
+        box.style.height = Math.abs(y2 - y1) + 'px';
+        container.appendChild(box);
+    } else if (step.shape === 'line') {
+        const svg = document.getElementById('storyboard-svg');
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.id = 'storyboard-line';
+        line.classList.add('storyboard-line');
+        line.setAttribute('x1', x1);
+        line.setAttribute('y1', y1);
+        line.setAttribute('x2', x2);
+        line.setAttribute('y2', y2);
+        line.setAttribute('marker-end', 'url(#pointr-arrowhead)');
+        svg.appendChild(line);
+
+        // Draw-on animation: start with the stroke fully "retracted" via
+        // dash-offset, then animate it to 0 — a plain CSS transition can't
+        // animate SVG line geometry directly, but stroke-dash* is just a
+        // regular animatable property.
+        const length = Math.hypot(x2 - x1, y2 - y1);
+        line.style.strokeDasharray = String(length);
+        line.style.strokeDashoffset = String(length);
+        line.getBoundingClientRect(); // force layout so the next line isn't coalesced into this one
+        line.style.transition = 'stroke-dashoffset 0.35s ease';
+        requestAnimationFrame(() => {
+            line.style.strokeDashoffset = '0';
+        });
+    }
 }
 
 // Resolves once this step's narration has finished (or a fixed pause, if
@@ -599,8 +660,7 @@ async function dismissOverlay() {
 
     const tooltip = document.getElementById('answer-tooltip');
     if (tooltip) tooltip.remove();
-    const marker = document.getElementById('pointer-marker');
-    if (marker) marker.remove();
+    clearStoryboardShapes();
     loadingIndicator.classList.add('hidden');
     if (errorTimer) { clearTimeout(errorTimer); errorTimer = null; }
     errorToast.classList.add('hidden');

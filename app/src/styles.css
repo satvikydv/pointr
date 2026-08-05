@@ -407,6 +407,41 @@ body, html {
   animation: pointr-pulse-ring 1.6s ease-out infinite;
 }
 
+/* ---------- "explain:" storyboard shapes (point/box/line) ---------- */
+/* Same accent (#ff5470) as .pointer-marker above — all three are the same
+   "here's what I'm talking about" annotation family, just different shapes. */
+
+#storyboard-svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+.storyboard-box {
+  position: absolute;
+  border: 2px solid #ff5470;
+  background: rgba(255, 84, 112, 0.1);
+  border-radius: 6px;
+  pointer-events: none;
+  z-index: 1000;
+  animation: pointr-box-in 0.25s cubic-bezier(.4, 0, .2, 1);
+}
+
+@keyframes pointr-box-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.storyboard-line {
+  stroke: #ff5470;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
 /* ---------- Region-select toolbar ---------- */
 
 .toolbar {

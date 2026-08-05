@@ -22,8 +22,11 @@ pub struct AnalyzeResponse {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct StoryboardStep {
     pub narration: String,
+    pub shape: Option<String>,
     pub x_norm: Option<f32>,
     pub y_norm: Option<f32>,
+    pub x2_norm: Option<f32>,
+    pub y2_norm: Option<f32>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

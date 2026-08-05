@@ -223,14 +223,19 @@ async def analyze_explain(
         "textbook explanation that ignores what's actually shown. Only explain purely abstractly, with no "
         "coordinates at all, if the screen truly has nothing relevant to this topic.\n"
         "Break the explanation into 3 to 6 short steps, each one sentence suitable for being spoken aloud. "
-        "For each step, include a \"point\" pointing at the exact spot on screen that step is talking about, "
-        "whenever there's a relevant visual to point at — omit \"point\" only for a step that's genuinely "
-        "about a general concept with nothing on screen to point at. Use your normal point format: "
-        "[y, x] normalized to 0-1000, y before x.\n"
+        "For each step, add ONE visual annotation if it helps — pick whichever fits best:\n"
+        '  - "point": [y, x] — a single spot, e.g. a specific label or element\n'
+        '  - "box_2d": [ymin, xmin, ymax, xmax] — a region/area, e.g. a whole shape, a group, a UI panel\n'
+        '  - "line": [[y1, x1], [y2, x2]] — connects/indicates a relationship between two spots, e.g. a side '
+        "of a triangle, an edge, drawn as an arrow from the first point to the second\n"
+        "All coordinates normalized to 0-1000, y before x, using your normal grounding format. Omit all three "
+        "for a step that's genuinely about a general concept with nothing on screen to annotate.\n"
         "Respond with ONLY this JSON, no markdown fences, no extra commentary:\n"
         "{\n"
         '  "steps": [\n'
         '    {"narration": "one short spoken sentence", "point": [300, 400]},\n'
+        '    {"narration": "another step", "box_2d": [200, 150, 500, 600]},\n'
+        '    {"narration": "another step", "line": [[300, 200], [450, 500]]},\n'
         '    {"narration": "a step with nothing to point at"}\n'
         "  ]\n"
         "}"
@@ -246,18 +251,45 @@ async def analyze_explain(
             narration = raw_step.get("narration", "").strip()
             if not narration:
                 continue
-            # Gemini's actual trained point-grounding format is [y, x] on a
-            # 0-1000 scale (see Google's "Spatial understanding" docs) — not
-            # the x-first/0.0-1.0 scheme originally guessed here, which is
-            # almost certainly why every marker landed in the same corner
-            # regardless of image content (asking for a format the model
-            # wasn't trained to produce, rather than one it actually knows).
+
+            # Gemini's actual trained grounding formats are [y, x] point and
+            # [ymin, xmin, ymax, xmax] box_2d, both on a 0-1000 scale (see
+            # Google's "Spatial understanding" docs) — not the x-first/
+            # 0.0-1.0 scheme originally guessed for point, which is almost
+            # certainly why every marker landed in the same corner regardless
+            # of image content (asking for a format the model wasn't trained
+            # to produce, rather than one it actually knows). "line" isn't a
+            # trained primitive at all — it's just two points reusing the
+            # same point mechanism, so expect it to be somewhat less
+            # reliable than point/box.
             point = raw_step.get("point")
-            has_point = isinstance(point, list) and len(point) == 2
+            box = raw_step.get("box_2d")
+            line = raw_step.get("line")
+
+            shape = None
+            x_norm = y_norm = x2_norm = y2_norm = None
+
+            if isinstance(box, list) and len(box) == 4:
+                shape = "box"
+                ymin, xmin, ymax, xmax = box
+                x_norm, y_norm = _clamp_unit(xmin / 1000), _clamp_unit(ymin / 1000)
+                x2_norm, y2_norm = _clamp_unit(xmax / 1000), _clamp_unit(ymax / 1000)
+            elif isinstance(line, list) and len(line) == 2:
+                shape = "line"
+                (y1, x1), (y2, x2) = line
+                x_norm, y_norm = _clamp_unit(x1 / 1000), _clamp_unit(y1 / 1000)
+                x2_norm, y2_norm = _clamp_unit(x2 / 1000), _clamp_unit(y2 / 1000)
+            elif isinstance(point, list) and len(point) == 2:
+                shape = "point"
+                x_norm, y_norm = _clamp_unit(point[1] / 1000), _clamp_unit(point[0] / 1000)
+
             steps.append(StoryboardStep(
                 narration=narration,
-                x_norm=_clamp_unit(point[1] / 1000) if has_point else None,
-                y_norm=_clamp_unit(point[0] / 1000) if has_point else None,
+                shape=shape,
+                x_norm=x_norm,
+                y_norm=y_norm,
+                x2_norm=x2_norm,
+                y2_norm=y2_norm,
             ))
 
         if not steps:

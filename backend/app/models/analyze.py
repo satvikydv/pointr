@@ -39,13 +39,18 @@ class AnalyzeResponse(BaseModel):
 
 class StoryboardStep(BaseModel):
     narration: str
-    # Deliberately just a single point per step (reusing the same marker the
-    # normal flow already renders), not arrows/boxes/regions — asking the
-    # model for one coordinate pair is already the failure class that's bitten
-    # this project twice (see pointer_target clamping); a multi-shape-per-step
-    # contract would multiply that risk for a first version.
+    # "point" | "box" | "line" | None. point uses only x_norm/y_norm; box and
+    # line use x_norm/y_norm as the first corner/endpoint and x2_norm/y2_norm
+    # as the second — same two-coordinate-pair shape either way, just
+    # rendered differently client-side. Still capped at 2 points per step
+    # (matching Gemini's own trained point/box_2d grounding primitives,
+    # which top out at 2 corners for a box) rather than opening up arbitrary
+    # N-point polygons.
+    shape: Optional[str] = None
     x_norm: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     y_norm: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    x2_norm: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    y2_norm: Optional[float] = Field(default=None, ge=0.0, le=1.0)
 
 class StoryboardResponse(BaseModel):
     steps: list[StoryboardStep]
