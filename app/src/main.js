@@ -247,13 +247,30 @@ async function runDirectAnalysis(queryText) {
     const appWindow = Window.getCurrent();
 
     const agentMatch = queryText.trim().match(/^agent:\s*(.*)$/i);
+    const explainMatch = queryText.trim().match(/^explain:\s*(.*)$/i);
 
-    loadingLabel.textContent = agentMatch ? 'Queueing…' : 'Thinking…';
+    loadingLabel.textContent = agentMatch ? 'Queueing…' : (explainMatch ? 'Preparing…' : 'Thinking…');
     loadingIndicator.classList.remove('hidden');
     await appWindow.setIgnoreCursorEvents(true);
     await enableEscapeDismiss();
 
     try {
+        if (explainMatch) {
+            const topic = explainMatch[1] || queryText;
+            const storyboard = await invoke('process_explain', { topic });
+            console.log('[explain] storyboard steps:', JSON.stringify(storyboard.steps, null, 2));
+
+            if (requestId !== activeRequestId) return; // superseded by a later press
+
+            loadingIndicator.classList.add('hidden');
+            await appWindow.show();
+            await appWindow.setAlwaysOnTop(true);
+            await appWindow.setFocus();
+
+            await playStoryboard(storyboard.steps, requestId);
+            return;
+        }
+
         const response = agentMatch
             ? await runAgentTask(agentMatch[1] || "Analyze this for agent actions")
             : await invoke('process_direct', {
@@ -292,6 +309,57 @@ async function runDirectAnalysis(queryText) {
             await appWindow.setIgnoreCursorEvents(false);
         });
     }
+}
+
+// "explain: <topic>" storyboard playback — sequentially shows each step's
+// narration + optional point marker, waiting for that step's narration to
+// actually finish speaking (real tts-ended event, or the fallback estimate —
+// see startSpeakingIndicator) before advancing, rather than a fixed delay per
+// step. `requestId` guards against a dismiss/new-request superseding this
+// mid-playback (checked between every step, not just at the start).
+async function playStoryboard(steps, requestId) {
+    getOrCreateTooltip();
+    document.getElementById('answer-caret').classList.add('hidden');
+
+    for (const step of steps) {
+        if (requestId !== activeRequestId) return;
+
+        document.getElementById('answer-text').textContent = step.narration;
+
+        const oldMarker = document.getElementById('pointer-marker');
+        if (oldMarker) oldMarker.remove();
+        if (step.x_norm != null && step.y_norm != null) {
+            const marker = document.createElement('div');
+            marker.id = 'pointer-marker';
+            marker.className = 'pointer-marker';
+            marker.style.left = (clampUnit(step.x_norm) * window.innerWidth) + 'px';
+            marker.style.top = (clampUnit(step.y_norm) * window.innerHeight) + 'px';
+            container.appendChild(marker);
+        }
+
+        await speakStepAndWait(step.narration);
+    }
+
+    if (requestId !== activeRequestId) return;
+    if (closeTimer) clearTimeout(closeTimer);
+    closeTimer = setTimeout(() => dismissOverlay(), 3000);
+}
+
+// Resolves once this step's narration has finished (or a fixed pause, if
+// narration is off/fails) — the thing playStoryboard awaits between steps.
+function speakStepAndWait(text) {
+    return new Promise((resolve) => {
+        invoke('get_speech_enabled')
+            .then(async (enabled) => {
+                if (!enabled) {
+                    setTimeout(resolve, 1800);
+                    return;
+                }
+                await startSpeakingIndicator(text, resolve);
+                invoke('speak_text', { text, voiceId: null }).catch(() => resolve());
+            })
+            .catch(() => setTimeout(resolve, 1800));
+    });
 }
 
 function resetSelection() {

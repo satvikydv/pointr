@@ -36,3 +36,17 @@ class AnalyzeResponse(BaseModel):
     answer_text: str
     pointer_target: Optional[PointerTarget] = None
     session_id: str
+
+class StoryboardStep(BaseModel):
+    narration: str
+    # Deliberately just a single point per step (reusing the same marker the
+    # normal flow already renders), not arrows/boxes/regions — asking the
+    # model for one coordinate pair is already the failure class that's bitten
+    # this project twice (see pointer_target clamping); a multi-shape-per-step
+    # contract would multiply that risk for a first version.
+    x_norm: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    y_norm: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+
+class StoryboardResponse(BaseModel):
+    steps: list[StoryboardStep]
+    session_id: str

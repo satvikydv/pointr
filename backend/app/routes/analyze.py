@@ -1,8 +1,9 @@
 import base64
 import json
+import re
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from app.models.analyze import AnalyzeRequest, AnalyzeResponse, PointerTarget
+from app.models.analyze import AnalyzeRequest, AnalyzeResponse, PointerTarget, StoryboardResponse, StoryboardStep
 from app.dependencies import get_gemini_service
 from app.services.gemini import GeminiService
 from app.services.session_memory import build_session_context_block, record_exchange
@@ -193,3 +194,83 @@ async def analyze_screen_stream(
         _stream_analyze_events(request, gemini),
         media_type="application/x-ndjson",
     )
+
+
+@router.post("/analyze-explain", response_model=StoryboardResponse)
+async def analyze_explain(
+    request: AnalyzeRequest,
+    gemini: GeminiService = Depends(get_gemini_service)
+):
+    """'explain: <topic>' mode — a short multi-step walkthrough (narration +
+    optional point-at-marker per step) instead of one answer, played back
+    sequentially by the client with TTS between steps. Non-streaming: the
+    client needs the whole step list up front to play it back in order."""
+    try:
+        image_bytes = base64.b64decode(request.screenshot_base64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 image")
+
+    session_context = build_session_context_block(request)
+
+    prompt = (
+        f"Active window (reported by the OS, trust it over anything you infer from the image): '{request.active_window_title}'. "
+        + (f"{session_context}\n" if session_context else "")
+        + f"The user wants a short step-by-step visual walkthrough explaining: '{request.query_text}'. "
+        "First, actually look at the screenshot: is there a diagram, figure, chart, piece of UI, or document "
+        "on screen that relates to this topic, even loosely? If there is ANY relevant visual on screen, you "
+        "MUST use it — walk through it directly (e.g. \"here's the hypotenuse\", \"this is the middle element\") "
+        "and point at the specific part you're talking about in most steps, rather than giving a generic "
+        "textbook explanation that ignores what's actually shown. Only explain purely abstractly, with no "
+        "coordinates at all, if the screen truly has nothing relevant to this topic.\n"
+        "Break the explanation into 3 to 6 short steps, each one sentence suitable for being spoken aloud. "
+        "For each step, include a \"point\" pointing at the exact spot on screen that step is talking about, "
+        "whenever there's a relevant visual to point at — omit \"point\" only for a step that's genuinely "
+        "about a general concept with nothing on screen to point at. Use your normal point format: "
+        "[y, x] normalized to 0-1000, y before x.\n"
+        "Respond with ONLY this JSON, no markdown fences, no extra commentary:\n"
+        "{\n"
+        '  "steps": [\n'
+        '    {"narration": "one short spoken sentence", "point": [300, 400]},\n'
+        '    {"narration": "a step with nothing to point at"}\n'
+        "  ]\n"
+        "}"
+    )
+
+    try:
+        result_text = await gemini.analyze(image_bytes, prompt)
+        cleaned = re.sub(r'```(?:json)?\n?', '', result_text, flags=re.IGNORECASE).strip()
+        parsed = json.loads(cleaned)
+
+        steps = []
+        for raw_step in parsed.get("steps", []):
+            narration = raw_step.get("narration", "").strip()
+            if not narration:
+                continue
+            # Gemini's actual trained point-grounding format is [y, x] on a
+            # 0-1000 scale (see Google's "Spatial understanding" docs) — not
+            # the x-first/0.0-1.0 scheme originally guessed here, which is
+            # almost certainly why every marker landed in the same corner
+            # regardless of image content (asking for a format the model
+            # wasn't trained to produce, rather than one it actually knows).
+            point = raw_step.get("point")
+            has_point = isinstance(point, list) and len(point) == 2
+            steps.append(StoryboardStep(
+                narration=narration,
+                x_norm=_clamp_unit(point[1] / 1000) if has_point else None,
+                y_norm=_clamp_unit(point[0] / 1000) if has_point else None,
+            ))
+
+        if not steps:
+            steps = [StoryboardStep(narration="Sorry, I couldn't put together an explanation for that.")]
+
+        record_exchange(request.session_id, f"explain: {request.query_text}", " ".join(s.narration for s in steps))
+
+        return StoryboardResponse(steps=steps, session_id=request.session_id)
+
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        return StoryboardResponse(
+            steps=[StoryboardStep(narration="Sorry, something went wrong putting that explanation together.")],
+            session_id=request.session_id,
+        )

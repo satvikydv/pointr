@@ -19,6 +19,18 @@ pub struct AnalyzeResponse {
     pub pointer_target: Option<serde_json::Value>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct StoryboardStep {
+    pub narration: String,
+    pub x_norm: Option<f32>,
+    pub y_norm: Option<f32>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct StoryboardResponse {
+    pub steps: Vec<StoryboardStep>,
+}
+
 /// POSTs to the backend's streaming endpoint and forwards each answer chunk
 /// to the frontend as it arrives (event `analyze-stream-chunk`, tagged with
 /// `request_id` so a stale/superseded request's chunks can be told apart
@@ -162,6 +174,75 @@ pub async fn process_crop(
     });
 
     post_and_stream(&app, &request_id, payload).await
+}
+
+/// "explain: <topic>" mode — non-streaming, since the client needs the whole
+/// ordered step list up front to play it back sequentially (marker + TTS per
+/// step), not a growing block of text. Reuses the same capture state as the
+/// primary direct-ask flow (current full-monitor screenshot, real cursor
+/// position) — v1 is direct-hotkey only, not wired into the region-select
+/// toolbar.
+#[tauri::command]
+pub async fn process_explain(
+    topic: String,
+    state: State<'_, Mutex<CaptureState>>,
+) -> Result<StoryboardResponse, String> {
+    let (monitor, image_base64, cursor_norm, active_window_title, app_name, session_id, session_duration_secs) = {
+        let state_lock = state.lock().unwrap();
+        if state_lock.image_bytes.is_empty() {
+            return Err("No image captured".into());
+        }
+        let monitor = state_lock.monitor.clone().unwrap();
+        let cursor_norm = state_lock
+            .cursor_norm
+            .ok_or_else(|| "No cursor position captured".to_string())?;
+        let image_base64 = base64::engine::general_purpose::STANDARD.encode(&state_lock.image_bytes);
+        (
+            monitor,
+            image_base64,
+            cursor_norm,
+            state_lock.active_window_title.clone(),
+            state_lock.app_name.clone(),
+            state_lock.session_id.clone(),
+            state_lock.session_duration_secs,
+        )
+    };
+
+    let timestamp = chrono::Utc::now().to_rfc3339();
+    let payload = serde_json::json!({
+        "screenshot_base64": image_base64,
+        "cursor_position": {
+            "x_norm": cursor_norm.0,
+            "y_norm": cursor_norm.1
+        },
+        "screen_resolution": {
+            "width": monitor.width_px,
+            "height": monitor.height_px
+        },
+        "active_window_title": active_window_title,
+        "app_name": app_name,
+        "session_duration_secs": session_duration_secs,
+        "query_text": topic,
+        "session_id": session_id,
+        "timestamp": timestamp
+    });
+
+    let client = reqwest::Client::new();
+    let res = client
+        .post("http://localhost:8000/api/analyze-explain")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("HTTP request failed: {}", e))?;
+
+    if !res.status().is_success() {
+        let err_text = res.text().await.unwrap_or_default();
+        return Err(format!("Backend error: {}", err_text));
+    }
+
+    res.json::<StoryboardResponse>()
+        .await
+        .map_err(|e| format!("Failed to parse storyboard response: {}", e))
 }
 
 /// Primary hotkey path: no rect, no crop. Sends the full monitor capture
