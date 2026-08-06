@@ -141,6 +141,20 @@ body, html {
   color: rgba(255, 255, 255, 0.42);
 }
 
+.action-confirm-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.45);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.action-confirm-text {
+  font-size: 14px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.92);
+}
+
 /* ---------- Loading / thinking indicator ---------- */
 
 .loading-indicator {

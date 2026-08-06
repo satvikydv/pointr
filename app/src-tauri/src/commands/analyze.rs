@@ -34,6 +34,20 @@ pub struct StoryboardResponse {
     pub steps: Vec<StoryboardStep>,
 }
 
+/// The `agent:` flow POSTs straight from JS via `fetch`, not through a Rust
+/// command like process_direct/process_crop, so it has no other way to reach
+/// the current capture — this hands it over as base64 the same way those
+/// commands already encode it inline. Empty string (not an error) if nothing's
+/// been captured yet, since not every agent task needs to see the screen.
+#[tauri::command]
+pub fn get_current_screenshot_base64(state: State<'_, Mutex<CaptureState>>) -> Result<String, String> {
+    let state_lock = state.lock().unwrap();
+    if state_lock.image_bytes.is_empty() {
+        return Ok(String::new());
+    }
+    Ok(base64::engine::general_purpose::STANDARD.encode(&state_lock.image_bytes))
+}
+
 /// POSTs to the backend's streaming endpoint and forwards each answer chunk
 /// to the frontend as it arrives (event `analyze-stream-chunk`, tagged with
 /// `request_id` so a stale/superseded request's chunks can be told apart

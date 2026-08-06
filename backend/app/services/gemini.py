@@ -64,6 +64,35 @@ class GeminiService:
             traceback.print_exc()
             return f"Error communicating with Gemini: {str(e)}"
 
+    def analyze_sync(self, image_bytes: bytes, prompt: str, use_search: bool = False) -> str:
+        """Vision-capable blocking call — for the Celery worker (agent tasks),
+        which needs to see the screen too (e.g. "draft a reply to the message
+        on screen") but runs in a plain sync context like analyze_text_sync.
+        Same grounding-quota fallback as analyze_text_sync."""
+        if not self.client:
+            return "Gemini API key not configured."
+
+        try:
+            config = None
+            if use_search:
+                config = types.GenerateContentConfig(
+                    tools=[types.Tool(google_search=types.GoogleSearch())]
+                )
+            image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/png")
+            response = self.client.models.generate_content(
+                model=settings.gemini_model,
+                contents=[prompt, image_part],
+                config=config,
+            )
+            return response.text
+        except Exception as e:
+            if use_search and "RESOURCE_EXHAUSTED" in str(e):
+                print("[gemini] search grounding quota exhausted, retrying without search")
+                return self.analyze_sync(image_bytes, prompt, use_search=False)
+            import traceback
+            traceback.print_exc()
+            return f"Error communicating with Gemini: {str(e)}"
+
     async def analyze_stream(self, image_bytes: bytes, prompt: str):
         """Yields the answer as it's generated, instead of waiting for the
         full response. Used by the streaming route so the overlay can show

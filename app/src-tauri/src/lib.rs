@@ -13,6 +13,12 @@ pub struct CaptureState {
     pub app_name: String,
     pub session_id: String,
     pub session_duration_secs: f64,
+    /// HWND of the window that was foreground at capture time — restored
+    /// before an agent action types into "the focused field", since by
+    /// execution time Pointr's own window has OS focus instead. See
+    /// capture::context::AppContext::hwnd for why this needs to be captured
+    /// this early rather than looked up fresh at execution time.
+    pub target_hwnd: isize,
 }
 
 /// One app's ongoing session: when it started, and when it was last touched
@@ -120,6 +126,7 @@ fn trigger_capture(
         state_lock.app_name = ctx.app_name;
         state_lock.session_id = session_id;
         state_lock.session_duration_secs = session_duration_secs;
+        state_lock.target_hwnd = ctx.hwnd;
     }
 
     overlay::window::show_overlay(&app, &monitor, &image_bytes)
@@ -173,6 +180,7 @@ fn trigger_capture_direct(
         state_lock.app_name = ctx.app_name;
         state_lock.session_id = session_id;
         state_lock.session_duration_secs = session_duration_secs;
+        state_lock.target_hwnd = ctx.hwnd;
     }
 
     overlay::window::show_overlay_direct(app, &monitor)
@@ -248,6 +256,7 @@ pub fn run() {
             app_name: String::new(),
             session_id: String::new(),
             session_duration_secs: 0.0,
+            target_hwnd: 0,
         }))
         .manage(Mutex::new(SessionState::new()))
         .manage(commands::tts::TtsState::new())
@@ -256,6 +265,7 @@ pub fn run() {
             commands::analyze::process_crop,
             commands::analyze::process_direct,
             commands::analyze::process_explain,
+            commands::analyze::get_current_screenshot_base64,
             commands::clipboard::read_clipboard,
             commands::clipboard::write_clipboard,
             commands::tts::speak_text,
@@ -265,6 +275,8 @@ pub fn run() {
             commands::settings::set_selected_voice,
             commands::settings::get_speech_enabled,
             commands::settings::set_speech_enabled,
+            commands::actions::execute_type_text,
+            commands::actions::execute_open_app,
             enable_escape_dismiss,
             disable_escape_dismiss
         ])

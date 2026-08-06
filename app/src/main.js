@@ -297,6 +297,9 @@ async function runDirectAnalysis(queryText) {
         await appWindow.setAlwaysOnTop(true);
         await appWindow.setFocus();
 
+        await confirmProposedActionIfAny(response.proposed_action);
+        if (requestId !== activeRequestId) return; // could've been superseded during the confirm wait
+
         const rect = { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
         renderResponse(response, rect);
     } catch (error) {
@@ -611,13 +614,24 @@ async function runAgentTask(taskDescription) {
         console.error("[agent] Failed to read clipboard:", e);
     }
 
+    // Without this, agent tasks were text-only and had nothing to look at —
+    // "reply to the message on screen" fell back to clipboard content as the
+    // only available context, since it was the only thing there was.
+    let screenshotBase64 = "";
+    try {
+        screenshotBase64 = await invoke('get_current_screenshot_base64');
+    } catch (e) {
+        console.error("[agent] Failed to read current screenshot:", e);
+    }
+
     const postRes = await fetch("http://localhost:8000/api/agent/task", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             task_description: taskDescription,
             session_id: sessionId,
-            clipboard_text: clipboardText
+            clipboard_text: clipboardText,
+            screenshot_base64: screenshotBase64
         })
     });
     const { task_id } = await postRes.json();
@@ -639,7 +653,8 @@ async function runAgentTask(taskDescription) {
             }
             return {
                 answer_text: statusData.result.result,
-                pointer_target: statusData.result.pointer_target
+                pointer_target: statusData.result.pointer_target,
+                proposed_action: statusData.result.proposed_action || null
             };
         } else if (statusData.status === "FAILURE") {
             throw new Error("Task failed: " + statusData.result);
@@ -647,6 +662,59 @@ async function runAgentTask(taskDescription) {
     }
 
     throw new Error(`Agent task timed out after ${AGENT_POLL_MAX_ATTEMPTS * AGENT_POLL_INTERVAL_MS / 1000}s`);
+}
+
+// Gate before any agent-proposed desktop action (type_text/open_app)
+// actually runs — shows the model's plain-language description and waits
+// for a real keypress. Window goes interactive for this (Enter/Esc via a
+// plain DOM listener), same as direct-query-box, since every other overlay
+// state is click-through and a clickable Confirm/Cancel button would have
+// the exact same "can never be clicked" problem already hit elsewhere.
+// No-op if there's no proposed action (the common case).
+async function confirmProposedActionIfAny(action) {
+    if (!action) return;
+
+    const appWindow = Window.getCurrent();
+    const box = document.getElementById('action-confirm-box');
+    document.getElementById('action-confirm-text').textContent = action.description;
+
+    await appWindow.setIgnoreCursorEvents(false);
+    await appWindow.setFocus();
+    box.classList.remove('hidden');
+
+    const confirmed = await new Promise((resolve) => {
+        const onKey = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                document.removeEventListener('keydown', onKey);
+                resolve(true);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                document.removeEventListener('keydown', onKey);
+                resolve(false);
+            }
+        };
+        document.addEventListener('keydown', onKey);
+    });
+
+    box.classList.add('hidden');
+    // Restore click-through — every other answer-display state runs this
+    // way, so the normal renderResponse() flow that follows stays consistent
+    // whether or not an action ran here.
+    await appWindow.setIgnoreCursorEvents(true);
+
+    if (!confirmed) return;
+
+    try {
+        if (action.action_type === 'type_text') {
+            await invoke('execute_type_text', { text: action.text });
+        } else if (action.action_type === 'open_app') {
+            await invoke('execute_open_app', { appName: action.app_name });
+        }
+    } catch (e) {
+        console.error('Action execution failed:', e);
+        showError(`Action failed: ${e}`);
+    }
 }
 
 btnSubmit.addEventListener('click', async () => {
@@ -692,6 +760,9 @@ btnSubmit.addEventListener('click', async () => {
         await appWindow.show();
         await appWindow.setFocus();
         await enableEscapeDismiss();
+
+        await confirmProposedActionIfAny(response.proposed_action);
+        if (requestId !== activeRequestId) return; // could've been superseded during the confirm wait
 
         renderResponse(response, rect);
     } catch (error) {

@@ -66,6 +66,16 @@
         <div id="error-message" class="error-message"></div>
         <div id="error-close" class="error-close">&times;</div>
       </div>
+
+      <!-- Agent proposed-action confirm prompt — window goes interactive for
+           this, same as direct-query-box, since the confirm has to be a real
+           keypress (Enter/Esc), not a click (window is click-through
+           everywhere else, same reason every other close button was dropped). -->
+      <div id="action-confirm-box" class="direct-query-box action-confirm-box hidden">
+        <div class="action-confirm-label">Pointr wants to:</div>
+        <div id="action-confirm-text" class="action-confirm-text"></div>
+        <div class="query-hint">Enter to confirm &middot; Esc to cancel</div>
+      </div>
     </div>
 
     <script type="module" src="/main.js"></script>
