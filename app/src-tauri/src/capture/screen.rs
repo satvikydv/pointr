@@ -10,13 +10,17 @@ pub enum CaptureMethod {
     Gdi,
 }
 
-pub fn capture_monitor(monitor: &MonitorInfo) -> anyhow::Result<(Vec<u8>, CaptureMethod)> {
+/// Returns the raw decoded frame, not PNG bytes — callers (marker burn-in,
+/// resize) used to each decode/re-encode PNG themselves, tripling the cost of
+/// an already-expensive operation in debug builds. Encode to PNG exactly once,
+/// after every pixel-level step is done (see `resize::encode_png`).
+pub fn capture_monitor(monitor: &MonitorInfo) -> anyhow::Result<(RgbaImage, CaptureMethod)> {
     match capture_wgc(monitor) {
-        Ok(bytes) => Ok((bytes, CaptureMethod::Wgc)),
+        Ok(img) => Ok((img, CaptureMethod::Wgc)),
         Err(e) => {
             tracing::warn!(error = %e, "WGC capture failed, falling back to GDI BitBlt");
-            let bytes = capture_gdi(monitor)?;
-            Ok((bytes, CaptureMethod::Gdi))
+            let img = capture_gdi(monitor)?;
+            Ok((img, CaptureMethod::Gdi))
         }
     }
 }
@@ -25,7 +29,7 @@ pub fn capture_monitor(monitor: &MonitorInfo) -> anyhow::Result<(Vec<u8>, Captur
 // WGC (Windows Graphics Capture) Path
 // ---------------------------------------------------------
 
-fn capture_wgc(_monitor: &MonitorInfo) -> anyhow::Result<Vec<u8>> {
+fn capture_wgc(_monitor: &MonitorInfo) -> anyhow::Result<RgbaImage> {
     // WGC implementation deferred. Using GDI fallback for MVP.
     Err(anyhow::anyhow!("WGC API usage needs refinement"))
 }
@@ -34,7 +38,7 @@ fn capture_wgc(_monitor: &MonitorInfo) -> anyhow::Result<Vec<u8>> {
 // GDI (BitBlt) Fallback Path
 // ---------------------------------------------------------
 
-fn capture_gdi(monitor: &MonitorInfo) -> anyhow::Result<Vec<u8>> {
+fn capture_gdi(monitor: &MonitorInfo) -> anyhow::Result<RgbaImage> {
     unsafe {
         let hwnd = windows::Win32::Foundation::HWND(std::ptr::null_mut()); // Desktop window
         let hdc_screen = GetDC(hwnd);
@@ -123,9 +127,6 @@ fn capture_gdi(monitor: &MonitorInfo) -> anyhow::Result<Vec<u8>> {
         let img: RgbaImage = ImageBuffer::from_raw(monitor.width_px, monitor.height_px, pixels)
             .ok_or_else(|| anyhow::anyhow!("Failed to create image buffer"))?;
 
-        let mut buf = std::io::Cursor::new(Vec::new());
-        img.write_to(&mut buf, image::ImageFormat::Png)?;
-
-        Ok(buf.into_inner())
+        Ok(img)
     }
 }

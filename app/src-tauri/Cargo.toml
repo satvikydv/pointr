@@ -73,3 +73,12 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# `image`/`png`/`miniz_oxide` are drastically slower unoptimized — PNG
+# encode/decode of a full monitor screenshot went from ~9.5s combined down to
+# a fraction of that once these compiled optimized, even in an otherwise
+# unoptimized `tauri dev` build. Only affects dependency code, not this
+# crate's own — the edit/compile/run loop for pointr's own source is
+# unaffected, this just makes the one hot path fast too.
+[profile.dev.package."*"]
+opt-level = 2

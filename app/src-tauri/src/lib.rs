@@ -90,16 +90,17 @@ impl SessionState {
 }
 
 /// Shared first step for both hotkey paths: where's the cursor, which monitor
-/// is it on, and what does that monitor look like right now.
-fn capture_now() -> anyhow::Result<(Vec<u8>, MonitorInfo, (f32, f32), &'static str)> {
+/// is it on, and what does that monitor look like right now. Returns the raw
+/// decoded frame, not PNG bytes — see `capture::screen::capture_monitor`.
+fn capture_now() -> anyhow::Result<(image::RgbaImage, MonitorInfo, (f32, f32), &'static str)> {
     let (pos, monitor) = capture::cursor::get_cursor_and_monitor()?;
-    let (image_bytes, method) = capture::screen::capture_monitor(&monitor)?;
+    let (img, method) = capture::screen::capture_monitor(&monitor)?;
     let method_str = match method {
         capture::screen::CaptureMethod::Wgc => "WGC",
         capture::screen::CaptureMethod::Gdi => "GDI",
     };
     let coords = capture::coords::normalize_cursor(pos.x, pos.y, &monitor);
-    Ok((image_bytes, monitor, (coords.x_norm, coords.y_norm), method_str))
+    Ok((img, monitor, (coords.x_norm, coords.y_norm), method_str))
 }
 
 /// Secondary (region-select) hotkey path — unchanged behavior: capture the
@@ -110,10 +111,11 @@ fn trigger_capture(
     state: tauri::State<'_, Mutex<CaptureState>>,
     session: tauri::State<'_, Mutex<SessionState>>,
 ) -> Result<String, String> {
-    let (image_bytes, monitor, cursor_norm, method_str) = capture_now()
+    let (img, monitor, cursor_norm, method_str) = capture_now()
         .map_err(|e| format!("Capture failed: {}", e))?;
-    let image_bytes = capture::resize::cap_long_edge(&image_bytes)
-        .map_err(|e| format!("Failed to resize capture: {}", e))?;
+    let resized = capture::resize::cap_long_edge(&img);
+    let image_bytes = capture::resize::encode_png(&resized)
+        .map_err(|e| format!("Failed to encode capture: {}", e))?;
     let ctx = capture::context::get_foreground_app_context();
     let (session_id, session_duration_secs) = session.lock().unwrap().resolve(&ctx.app_name);
 
@@ -152,7 +154,7 @@ fn trigger_capture_direct(
     state: &tauri::State<'_, Mutex<CaptureState>>,
     session: &tauri::State<'_, Mutex<SessionState>>,
 ) -> Result<String, String> {
-    let (image_bytes, monitor, cursor_norm, method_str) = capture_now()
+    let (mut img, monitor, cursor_norm, method_str) = capture_now()
         .map_err(|e| format!("Capture failed: {}", e))?;
     // Read this now, not after the overlay is shown — once show_overlay_direct
     // focuses our own window below, GetForegroundWindow would report Pointr
@@ -162,14 +164,14 @@ fn trigger_capture_direct(
 
     let cursor_px_x = (cursor_norm.0 * monitor.width_px as f32) as i64;
     let cursor_px_y = (cursor_norm.1 * monitor.height_px as f32) as i64;
-    let marked_bytes = capture::marker::draw_cursor_marker(&image_bytes, cursor_px_x, cursor_px_y)
-        .map_err(|e| format!("Failed to draw cursor marker: {}", e))?;
-    // Resize after the marker is burned in — cursor_px_x/y are computed
-    // against the full-resolution monitor dimensions, so the marker must be
-    // drawn there first; a uniform resize afterward keeps it in the same
-    // relative position, just smaller.
-    let marked_bytes = capture::resize::cap_long_edge(&marked_bytes)
-        .map_err(|e| format!("Failed to resize capture: {}", e))?;
+    // Marker drawn against the full-resolution frame (before resize) so
+    // cursor_px_x/y — computed from the full-res monitor dimensions — land in
+    // the right place; a uniform resize afterward keeps it proportionally
+    // correct, just smaller.
+    capture::marker::draw_cursor_marker(&mut img, cursor_px_x, cursor_px_y);
+    let resized = capture::resize::cap_long_edge(&img);
+    let marked_bytes = capture::resize::encode_png(&resized)
+        .map_err(|e| format!("Failed to encode capture: {}", e))?;
 
     {
         let mut state_lock = state.lock().unwrap();
