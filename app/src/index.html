@@ -70,11 +70,42 @@
       <!-- Agent proposed-action confirm prompt — window goes interactive for
            this, same as direct-query-box, since the confirm has to be a real
            keypress (Enter/Esc), not a click (window is click-through
-           everywhere else, same reason every other close button was dropped). -->
-      <div id="action-confirm-box" class="direct-query-box action-confirm-box hidden">
-        <div class="action-confirm-label">Pointr wants to:</div>
-        <div id="action-confirm-text" class="action-confirm-text"></div>
-        <div class="query-hint">Enter to confirm &middot; Esc to cancel</div>
+           everywhere else, same reason every other close button was dropped).
+           Amber accent throughout, distinct from the normal blue UI chrome —
+           this is the one prompt where something is actually about to happen
+           on the user's desktop, not just an answer being shown. -->
+      <div id="action-confirm-box" class="action-confirm-box hidden">
+        <div class="action-confirm-header">
+          <div class="action-confirm-dot-wrap">
+            <div class="action-confirm-dot"></div>
+            <div class="action-confirm-ring"></div>
+          </div>
+          <div class="action-confirm-eyebrow">Action requested</div>
+        </div>
+
+        <div id="action-confirm-type" class="hidden">
+          <div id="action-confirm-type-title" class="action-confirm-title"></div>
+          <div class="action-confirm-subtitle">Will be typed into the focused field</div>
+        </div>
+
+        <div id="action-confirm-open" class="hidden">
+          <div id="action-confirm-open-title" class="action-confirm-title"></div>
+        </div>
+
+        <div class="action-confirm-footer">
+          <span class="action-confirm-key">Enter</span>
+          <span class="action-confirm-key-label">to confirm</span>
+          <span class="action-confirm-dot-sep"></span>
+          <span class="action-confirm-key">Esc</span>
+          <span class="action-confirm-key-label">to cancel</span>
+        </div>
+      </div>
+
+      <div id="action-running-pill" class="action-running-pill hidden">
+        <div class="dot-bounce amber">
+          <span></span><span></span><span></span>
+        </div>
+        <span id="action-running-text"></span>
       </div>
     </div>
 

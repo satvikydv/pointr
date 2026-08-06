@@ -674,13 +674,51 @@ async function runAgentTask(taskDescription) {
 async function confirmProposedActionIfAny(action) {
     if (!action) return;
 
+    try {
+        const enabled = await invoke('get_os_actions_enabled');
+        if (!enabled) return; // OS actions off in Settings — skip silently, answer_text still shows normally
+    } catch (e) {
+        console.error('Failed to check os_actions_enabled:', e);
+        return; // fail closed — no confirm prompt, no action, if the setting can't be read
+    }
+
     const appWindow = Window.getCurrent();
     const box = document.getElementById('action-confirm-box');
-    document.getElementById('action-confirm-text').textContent = action.description;
+    const typeSection = document.getElementById('action-confirm-type');
+    const openSection = document.getElementById('action-confirm-open');
+    const runningPill = document.getElementById('action-running-pill');
+
+    let target = '';
+    if (action.action_type === 'type_text') {
+        try {
+            target = await invoke('get_active_window_title');
+        } catch (e) {
+            console.error('Failed to read active window title:', e);
+        }
+        document.getElementById('action-confirm-type-title').textContent = target ? `Type into ${target}` : 'Type into the focused field';
+        typeSection.classList.remove('hidden');
+        openSection.classList.add('hidden');
+    } else if (action.action_type === 'open_app') {
+        document.getElementById('action-confirm-open-title').textContent = `Open ${action.app_name}`;
+        openSection.classList.remove('hidden');
+        typeSection.classList.add('hidden');
+    } else {
+        return; // unrecognized action type — nothing sensible to confirm
+    }
 
     await appWindow.setIgnoreCursorEvents(false);
     await appWindow.setFocus();
     box.classList.remove('hidden');
+
+    // The global Escape-dismiss shortcut (enableEscapeDismiss, registered
+    // earlier in the flow) is still live at this point — left alone, an Esc
+    // press here could trigger dismissOverlay() (hides the window) *without*
+    // ever resolving this promise, orphaning the keydown listener below with
+    // its "resolve" still pending. A later, totally unrelated Enter press
+    // would then resolve it as a confirm and run the stale action for real.
+    // Disabling it for the duration means Escape here can only ever be
+    // handled by the local listener below.
+    await disableEscapeDismiss();
 
     const confirmed = await new Promise((resolve) => {
         const onKey = (e) => {
@@ -697,13 +735,27 @@ async function confirmProposedActionIfAny(action) {
         document.addEventListener('keydown', onKey);
     });
 
+    if (!confirmed) {
+        // Esc here cancels the action AND closes the whole overlay — same
+        // meaning Esc has everywhere else in the app, rather than skipping
+        // just the action and falling through to show the answer anyway.
+        // dismissOverlay() handles hiding action-confirm-box, restoring
+        // click-through, and disabling the escape shortcut itself, so there's
+        // nothing left to re-enable/restore here.
+        await dismissOverlay();
+        return;
+    }
+
+    await enableEscapeDismiss();
+
     box.classList.add('hidden');
     // Restore click-through — every other answer-display state runs this
-    // way, so the normal renderResponse() flow that follows stays consistent
-    // whether or not an action ran here.
+    // way, so the normal renderResponse() flow that follows stays consistent.
     await appWindow.setIgnoreCursorEvents(true);
 
-    if (!confirmed) return;
+    document.getElementById('action-running-text').textContent =
+        action.action_type === 'type_text' ? `Typing into ${target || 'the focused field'}…` : `Opening ${action.app_name}…`;
+    runningPill.classList.remove('hidden');
 
     try {
         if (action.action_type === 'type_text') {
@@ -714,6 +766,8 @@ async function confirmProposedActionIfAny(action) {
     } catch (e) {
         console.error('Action execution failed:', e);
         showError(`Action failed: ${e}`);
+    } finally {
+        runningPill.classList.add('hidden');
     }
 }
 
@@ -808,6 +862,8 @@ async function dismissOverlay() {
     document.getElementById('storyboard-bar').classList.add('hidden');
     document.getElementById('storyboard-hint').classList.add('hidden');
     clearStoryboardShapes();
+    document.getElementById('action-confirm-box').classList.add('hidden');
+    document.getElementById('action-running-pill').classList.add('hidden');
     loadingIndicator.classList.add('hidden');
     if (errorTimer) { clearTimeout(errorTimer); errorTimer = null; }
     errorToast.classList.add('hidden');

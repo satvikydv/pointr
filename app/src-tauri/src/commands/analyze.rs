@@ -48,6 +48,15 @@ pub fn get_current_screenshot_base64(state: State<'_, Mutex<CaptureState>>) -> R
     Ok(base64::engine::general_purpose::STANDARD.encode(&state_lock.image_bytes))
 }
 
+/// For the action-confirm prompt's "Type into {target}" display — the window
+/// title captured at the original hotkey press (same source `target_hwnd`
+/// focus-restoration uses), so what's shown matches where the text will
+/// actually land.
+#[tauri::command]
+pub fn get_active_window_title(state: State<'_, Mutex<CaptureState>>) -> Result<String, String> {
+    Ok(state.lock().unwrap().active_window_title.clone())
+}
+
 /// POSTs to the backend's streaming endpoint and forwards each answer chunk
 /// to the frontend as it arrives (event `analyze-stream-chunk`, tagged with
 /// `request_id` so a stale/superseded request's chunks can be told apart

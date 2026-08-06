@@ -3,6 +3,8 @@ const { Window } = window.__TAURI__.window;
 
 const toggleTrack = document.getElementById('toggle-track');
 const toggleKnob = document.getElementById('toggle-knob');
+const osToggleTrack = document.getElementById('os-toggle-track');
+const osToggleKnob = document.getElementById('os-toggle-knob');
 const voiceSection = document.getElementById('voice-section');
 const voiceTrigger = document.getElementById('voice-trigger');
 const voiceTriggerLabel = document.getElementById('voice-trigger-label');
@@ -18,6 +20,7 @@ const statusEl = document.getElementById('status');
 
 const state = {
     audioOn: true,
+    osActionsOn: true,
     voices: [], // {id, display_name, language}
     selectedId: null,
     savedId: null,
@@ -40,6 +43,10 @@ function render() {
     toggleTrack.style.borderColor = state.audioOn ? '#5b8cff' : 'rgba(255,255,255,0.16)';
     toggleTrack.style.border = `1px solid ${state.audioOn ? '#5b8cff' : 'rgba(255,255,255,0.16)'}`;
     toggleKnob.style.left = (state.audioOn ? 18 : 1) + 'px';
+
+    osToggleTrack.style.background = state.osActionsOn ? '#5b8cff' : 'rgba(255,255,255,0.12)';
+    osToggleTrack.style.border = `1px solid ${state.osActionsOn ? '#5b8cff' : 'rgba(255,255,255,0.16)'}`;
+    osToggleKnob.style.left = (state.osActionsOn ? 18 : 1) + 'px';
 
     // Voice section disabled look when audio is off
     voiceSection.style.opacity = state.audioOn ? '1' : '0.45';
@@ -115,6 +122,16 @@ toggleTrack.addEventListener('click', async () => {
     }
 });
 
+osToggleTrack.addEventListener('click', async () => {
+    state.osActionsOn = !state.osActionsOn;
+    render();
+    try {
+        await invoke('set_os_actions_enabled', { enabled: state.osActionsOn });
+    } catch (e) {
+        console.error('Failed to save os-actions-enabled setting:', e);
+    }
+});
+
 btnTest.addEventListener('click', async () => {
     if (!state.audioOn || state.isPlaying || !state.selectedId) return;
     state.isPlaying = true;
@@ -169,6 +186,12 @@ async function init() {
         state.audioOn = await invoke('get_speech_enabled');
     } catch (e) {
         console.error('Failed to load speech-enabled setting:', e);
+    }
+
+    try {
+        state.osActionsOn = await invoke('get_os_actions_enabled');
+    } catch (e) {
+        console.error('Failed to load os-actions-enabled setting:', e);
     }
 
     try {
