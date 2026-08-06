@@ -87,7 +87,10 @@ let speakingOnEnded = null;
 // before real narration of that length would plausibly finish.
 async function startSpeakingIndicator(text, onEnded) {
     stopSpeakingIndicator();
-    const header = document.querySelector('#answer-tooltip .answer-header');
+    // Matches either the normal answer bubble's header or the storyboard
+    // bar's header (aliases the same class for the shared speaking-avatar
+    // CSS/markup) — only one exists in the DOM at a time in practice.
+    const header = document.querySelector('.answer-header');
     if (!header) return;
     header.classList.add('speaking');
     speakingOnEnded = onEnded || null;
@@ -122,7 +125,10 @@ function stopSpeakingIndicator() {
         ttsEndedUnlisten = null;
     }
     speakingOnEnded = null;
-    const header = document.querySelector('#answer-tooltip .answer-header');
+    // Matches either the normal answer bubble's header or the storyboard
+    // bar's header (aliases the same class for the shared speaking-avatar
+    // CSS/markup) — only one exists in the DOM at a time in practice.
+    const header = document.querySelector('.answer-header');
     if (header) header.classList.remove('speaking');
 }
 
@@ -312,26 +318,56 @@ async function runDirectAnalysis(queryText) {
 }
 
 // "explain: <topic>" storyboard playback — sequentially shows each step's
-// narration + optional point marker, waiting for that step's narration to
-// actually finish speaking (real tts-ended event, or the fallback estimate —
-// see startSpeakingIndicator) before advancing, rather than a fixed delay per
+// narration + optional annotation in a dedicated bottom caption bar (not the
+// normal answer bubble), waiting for that step's narration to actually
+// finish speaking (real tts-ended event, or the fallback estimate — see
+// startSpeakingIndicator) before advancing, rather than a fixed delay per
 // step. `requestId` guards against a dismiss/new-request superseding this
 // mid-playback (checked between every step, not just at the start).
 async function playStoryboard(steps, requestId) {
-    getOrCreateTooltip();
-    document.getElementById('answer-caret').classList.add('hidden');
+    const bar = document.getElementById('storyboard-bar');
+    const progress = document.getElementById('storyboard-progress');
+    const caption = document.getElementById('storyboard-caption');
+    const hint = document.getElementById('storyboard-hint');
 
-    for (const step of steps) {
-        if (requestId !== activeRequestId) return;
+    progress.innerHTML = '';
+    const dotEls = steps.map(() => {
+        const dot = document.createElement('div');
+        dot.className = 'storyboard-progress-dot';
+        progress.appendChild(dot);
+        return dot;
+    });
+    const setActiveDot = (activeIdx) => {
+        dotEls.forEach((dot, idx) => dot.classList.toggle('active', idx === activeIdx));
+    };
 
-        document.getElementById('answer-text').textContent = step.narration;
+    const endStoryboardUi = () => {
+        clearTimeout(hintTimer);
+        hint.classList.add('hidden');
+        bar.classList.add('hidden');
+        clearStoryboardShapes();
+    };
+
+    bar.classList.remove('hidden');
+    hint.classList.remove('hidden');
+    let hintTimer = setTimeout(() => hint.classList.add('hidden'), 4200);
+
+    for (let i = 0; i < steps.length; i++) {
+        if (requestId !== activeRequestId) { endStoryboardUi(); return; }
+        const step = steps[i];
+
+        setActiveDot(i);
+        caption.textContent = step.narration;
         renderStoryboardShape(step);
 
         await speakStepAndWait(step.narration);
     }
 
-    if (requestId !== activeRequestId) return;
+    clearTimeout(hintTimer);
+    hint.classList.add('hidden');
+    if (requestId !== activeRequestId) { bar.classList.add('hidden'); clearStoryboardShapes(); return; }
     clearStoryboardShapes();
+    bar.classList.add('hidden');
     if (closeTimer) clearTimeout(closeTimer);
     closeTimer = setTimeout(() => dismissOverlay(), 3000);
 }
@@ -343,12 +379,18 @@ function clearStoryboardShapes() {
     if (oldBox) oldBox.remove();
     const oldLine = document.getElementById('storyboard-line');
     if (oldLine) oldLine.remove();
+    const oldHead = document.getElementById('storyboard-line-head');
+    if (oldHead) oldHead.remove();
 }
 
-// Renders whichever single shape a storyboard step carries — "point" reuses
-// the same marker the normal single-answer flow already draws; "box" and
-// "line" are new (line/arrow drawn as an SVG element in #storyboard-svg,
-// since CSS alone can't do an arbitrary-angle line+arrowhead cleanly).
+// Renders whichever single shape a storyboard step carries. "point" reuses
+// the same red (#ff5470) marker the normal single-answer flow draws. "box"
+// and "line" are blue (#5B8CFF, the UI-chrome accent — point stays a distinct
+// "reference" red, box/line read as "here's the relevant area") SVG elements
+// in #storyboard-svg, each with a draw-on animation: box traces its own
+// perimeter via stroke-dashoffset, line extends from start to end the same
+// way with a computed arrowhead (perpendicular-offset triangle, not an SVG
+// <marker>) that only fades in once the line is mostly drawn.
 function renderStoryboardShape(step) {
     clearStoryboardShapes();
     if (!step.shape) return;
@@ -369,39 +411,71 @@ function renderStoryboardShape(step) {
     if (step.x2_norm == null || step.y2_norm == null) return;
     const x2 = clampUnit(step.x2_norm) * window.innerWidth;
     const y2 = clampUnit(step.y2_norm) * window.innerHeight;
+    const svg = document.getElementById('storyboard-svg');
+    const SVG_NS = 'http://www.w3.org/2000/svg';
 
     if (step.shape === 'box') {
-        const box = document.createElement('div');
-        box.id = 'storyboard-box';
-        box.className = 'storyboard-box';
-        box.style.left = Math.min(x1, x2) + 'px';
-        box.style.top = Math.min(y1, y2) + 'px';
-        box.style.width = Math.abs(x2 - x1) + 'px';
-        box.style.height = Math.abs(y2 - y1) + 'px';
-        container.appendChild(box);
-    } else if (step.shape === 'line') {
-        const svg = document.getElementById('storyboard-svg');
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.id = 'storyboard-line';
-        line.classList.add('storyboard-line');
-        line.setAttribute('x1', x1);
-        line.setAttribute('y1', y1);
-        line.setAttribute('x2', x2);
-        line.setAttribute('y2', y2);
-        line.setAttribute('marker-end', 'url(#pointr-arrowhead)');
-        svg.appendChild(line);
+        const bx = Math.min(x1, x2);
+        const by = Math.min(y1, y2);
+        const bw = Math.abs(x2 - x1);
+        const bh = Math.abs(y2 - y1);
+        const perimeter = 2 * (bw + bh);
 
-        // Draw-on animation: start with the stroke fully "retracted" via
-        // dash-offset, then animate it to 0 — a plain CSS transition can't
-        // animate SVG line geometry directly, but stroke-dash* is just a
-        // regular animatable property.
-        const length = Math.hypot(x2 - x1, y2 - y1);
-        line.style.strokeDasharray = String(length);
-        line.style.strokeDashoffset = String(length);
-        line.getBoundingClientRect(); // force layout so the next line isn't coalesced into this one
-        line.style.transition = 'stroke-dashoffset 0.35s ease';
+        const rect = document.createElementNS(SVG_NS, 'rect');
+        rect.id = 'storyboard-box';
+        rect.setAttribute('x', bx);
+        rect.setAttribute('y', by);
+        rect.setAttribute('width', bw);
+        rect.setAttribute('height', bh);
+        rect.setAttribute('rx', 5);
+        rect.setAttribute('fill', 'rgba(91,140,255,0.03)');
+        rect.setAttribute('stroke', '#5B8CFF');
+        rect.setAttribute('stroke-width', 2);
+        rect.setAttribute('stroke-dasharray', String(perimeter));
+        rect.setAttribute('stroke-dashoffset', String(perimeter));
+        svg.appendChild(rect);
+
+        rect.getBoundingClientRect(); // force layout before animating
+        rect.style.transition = 'stroke-dashoffset 0.5s ease, fill 0.5s ease';
         requestAnimationFrame(() => {
-            line.style.strokeDashoffset = '0';
+            rect.setAttribute('stroke-dashoffset', '0');
+            rect.setAttribute('fill', 'rgba(91,140,255,0.12)');
+        });
+    } else if (step.shape === 'line') {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len, uy = dy / len;
+        const px = -uy, py = ux; // perpendicular unit vector, for the arrowhead's width
+        const headLen = 11, headWidth = 4.5;
+        const backX = x2 - ux * headLen;
+        const backY = y2 - uy * headLen;
+
+        const path = document.createElementNS(SVG_NS, 'path');
+        path.id = 'storyboard-line';
+        path.setAttribute('d', `M ${x1} ${y1} L ${x2} ${y2}`);
+        path.setAttribute('stroke', '#5B8CFF');
+        path.setAttribute('stroke-width', 2.5);
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke-linecap', 'round');
+        path.setAttribute('stroke-dasharray', String(len));
+        path.setAttribute('stroke-dashoffset', String(len));
+        svg.appendChild(path);
+
+        const head = document.createElementNS(SVG_NS, 'polygon');
+        head.id = 'storyboard-line-head';
+        const points = `${x2},${y2} ${(backX + px * headWidth).toFixed(1)},${(backY + py * headWidth).toFixed(1)} ${(backX - px * headWidth).toFixed(1)},${(backY - py * headWidth).toFixed(1)}`;
+        head.setAttribute('points', points);
+        head.setAttribute('fill', '#5B8CFF');
+        head.style.opacity = '0';
+        svg.appendChild(head);
+
+        path.getBoundingClientRect();
+        path.style.transition = 'stroke-dashoffset 0.4s ease';
+        head.style.transition = 'opacity 0.15s ease';
+        requestAnimationFrame(() => {
+            path.setAttribute('stroke-dashoffset', '0');
+            setTimeout(() => { head.style.opacity = '1'; }, 280); // appear once the line's nearly drawn, not before
         });
     }
 }
@@ -660,6 +734,8 @@ async function dismissOverlay() {
 
     const tooltip = document.getElementById('answer-tooltip');
     if (tooltip) tooltip.remove();
+    document.getElementById('storyboard-bar').classList.add('hidden');
+    document.getElementById('storyboard-hint').classList.add('hidden');
     clearStoryboardShapes();
     loadingIndicator.classList.add('hidden');
     if (errorTimer) { clearTimeout(errorTimer); errorTimer = null; }
