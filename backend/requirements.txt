@@ -6,3 +6,4 @@ google-genai
 celery
 redis
 structlog
+mcp
