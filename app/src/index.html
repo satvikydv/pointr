@@ -12,15 +12,35 @@
       <div id="selection-box" style="display: none;"></div>
       <div id="selection-label" class="selection-label hidden"></div>
 
-      <!-- "explain:" storyboard mode — line/arrow annotations only, box and
-           point markers are plain positioned divs created in main.js. -->
-      <svg id="storyboard-svg">
-        <defs>
-          <marker id="pointr-arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" fill="#5B8CFF"></path>
-          </marker>
-        </defs>
-      </svg>
+      <!-- "explain:" storyboard mode — box/line annotations (SVG, built in
+           main.js); point reuses the plain .pointer-marker div below. -->
+      <svg id="storyboard-svg"></svg>
+
+      <div id="storyboard-hint" class="storyboard-hint hidden">
+        <span>Esc to stop</span>
+      </div>
+
+      <div id="storyboard-bar" class="storyboard-bar hidden">
+        <div class="answer-header storyboard-bar-header">
+          <div class="avatar">
+            <div class="dot"></div>
+            <div class="speaking-orb">
+              <div class="orb-bloom"></div>
+              <div class="orb-core">
+                <div class="orb-swirl1"></div>
+                <div class="orb-swirl2"></div>
+                <div class="orb-nebula"></div>
+                <div class="orb-particle p1"></div>
+                <div class="orb-particle p2"></div>
+                <div class="orb-particle p3"></div>
+                <div class="orb-highlight"></div>
+              </div>
+            </div>
+          </div>
+          <div id="storyboard-progress" class="storyboard-progress"></div>
+        </div>
+        <div id="storyboard-caption" class="storyboard-caption"></div>
+      </div>
 
       <div id="loading-indicator" class="loading-indicator hidden">
         <div class="dot-bounce">
@@ -45,6 +65,47 @@
         <div class="error-icon">!</div>
         <div id="error-message" class="error-message"></div>
         <div id="error-close" class="error-close">&times;</div>
+      </div>
+
+      <!-- Agent proposed-action confirm prompt — window goes interactive for
+           this, same as direct-query-box, since the confirm has to be a real
+           keypress (Enter/Esc), not a click (window is click-through
+           everywhere else, same reason every other close button was dropped).
+           Amber accent throughout, distinct from the normal blue UI chrome —
+           this is the one prompt where something is actually about to happen
+           on the user's desktop, not just an answer being shown. -->
+      <div id="action-confirm-box" class="action-confirm-box hidden">
+        <div class="action-confirm-header">
+          <div class="action-confirm-dot-wrap">
+            <div class="action-confirm-dot"></div>
+            <div class="action-confirm-ring"></div>
+          </div>
+          <div class="action-confirm-eyebrow">Action requested</div>
+        </div>
+
+        <div id="action-confirm-type" class="hidden">
+          <div id="action-confirm-type-title" class="action-confirm-title"></div>
+          <div class="action-confirm-subtitle">Will be typed into the focused field</div>
+        </div>
+
+        <div id="action-confirm-open" class="hidden">
+          <div id="action-confirm-open-title" class="action-confirm-title"></div>
+        </div>
+
+        <div class="action-confirm-footer">
+          <span class="action-confirm-key">Enter</span>
+          <span class="action-confirm-key-label">to confirm</span>
+          <span class="action-confirm-dot-sep"></span>
+          <span class="action-confirm-key">Esc</span>
+          <span class="action-confirm-key-label">to cancel</span>
+        </div>
+      </div>
+
+      <div id="action-running-pill" class="action-running-pill hidden">
+        <div class="dot-bounce amber">
+          <span></span><span></span><span></span>
+        </div>
+        <span id="action-running-text"></span>
       </div>
     </div>
 

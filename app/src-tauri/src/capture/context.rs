@@ -14,6 +14,14 @@ pub struct AppContext {
     pub app_name: String,
     pub window_title: String,
     pub language: Option<String>,
+    /// Raw HWND of the window that was in the foreground at capture time —
+    /// stored as isize (not the windows-rs HWND type) so it's plain, Send,
+    /// storable in Tauri-managed state. Used later to restore focus there
+    /// before an agent's "type into the focused field" action executes:
+    /// by the time the user has asked a question and confirmed the action,
+    /// Pointr's own window has taken OS focus, so without this the keystrokes
+    /// would go nowhere useful.
+    pub hwnd: isize,
 }
 
 impl AppContext {
@@ -41,6 +49,7 @@ pub fn get_foreground_app_context() -> AppContext {
         app_name: "Unknown".to_string(),
         window_title: String::new(),
         language: None,
+        hwnd: 0,
     })
 }
 
@@ -62,6 +71,7 @@ fn try_get_foreground_app_context() -> anyhow::Result<AppContext> {
                 app_name: "Unknown".to_string(),
                 window_title: truncate(&raw_title),
                 language: None,
+                hwnd: hwnd.0 as isize,
             });
         }
 
@@ -97,6 +107,7 @@ fn try_get_foreground_app_context() -> anyhow::Result<AppContext> {
             app_name,
             window_title,
             language,
+            hwnd: hwnd.0 as isize,
         })
     }
 }

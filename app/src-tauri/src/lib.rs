@@ -13,6 +13,12 @@ pub struct CaptureState {
     pub app_name: String,
     pub session_id: String,
     pub session_duration_secs: f64,
+    /// HWND of the window that was foreground at capture time — restored
+    /// before an agent action types into "the focused field", since by
+    /// execution time Pointr's own window has OS focus instead. See
+    /// capture::context::AppContext::hwnd for why this needs to be captured
+    /// this early rather than looked up fresh at execution time.
+    pub target_hwnd: isize,
 }
 
 /// One app's ongoing session: when it started, and when it was last touched
@@ -84,16 +90,17 @@ impl SessionState {
 }
 
 /// Shared first step for both hotkey paths: where's the cursor, which monitor
-/// is it on, and what does that monitor look like right now.
-fn capture_now() -> anyhow::Result<(Vec<u8>, MonitorInfo, (f32, f32), &'static str)> {
+/// is it on, and what does that monitor look like right now. Returns the raw
+/// decoded frame, not PNG bytes — see `capture::screen::capture_monitor`.
+fn capture_now() -> anyhow::Result<(image::RgbaImage, MonitorInfo, (f32, f32), &'static str)> {
     let (pos, monitor) = capture::cursor::get_cursor_and_monitor()?;
-    let (image_bytes, method) = capture::screen::capture_monitor(&monitor)?;
+    let (img, method) = capture::screen::capture_monitor(&monitor)?;
     let method_str = match method {
         capture::screen::CaptureMethod::Wgc => "WGC",
         capture::screen::CaptureMethod::Gdi => "GDI",
     };
     let coords = capture::coords::normalize_cursor(pos.x, pos.y, &monitor);
-    Ok((image_bytes, monitor, (coords.x_norm, coords.y_norm), method_str))
+    Ok((img, monitor, (coords.x_norm, coords.y_norm), method_str))
 }
 
 /// Secondary (region-select) hotkey path — unchanged behavior: capture the
@@ -104,10 +111,11 @@ fn trigger_capture(
     state: tauri::State<'_, Mutex<CaptureState>>,
     session: tauri::State<'_, Mutex<SessionState>>,
 ) -> Result<String, String> {
-    let (image_bytes, monitor, cursor_norm, method_str) = capture_now()
+    let (img, monitor, cursor_norm, method_str) = capture_now()
         .map_err(|e| format!("Capture failed: {}", e))?;
-    let image_bytes = capture::resize::cap_long_edge(&image_bytes)
-        .map_err(|e| format!("Failed to resize capture: {}", e))?;
+    let resized = capture::resize::cap_long_edge(&img);
+    let image_bytes = capture::resize::encode_png(&resized)
+        .map_err(|e| format!("Failed to encode capture: {}", e))?;
     let ctx = capture::context::get_foreground_app_context();
     let (session_id, session_duration_secs) = session.lock().unwrap().resolve(&ctx.app_name);
 
@@ -120,6 +128,7 @@ fn trigger_capture(
         state_lock.app_name = ctx.app_name;
         state_lock.session_id = session_id;
         state_lock.session_duration_secs = session_duration_secs;
+        state_lock.target_hwnd = ctx.hwnd;
     }
 
     overlay::window::show_overlay(&app, &monitor, &image_bytes)
@@ -145,7 +154,7 @@ fn trigger_capture_direct(
     state: &tauri::State<'_, Mutex<CaptureState>>,
     session: &tauri::State<'_, Mutex<SessionState>>,
 ) -> Result<String, String> {
-    let (image_bytes, monitor, cursor_norm, method_str) = capture_now()
+    let (mut img, monitor, cursor_norm, method_str) = capture_now()
         .map_err(|e| format!("Capture failed: {}", e))?;
     // Read this now, not after the overlay is shown — once show_overlay_direct
     // focuses our own window below, GetForegroundWindow would report Pointr
@@ -155,14 +164,14 @@ fn trigger_capture_direct(
 
     let cursor_px_x = (cursor_norm.0 * monitor.width_px as f32) as i64;
     let cursor_px_y = (cursor_norm.1 * monitor.height_px as f32) as i64;
-    let marked_bytes = capture::marker::draw_cursor_marker(&image_bytes, cursor_px_x, cursor_px_y)
-        .map_err(|e| format!("Failed to draw cursor marker: {}", e))?;
-    // Resize after the marker is burned in — cursor_px_x/y are computed
-    // against the full-resolution monitor dimensions, so the marker must be
-    // drawn there first; a uniform resize afterward keeps it in the same
-    // relative position, just smaller.
-    let marked_bytes = capture::resize::cap_long_edge(&marked_bytes)
-        .map_err(|e| format!("Failed to resize capture: {}", e))?;
+    // Marker drawn against the full-resolution frame (before resize) so
+    // cursor_px_x/y — computed from the full-res monitor dimensions — land in
+    // the right place; a uniform resize afterward keeps it proportionally
+    // correct, just smaller.
+    capture::marker::draw_cursor_marker(&mut img, cursor_px_x, cursor_px_y);
+    let resized = capture::resize::cap_long_edge(&img);
+    let marked_bytes = capture::resize::encode_png(&resized)
+        .map_err(|e| format!("Failed to encode capture: {}", e))?;
 
     {
         let mut state_lock = state.lock().unwrap();
@@ -173,6 +182,7 @@ fn trigger_capture_direct(
         state_lock.app_name = ctx.app_name;
         state_lock.session_id = session_id;
         state_lock.session_duration_secs = session_duration_secs;
+        state_lock.target_hwnd = ctx.hwnd;
     }
 
     overlay::window::show_overlay_direct(app, &monitor)
@@ -248,6 +258,7 @@ pub fn run() {
             app_name: String::new(),
             session_id: String::new(),
             session_duration_secs: 0.0,
+            target_hwnd: 0,
         }))
         .manage(Mutex::new(SessionState::new()))
         .manage(commands::tts::TtsState::new())
@@ -256,6 +267,8 @@ pub fn run() {
             commands::analyze::process_crop,
             commands::analyze::process_direct,
             commands::analyze::process_explain,
+            commands::analyze::get_current_screenshot_base64,
+            commands::analyze::get_active_window_title,
             commands::clipboard::read_clipboard,
             commands::clipboard::write_clipboard,
             commands::tts::speak_text,
@@ -265,6 +278,10 @@ pub fn run() {
             commands::settings::set_selected_voice,
             commands::settings::get_speech_enabled,
             commands::settings::set_speech_enabled,
+            commands::settings::get_os_actions_enabled,
+            commands::settings::set_os_actions_enabled,
+            commands::actions::execute_type_text,
+            commands::actions::execute_open_app,
             enable_escape_dismiss,
             disable_escape_dismiss
         ])

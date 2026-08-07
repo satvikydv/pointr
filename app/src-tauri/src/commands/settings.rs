@@ -16,9 +16,15 @@ struct PersistedSettings {
     voice_id: Option<String>,
     #[serde(default = "default_speech_enabled")]
     speech_enabled: bool,
+    #[serde(default = "default_os_actions_enabled")]
+    os_actions_enabled: bool,
 }
 
 fn default_speech_enabled() -> bool {
+    true
+}
+
+fn default_os_actions_enabled() -> bool {
     true
 }
 
@@ -27,6 +33,7 @@ impl Default for PersistedSettings {
         Self {
             voice_id: None,
             speech_enabled: true,
+            os_actions_enabled: true,
         }
     }
 }
@@ -91,5 +98,17 @@ pub fn get_speech_enabled(app: AppHandle) -> Result<bool, String> {
 pub fn set_speech_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = load_settings(&app);
     settings.speech_enabled = enabled;
+    save_settings(&app, &settings)
+}
+
+#[tauri::command]
+pub fn get_os_actions_enabled(app: AppHandle) -> Result<bool, String> {
+    Ok(load_settings(&app).os_actions_enabled)
+}
+
+#[tauri::command]
+pub fn set_os_actions_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = load_settings(&app);
+    settings.os_actions_enabled = enabled;
     save_settings(&app, &settings)
 }

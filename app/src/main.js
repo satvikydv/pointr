@@ -87,7 +87,10 @@ let speakingOnEnded = null;
 // before real narration of that length would plausibly finish.
 async function startSpeakingIndicator(text, onEnded) {
     stopSpeakingIndicator();
-    const header = document.querySelector('#answer-tooltip .answer-header');
+    // Matches either the normal answer bubble's header or the storyboard
+    // bar's header (aliases the same class for the shared speaking-avatar
+    // CSS/markup) — only one exists in the DOM at a time in practice.
+    const header = document.querySelector('.answer-header');
     if (!header) return;
     header.classList.add('speaking');
     speakingOnEnded = onEnded || null;
@@ -122,7 +125,10 @@ function stopSpeakingIndicator() {
         ttsEndedUnlisten = null;
     }
     speakingOnEnded = null;
-    const header = document.querySelector('#answer-tooltip .answer-header');
+    // Matches either the normal answer bubble's header or the storyboard
+    // bar's header (aliases the same class for the shared speaking-avatar
+    // CSS/markup) — only one exists in the DOM at a time in practice.
+    const header = document.querySelector('.answer-header');
     if (header) header.classList.remove('speaking');
 }
 
@@ -291,6 +297,9 @@ async function runDirectAnalysis(queryText) {
         await appWindow.setAlwaysOnTop(true);
         await appWindow.setFocus();
 
+        await confirmProposedActionIfAny(response.proposed_action);
+        if (requestId !== activeRequestId) return; // could've been superseded during the confirm wait
+
         const rect = { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
         renderResponse(response, rect);
     } catch (error) {
@@ -312,26 +321,56 @@ async function runDirectAnalysis(queryText) {
 }
 
 // "explain: <topic>" storyboard playback — sequentially shows each step's
-// narration + optional point marker, waiting for that step's narration to
-// actually finish speaking (real tts-ended event, or the fallback estimate —
-// see startSpeakingIndicator) before advancing, rather than a fixed delay per
+// narration + optional annotation in a dedicated bottom caption bar (not the
+// normal answer bubble), waiting for that step's narration to actually
+// finish speaking (real tts-ended event, or the fallback estimate — see
+// startSpeakingIndicator) before advancing, rather than a fixed delay per
 // step. `requestId` guards against a dismiss/new-request superseding this
 // mid-playback (checked between every step, not just at the start).
 async function playStoryboard(steps, requestId) {
-    getOrCreateTooltip();
-    document.getElementById('answer-caret').classList.add('hidden');
+    const bar = document.getElementById('storyboard-bar');
+    const progress = document.getElementById('storyboard-progress');
+    const caption = document.getElementById('storyboard-caption');
+    const hint = document.getElementById('storyboard-hint');
 
-    for (const step of steps) {
-        if (requestId !== activeRequestId) return;
+    progress.innerHTML = '';
+    const dotEls = steps.map(() => {
+        const dot = document.createElement('div');
+        dot.className = 'storyboard-progress-dot';
+        progress.appendChild(dot);
+        return dot;
+    });
+    const setActiveDot = (activeIdx) => {
+        dotEls.forEach((dot, idx) => dot.classList.toggle('active', idx === activeIdx));
+    };
 
-        document.getElementById('answer-text').textContent = step.narration;
+    const endStoryboardUi = () => {
+        clearTimeout(hintTimer);
+        hint.classList.add('hidden');
+        bar.classList.add('hidden');
+        clearStoryboardShapes();
+    };
+
+    bar.classList.remove('hidden');
+    hint.classList.remove('hidden');
+    let hintTimer = setTimeout(() => hint.classList.add('hidden'), 4200);
+
+    for (let i = 0; i < steps.length; i++) {
+        if (requestId !== activeRequestId) { endStoryboardUi(); return; }
+        const step = steps[i];
+
+        setActiveDot(i);
+        caption.textContent = step.narration;
         renderStoryboardShape(step);
 
         await speakStepAndWait(step.narration);
     }
 
-    if (requestId !== activeRequestId) return;
+    clearTimeout(hintTimer);
+    hint.classList.add('hidden');
+    if (requestId !== activeRequestId) { bar.classList.add('hidden'); clearStoryboardShapes(); return; }
     clearStoryboardShapes();
+    bar.classList.add('hidden');
     if (closeTimer) clearTimeout(closeTimer);
     closeTimer = setTimeout(() => dismissOverlay(), 3000);
 }
@@ -343,12 +382,18 @@ function clearStoryboardShapes() {
     if (oldBox) oldBox.remove();
     const oldLine = document.getElementById('storyboard-line');
     if (oldLine) oldLine.remove();
+    const oldHead = document.getElementById('storyboard-line-head');
+    if (oldHead) oldHead.remove();
 }
 
-// Renders whichever single shape a storyboard step carries — "point" reuses
-// the same marker the normal single-answer flow already draws; "box" and
-// "line" are new (line/arrow drawn as an SVG element in #storyboard-svg,
-// since CSS alone can't do an arbitrary-angle line+arrowhead cleanly).
+// Renders whichever single shape a storyboard step carries. "point" reuses
+// the same red (#ff5470) marker the normal single-answer flow draws. "box"
+// and "line" are blue (#5B8CFF, the UI-chrome accent — point stays a distinct
+// "reference" red, box/line read as "here's the relevant area") SVG elements
+// in #storyboard-svg, each with a draw-on animation: box traces its own
+// perimeter via stroke-dashoffset, line extends from start to end the same
+// way with a computed arrowhead (perpendicular-offset triangle, not an SVG
+// <marker>) that only fades in once the line is mostly drawn.
 function renderStoryboardShape(step) {
     clearStoryboardShapes();
     if (!step.shape) return;
@@ -369,39 +414,71 @@ function renderStoryboardShape(step) {
     if (step.x2_norm == null || step.y2_norm == null) return;
     const x2 = clampUnit(step.x2_norm) * window.innerWidth;
     const y2 = clampUnit(step.y2_norm) * window.innerHeight;
+    const svg = document.getElementById('storyboard-svg');
+    const SVG_NS = 'http://www.w3.org/2000/svg';
 
     if (step.shape === 'box') {
-        const box = document.createElement('div');
-        box.id = 'storyboard-box';
-        box.className = 'storyboard-box';
-        box.style.left = Math.min(x1, x2) + 'px';
-        box.style.top = Math.min(y1, y2) + 'px';
-        box.style.width = Math.abs(x2 - x1) + 'px';
-        box.style.height = Math.abs(y2 - y1) + 'px';
-        container.appendChild(box);
-    } else if (step.shape === 'line') {
-        const svg = document.getElementById('storyboard-svg');
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.id = 'storyboard-line';
-        line.classList.add('storyboard-line');
-        line.setAttribute('x1', x1);
-        line.setAttribute('y1', y1);
-        line.setAttribute('x2', x2);
-        line.setAttribute('y2', y2);
-        line.setAttribute('marker-end', 'url(#pointr-arrowhead)');
-        svg.appendChild(line);
+        const bx = Math.min(x1, x2);
+        const by = Math.min(y1, y2);
+        const bw = Math.abs(x2 - x1);
+        const bh = Math.abs(y2 - y1);
+        const perimeter = 2 * (bw + bh);
 
-        // Draw-on animation: start with the stroke fully "retracted" via
-        // dash-offset, then animate it to 0 — a plain CSS transition can't
-        // animate SVG line geometry directly, but stroke-dash* is just a
-        // regular animatable property.
-        const length = Math.hypot(x2 - x1, y2 - y1);
-        line.style.strokeDasharray = String(length);
-        line.style.strokeDashoffset = String(length);
-        line.getBoundingClientRect(); // force layout so the next line isn't coalesced into this one
-        line.style.transition = 'stroke-dashoffset 0.35s ease';
+        const rect = document.createElementNS(SVG_NS, 'rect');
+        rect.id = 'storyboard-box';
+        rect.setAttribute('x', bx);
+        rect.setAttribute('y', by);
+        rect.setAttribute('width', bw);
+        rect.setAttribute('height', bh);
+        rect.setAttribute('rx', 5);
+        rect.setAttribute('fill', 'rgba(91,140,255,0.03)');
+        rect.setAttribute('stroke', '#5B8CFF');
+        rect.setAttribute('stroke-width', 2);
+        rect.setAttribute('stroke-dasharray', String(perimeter));
+        rect.setAttribute('stroke-dashoffset', String(perimeter));
+        svg.appendChild(rect);
+
+        rect.getBoundingClientRect(); // force layout before animating
+        rect.style.transition = 'stroke-dashoffset 0.5s ease, fill 0.5s ease';
         requestAnimationFrame(() => {
-            line.style.strokeDashoffset = '0';
+            rect.setAttribute('stroke-dashoffset', '0');
+            rect.setAttribute('fill', 'rgba(91,140,255,0.12)');
+        });
+    } else if (step.shape === 'line') {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len, uy = dy / len;
+        const px = -uy, py = ux; // perpendicular unit vector, for the arrowhead's width
+        const headLen = 11, headWidth = 4.5;
+        const backX = x2 - ux * headLen;
+        const backY = y2 - uy * headLen;
+
+        const path = document.createElementNS(SVG_NS, 'path');
+        path.id = 'storyboard-line';
+        path.setAttribute('d', `M ${x1} ${y1} L ${x2} ${y2}`);
+        path.setAttribute('stroke', '#5B8CFF');
+        path.setAttribute('stroke-width', 2.5);
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke-linecap', 'round');
+        path.setAttribute('stroke-dasharray', String(len));
+        path.setAttribute('stroke-dashoffset', String(len));
+        svg.appendChild(path);
+
+        const head = document.createElementNS(SVG_NS, 'polygon');
+        head.id = 'storyboard-line-head';
+        const points = `${x2},${y2} ${(backX + px * headWidth).toFixed(1)},${(backY + py * headWidth).toFixed(1)} ${(backX - px * headWidth).toFixed(1)},${(backY - py * headWidth).toFixed(1)}`;
+        head.setAttribute('points', points);
+        head.setAttribute('fill', '#5B8CFF');
+        head.style.opacity = '0';
+        svg.appendChild(head);
+
+        path.getBoundingClientRect();
+        path.style.transition = 'stroke-dashoffset 0.4s ease';
+        head.style.transition = 'opacity 0.15s ease';
+        requestAnimationFrame(() => {
+            path.setAttribute('stroke-dashoffset', '0');
+            setTimeout(() => { head.style.opacity = '1'; }, 280); // appear once the line's nearly drawn, not before
         });
     }
 }
@@ -537,13 +614,24 @@ async function runAgentTask(taskDescription) {
         console.error("[agent] Failed to read clipboard:", e);
     }
 
+    // Without this, agent tasks were text-only and had nothing to look at —
+    // "reply to the message on screen" fell back to clipboard content as the
+    // only available context, since it was the only thing there was.
+    let screenshotBase64 = "";
+    try {
+        screenshotBase64 = await invoke('get_current_screenshot_base64');
+    } catch (e) {
+        console.error("[agent] Failed to read current screenshot:", e);
+    }
+
     const postRes = await fetch("http://localhost:8000/api/agent/task", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             task_description: taskDescription,
             session_id: sessionId,
-            clipboard_text: clipboardText
+            clipboard_text: clipboardText,
+            screenshot_base64: screenshotBase64
         })
     });
     const { task_id } = await postRes.json();
@@ -565,7 +653,8 @@ async function runAgentTask(taskDescription) {
             }
             return {
                 answer_text: statusData.result.result,
-                pointer_target: statusData.result.pointer_target
+                pointer_target: statusData.result.pointer_target,
+                proposed_action: statusData.result.proposed_action || null
             };
         } else if (statusData.status === "FAILURE") {
             throw new Error("Task failed: " + statusData.result);
@@ -573,6 +662,113 @@ async function runAgentTask(taskDescription) {
     }
 
     throw new Error(`Agent task timed out after ${AGENT_POLL_MAX_ATTEMPTS * AGENT_POLL_INTERVAL_MS / 1000}s`);
+}
+
+// Gate before any agent-proposed desktop action (type_text/open_app)
+// actually runs — shows the model's plain-language description and waits
+// for a real keypress. Window goes interactive for this (Enter/Esc via a
+// plain DOM listener), same as direct-query-box, since every other overlay
+// state is click-through and a clickable Confirm/Cancel button would have
+// the exact same "can never be clicked" problem already hit elsewhere.
+// No-op if there's no proposed action (the common case).
+async function confirmProposedActionIfAny(action) {
+    if (!action) return;
+
+    try {
+        const enabled = await invoke('get_os_actions_enabled');
+        if (!enabled) return; // OS actions off in Settings — skip silently, answer_text still shows normally
+    } catch (e) {
+        console.error('Failed to check os_actions_enabled:', e);
+        return; // fail closed — no confirm prompt, no action, if the setting can't be read
+    }
+
+    const appWindow = Window.getCurrent();
+    const box = document.getElementById('action-confirm-box');
+    const typeSection = document.getElementById('action-confirm-type');
+    const openSection = document.getElementById('action-confirm-open');
+    const runningPill = document.getElementById('action-running-pill');
+
+    let target = '';
+    if (action.action_type === 'type_text') {
+        try {
+            target = await invoke('get_active_window_title');
+        } catch (e) {
+            console.error('Failed to read active window title:', e);
+        }
+        document.getElementById('action-confirm-type-title').textContent = target ? `Type into ${target}` : 'Type into the focused field';
+        typeSection.classList.remove('hidden');
+        openSection.classList.add('hidden');
+    } else if (action.action_type === 'open_app') {
+        document.getElementById('action-confirm-open-title').textContent = `Open ${action.app_name}`;
+        openSection.classList.remove('hidden');
+        typeSection.classList.add('hidden');
+    } else {
+        return; // unrecognized action type — nothing sensible to confirm
+    }
+
+    await appWindow.setIgnoreCursorEvents(false);
+    await appWindow.setFocus();
+    box.classList.remove('hidden');
+
+    // The global Escape-dismiss shortcut (enableEscapeDismiss, registered
+    // earlier in the flow) is still live at this point — left alone, an Esc
+    // press here could trigger dismissOverlay() (hides the window) *without*
+    // ever resolving this promise, orphaning the keydown listener below with
+    // its "resolve" still pending. A later, totally unrelated Enter press
+    // would then resolve it as a confirm and run the stale action for real.
+    // Disabling it for the duration means Escape here can only ever be
+    // handled by the local listener below.
+    await disableEscapeDismiss();
+
+    const confirmed = await new Promise((resolve) => {
+        const onKey = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                document.removeEventListener('keydown', onKey);
+                resolve(true);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                document.removeEventListener('keydown', onKey);
+                resolve(false);
+            }
+        };
+        document.addEventListener('keydown', onKey);
+    });
+
+    if (!confirmed) {
+        // Esc here cancels the action AND closes the whole overlay — same
+        // meaning Esc has everywhere else in the app, rather than skipping
+        // just the action and falling through to show the answer anyway.
+        // dismissOverlay() handles hiding action-confirm-box, restoring
+        // click-through, and disabling the escape shortcut itself, so there's
+        // nothing left to re-enable/restore here.
+        await dismissOverlay();
+        return;
+    }
+
+    await enableEscapeDismiss();
+
+    box.classList.add('hidden');
+    // Restore click-through — every other answer-display state runs this
+    // way, so the normal renderResponse() flow that follows stays consistent.
+    await appWindow.setIgnoreCursorEvents(true);
+
+    document.getElementById('action-running-text').textContent =
+        action.action_type === 'type_text' ? `Typing into ${target || 'the focused field'}…` : `Opening ${action.app_name}…`;
+    runningPill.classList.remove('hidden');
+
+    try {
+        if (action.action_type === 'type_text') {
+            await invoke('execute_type_text', { text: action.text });
+        } else if (action.action_type === 'open_app') {
+            await invoke('execute_open_app', { appName: action.app_name });
+        }
+    } catch (e) {
+        console.error('Action execution failed:', e);
+        showError(`Action failed: ${e}`);
+    } finally {
+        runningPill.classList.add('hidden');
+    }
 }
 
 btnSubmit.addEventListener('click', async () => {
@@ -619,6 +815,9 @@ btnSubmit.addEventListener('click', async () => {
         await appWindow.setFocus();
         await enableEscapeDismiss();
 
+        await confirmProposedActionIfAny(response.proposed_action);
+        if (requestId !== activeRequestId) return; // could've been superseded during the confirm wait
+
         renderResponse(response, rect);
     } catch (error) {
         if (requestId !== activeRequestId) return;
@@ -660,7 +859,11 @@ async function dismissOverlay() {
 
     const tooltip = document.getElementById('answer-tooltip');
     if (tooltip) tooltip.remove();
+    document.getElementById('storyboard-bar').classList.add('hidden');
+    document.getElementById('storyboard-hint').classList.add('hidden');
     clearStoryboardShapes();
+    document.getElementById('action-confirm-box').classList.add('hidden');
+    document.getElementById('action-running-pill').classList.add('hidden');
     loadingIndicator.classList.add('hidden');
     if (errorTimer) { clearTimeout(errorTimer); errorTimer = null; }
     errorToast.classList.add('hidden');
