@@ -17,6 +17,19 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.1-flash-lite}
       - REDIS_URL=redis://redis:6379/0
+      - POINTR_FS_ROOT=/workspace
+    volumes:
+      # Filesystem MCP tool's root, read-only. Defaults to an empty in-repo
+      # folder (so `docker compose up` never breaks for anyone who hasn't
+      # opted in) — set POINTR_FS_ROOT_HOST in the project's .env to a real
+      # folder (e.g. your Desktop) to actually enable the agent's file tools.
+      # Long-form (not the "host:container:ro" string) because a Windows path
+      # like "C:\Users\Satvik Yadav\Desktop" has its own colon and a space,
+      # both ambiguous in the short syntax.
+      - type: bind
+        source: ${POINTR_FS_ROOT_HOST:-./backend/fs_sandbox}
+        target: /workspace
+        read_only: true
     depends_on: [redis]
 
   redis:

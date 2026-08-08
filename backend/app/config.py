@@ -9,5 +9,10 @@ class Settings(BaseSettings):
     image_max_long_edge: int = 2048
     request_timeout_secs: int = 20
     redis_url: str = "redis://localhost:6379/0"
+    # Container-side path the filesystem MCP server is scoped to (see
+    # docker-compose.yml's worker volume mount). Empty = not configured, the
+    # agent's needs_filesystem path answers with a clear "not set up" message
+    # instead of trying to spawn a server against a path that doesn't exist.
+    pointr_fs_root: str = ""
 
 settings = Settings()

@@ -1,0 +1,97 @@
+"""Filesystem MCP client — the agent tool's first real MCP connection.
+
+Read-only for v1: only list/read/search tools are ever declared to Gemini,
+never write_file/edit_file/create_directory/move_file, even though the
+spawned server exposes those too. The docker-compose volume mount is also
+read-only (`:ro`) as a second, independent guardrail — the tool filter here
+and the mount's read-only flag both have to be bypassed for a write to ever
+reach a real file.
+
+Spawns `npx @modelcontextprotocol/server-filesystem <root>` as a subprocess
+over stdio per call rather than keeping a server running — simpler lifecycle,
+and this is only invoked on the (rare) agent task that actually asked for
+filesystem access, not on every agent turn, so the ~1-2s subprocess startup
+cost isn't paid by the common case.
+"""
+import asyncio
+from typing import Any
+
+from google.genai import types
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+# The server exposes several mutating tools (write_file, edit_file,
+# create_directory, move_file) — deliberately never declared to the model,
+# so there's nothing for it to even attempt to call.
+READ_ONLY_TOOLS = {
+    "list_directory",
+    "list_directory_with_sizes",
+    "directory_tree",
+    "read_text_file",
+    "read_multiple_files",
+    "search_files",
+    "get_file_info",
+    "list_allowed_directories",
+}
+
+MAX_TOOL_CALL_STEPS = 8
+
+
+async def _run(prompt: str, model: str, api_key: str, fs_root: str) -> str:
+    from google import genai
+
+    client = genai.Client(api_key=api_key)
+    params = StdioServerParameters(
+        command="npx",
+        args=["-y", "@modelcontextprotocol/server-filesystem", fs_root],
+    )
+
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools_result = await session.list_tools()
+            mcp_tools = [t for t in tools_result.tools if t.name in READ_ONLY_TOOLS]
+
+            gemini_tool = types.Tool(function_declarations=[
+                types.FunctionDeclaration(
+                    name=t.name,
+                    description=t.description,
+                    parameters_json_schema=t.input_schema,
+                )
+                for t in mcp_tools
+            ])
+            config = types.GenerateContentConfig(tools=[gemini_tool])
+            contents = [types.Content(role="user", parts=[types.Part(text=prompt)])]
+
+            for _ in range(MAX_TOOL_CALL_STEPS):
+                response = await client.aio.models.generate_content(
+                    model=model, contents=contents, config=config,
+                )
+                fcs = response.function_calls
+                if not fcs:
+                    return response.text
+
+                contents.append(response.candidates[0].content)
+                response_parts = []
+                for fc in fcs:
+                    result = await session.call_tool(fc.name, fc.args or {})
+                    text_out = "\n".join(
+                        c.text for c in result.content if hasattr(c, "text")
+                    )
+                    response_parts.append(
+                        types.Part.from_function_response(
+                            name=fc.name, response={"result": text_out}
+                        )
+                    )
+                contents.append(types.Content(role="user", parts=response_parts))
+
+            # Hit the step cap without a final answer — surface a plain-text
+            # (not JSON) result so the caller's fallback parsing kicks in
+            # rather than silently returning nothing.
+            return "I looked through the files but couldn't settle on an answer in time — try a more specific request."
+
+
+def run_agent_turn_with_filesystem_sync(prompt: str, model: str, api_key: str, fs_root: str) -> str:
+    """Blocking entry point for the Celery task (plain sync context, no
+    running event loop) — mirrors GeminiService's *_sync methods."""
+    return asyncio.run(_run(prompt, model, api_key, fs_root))
