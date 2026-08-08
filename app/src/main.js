@@ -611,9 +611,17 @@ btnCancel.addEventListener('click', async () => {
     resetSelection();
 });
 
-// Poll cap: 20 attempts * 1s = 20s, matching PRD §8's client-side timeout for
-// a backend that never reaches a terminal state (worker down, stuck task).
-const AGENT_POLL_MAX_ATTEMPTS = 20;
+// Poll cap: originally 20 attempts * 1s = 20s, matching PRD §8's client-side
+// timeout for a backend that never reaches a terminal state (worker down,
+// stuck task). That was calibrated when every agent task was a single
+// Gemini call — the filesystem/GitHub/multi-step phases each add real extra
+// round trips (an MCP handshake, a second and sometimes third sequential
+// Gemini call) that can genuinely take longer than 20s, especially GitHub's
+// remote server over the network. User-reported: task succeeded (visible in
+// the worker logs) but the UI had already shown a timeout error by then.
+// 60s still catches a truly stuck/dead worker, just doesn't fire early on
+// a slower-but-healthy multi-phase task.
+const AGENT_POLL_MAX_ATTEMPTS = 60;
 const AGENT_POLL_INTERVAL_MS = 1000;
 
 async function runAgentTask(taskDescription) {
@@ -637,6 +645,16 @@ async function runAgentTask(taskDescription) {
         console.error("[agent] Failed to read current screenshot:", e);
     }
 
+    // Decrypted (DPAPI) fresh per request, same as clipboard/screenshot —
+    // never persisted anywhere beyond this one request; empty string if
+    // GitHub isn't connected in Settings, not an error.
+    let githubToken = "";
+    try {
+        githubToken = await invoke('get_github_token_for_request');
+    } catch (e) {
+        console.error("[agent] Failed to read GitHub token:", e);
+    }
+
     const postRes = await fetch("http://localhost:8000/api/agent/task", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -644,7 +662,8 @@ async function runAgentTask(taskDescription) {
             task_description: taskDescription,
             session_id: sessionId,
             clipboard_text: clipboardText,
-            screenshot_base64: screenshotBase64
+            screenshot_base64: screenshotBase64,
+            github_token: githubToken
         })
     });
     const { task_id } = await postRes.json();

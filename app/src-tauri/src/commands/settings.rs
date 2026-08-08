@@ -1,8 +1,11 @@
+use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 use windows::Media::SpeechSynthesis::SpeechSynthesizer;
+use windows::Win32::Foundation::{HLOCAL, LocalFree};
+use windows::Win32::Security::Cryptography::{CryptProtectData, CryptUnprotectData, CRYPT_INTEGER_BLOB};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceOption {
@@ -18,6 +21,15 @@ struct PersistedSettings {
     speech_enabled: bool,
     #[serde(default = "default_os_actions_enabled")]
     os_actions_enabled: bool,
+    /// DPAPI-encrypted (`CryptProtectData`), then base64-encoded for JSON —
+    /// tied to this Windows user account, so the ciphertext is useless
+    /// copied to another machine or read by another user. Same underlying
+    /// protection Windows Credential Manager itself is built on; storing it
+    /// alongside the rest of settings.json (instead of a separate store)
+    /// keeps this feature simple while still being real encryption, not
+    /// plaintext-on-disk.
+    #[serde(default)]
+    github_token_encrypted: Option<String>,
 }
 
 fn default_speech_enabled() -> bool {
@@ -34,7 +46,46 @@ impl Default for PersistedSettings {
             voice_id: None,
             speech_enabled: true,
             os_actions_enabled: true,
+            github_token_encrypted: None,
         }
+    }
+}
+
+/// Encrypts `plaintext` with DPAPI, scoped to the current Windows user (no
+/// explicit entropy/password — same default Credential Manager itself
+/// uses). The output buffer is allocated by the OS (`LocalAlloc` under the
+/// hood) and must be freed with `LocalFree`, not just dropped.
+fn dpapi_protect(plaintext: &[u8]) -> Result<Vec<u8>, String> {
+    unsafe {
+        let input = CRYPT_INTEGER_BLOB {
+            cbData: plaintext.len() as u32,
+            pbData: plaintext.as_ptr() as *mut u8,
+        };
+        let mut output = CRYPT_INTEGER_BLOB::default();
+        CryptProtectData(&input, windows::core::PCWSTR::null(), None, None, None, 0, &mut output)
+            .map_err(|e| format!("DPAPI encrypt failed: {}", e))?;
+
+        let bytes = std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec();
+        let _ = LocalFree(HLOCAL(output.pbData as *mut _));
+        Ok(bytes)
+    }
+}
+
+/// Reverses `dpapi_protect`. Fails if the ciphertext was encrypted under a
+/// different Windows user account (by design — that's the whole point).
+fn dpapi_unprotect(ciphertext: &[u8]) -> Result<Vec<u8>, String> {
+    unsafe {
+        let input = CRYPT_INTEGER_BLOB {
+            cbData: ciphertext.len() as u32,
+            pbData: ciphertext.as_ptr() as *mut u8,
+        };
+        let mut output = CRYPT_INTEGER_BLOB::default();
+        CryptUnprotectData(&input, None, None, None, None, 0, &mut output)
+            .map_err(|e| format!("DPAPI decrypt failed: {}", e))?;
+
+        let bytes = std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec();
+        let _ = LocalFree(HLOCAL(output.pbData as *mut _));
+        Ok(bytes)
     }
 }
 
@@ -111,4 +162,68 @@ pub fn set_os_actions_enabled(app: AppHandle, enabled: bool) -> Result<(), Strin
     let mut settings = load_settings(&app);
     settings.os_actions_enabled = enabled;
     save_settings(&app, &settings)
+}
+
+#[tauri::command]
+pub fn save_github_token(app: AppHandle, token: String) -> Result<(), String> {
+    let encrypted = dpapi_protect(token.as_bytes())?;
+    let mut settings = load_settings(&app);
+    settings.github_token_encrypted = Some(general_purpose::STANDARD.encode(encrypted));
+    save_settings(&app, &settings)
+}
+
+/// Whether a token is stored — never the token itself. The Settings UI only
+/// ever needs to know connected/not-connected, so there's no path for the
+/// raw secret to reach the frontend except `get_github_token_for_request`,
+/// which is called only when an agent task actually needs it.
+#[tauri::command]
+pub fn get_github_token_status(app: AppHandle) -> Result<bool, String> {
+    Ok(load_settings(&app).github_token_encrypted.is_some())
+}
+
+#[tauri::command]
+pub fn clear_github_token(app: AppHandle) -> Result<(), String> {
+    let mut settings = load_settings(&app);
+    settings.github_token_encrypted = None;
+    save_settings(&app, &settings)
+}
+
+/// Decrypts and returns the real token — used only on the request path
+/// (threaded through to the backend the same way clipboard_text/
+/// screenshot_base64 already are), never for display. Empty string if
+/// nothing's connected, not an error, matching `get_current_screenshot_base64`'s
+/// "no capture yet" convention.
+#[tauri::command]
+pub fn get_github_token_for_request(app: AppHandle) -> Result<String, String> {
+    let settings = load_settings(&app);
+    let Some(encoded) = settings.github_token_encrypted else {
+        return Ok(String::new());
+    };
+    let encrypted = general_purpose::STANDARD
+        .decode(&encoded)
+        .map_err(|e| format!("Corrupt stored token: {}", e))?;
+    let plaintext = dpapi_unprotect(&encrypted)?;
+    String::from_utf8(plaintext).map_err(|e| format!("Corrupt stored token: {}", e))
+}
+
+#[cfg(test)]
+mod dpapi_tests {
+    use super::*;
+
+    #[test]
+    fn round_trips_a_real_token_shaped_secret() {
+        let secret = "ghp_1234567890abcdefABCDEFghijklmnopQRST";
+        let encrypted = dpapi_protect(secret.as_bytes()).expect("encrypt failed");
+        assert_ne!(encrypted, secret.as_bytes(), "ciphertext must not equal plaintext");
+        let decrypted = dpapi_unprotect(&encrypted).expect("decrypt failed");
+        assert_eq!(decrypted, secret.as_bytes());
+    }
+
+    #[test]
+    fn tampered_ciphertext_fails_to_decrypt() {
+        let mut encrypted = dpapi_protect(b"some-secret").expect("encrypt failed");
+        let last = encrypted.len() - 1;
+        encrypted[last] ^= 0xFF;
+        assert!(dpapi_unprotect(&encrypted).is_err());
+    }
 }

@@ -6,6 +6,7 @@ class AgentTaskRequest(BaseModel):
     session_id: str
     clipboard_text: str = ""
     screenshot_base64: str = ""
+    github_token: str = ""
 
 class AgentTaskResponse(BaseModel):
     task_id: str

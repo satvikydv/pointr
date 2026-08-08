@@ -17,6 +17,11 @@ const testLabel = document.getElementById('test-label');
 const btnSave = document.getElementById('btn-save');
 const btnClose = document.getElementById('btn-close');
 const statusEl = document.getElementById('status');
+const githubConnectedRow = document.getElementById('github-connected-row');
+const githubTokenRow = document.getElementById('github-token-row');
+const githubTokenInput = document.getElementById('github-token-input');
+const btnGithubConnect = document.getElementById('btn-github-connect');
+const btnGithubDisconnect = document.getElementById('btn-github-disconnect');
 
 const state = {
     audioOn: true,
@@ -28,6 +33,8 @@ const state = {
     isPlaying: false,
     statusText: '',
     statusIsUnsaved: false,
+    githubConnected: false,
+    githubBusy: false,
 };
 
 let statusTimer = null;
@@ -87,6 +94,12 @@ function render() {
     // Status
     statusEl.textContent = state.statusText;
     statusEl.style.color = state.statusIsUnsaved ? 'rgba(242,184,75,0.85)' : 'rgba(140,220,170,0.9)';
+
+    // GitHub connection
+    githubConnectedRow.classList.toggle('hidden', !state.githubConnected);
+    githubTokenRow.classList.toggle('hidden', state.githubConnected);
+    btnGithubConnect.disabled = state.githubBusy;
+    btnGithubConnect.textContent = state.githubBusy ? 'Connecting…' : 'Connect';
 }
 
 function selectVoice(id) {
@@ -175,6 +188,41 @@ btnClose.addEventListener('click', async () => {
     await Window.getCurrent().hide();
 });
 
+btnGithubConnect.addEventListener('click', async () => {
+    const token = githubTokenInput.value.trim();
+    if (!token || state.githubBusy) return;
+    state.githubBusy = true;
+    render();
+    try {
+        await invoke('save_github_token', { token });
+        githubTokenInput.value = '';
+        state.githubConnected = true;
+        state.statusText = 'Saved.';
+        state.statusIsUnsaved = false;
+    } catch (e) {
+        console.error('Failed to save GitHub token:', e);
+        state.statusText = `Failed to connect: ${e}`;
+        state.statusIsUnsaved = true;
+    }
+    state.githubBusy = false;
+    render();
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => {
+        state.statusText = '';
+        render();
+    }, 2200);
+});
+
+btnGithubDisconnect.addEventListener('click', async () => {
+    try {
+        await invoke('clear_github_token');
+    } catch (e) {
+        console.error('Failed to clear GitHub token:', e);
+    }
+    state.githubConnected = false;
+    render();
+});
+
 async function init() {
     try {
         state.voices = await invoke('list_voices');
@@ -192,6 +240,12 @@ async function init() {
         state.osActionsOn = await invoke('get_os_actions_enabled');
     } catch (e) {
         console.error('Failed to load os-actions-enabled setting:', e);
+    }
+
+    try {
+        state.githubConnected = await invoke('get_github_token_status');
+    } catch (e) {
+        console.error('Failed to load GitHub connection status:', e);
     }
 
     try {

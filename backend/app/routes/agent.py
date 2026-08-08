@@ -52,7 +52,10 @@ def _build_step_prompt(task_description: str, plan: list, completed_steps: list)
 @router.post("/task", response_model=AgentTaskResponse)
 async def create_agent_task(request: AgentTaskRequest):
     # Queue the Celery task
-    task = run_agent_task.delay(request.task_description, request.session_id, request.clipboard_text, request.screenshot_base64)
+    task = run_agent_task.delay(
+        request.task_description, request.session_id, request.clipboard_text,
+        request.screenshot_base64, request.github_token,
+    )
     return AgentTaskResponse(task_id=task.id)
 
 @router.get("/task/{task_id}", response_model=AgentTaskStatusResponse)

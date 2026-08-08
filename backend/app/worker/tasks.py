@@ -4,6 +4,7 @@ import re
 from app.worker.celery_app import celery_app
 from app.services.gemini import GeminiService
 from app.services.mcp_filesystem import run_agent_turn_with_filesystem_sync
+from app.services.github_mcp import run_agent_turn_with_github_sync
 from app.services.session_memory import record_exchange
 from app.config import settings
 
@@ -46,7 +47,10 @@ def _validate_proposed_action(proposed_action):
 
 
 @celery_app.task(bind=True)
-def run_agent_task(self, task_description: str, session_id: str, clipboard_text: str = "", screenshot_base64: str = ""):
+def run_agent_task(
+    self, task_description: str, session_id: str, clipboard_text: str = "",
+    screenshot_base64: str = "", github_token: str = "",
+):
     """Runs an agent turn: task description, whatever's on the user's
     clipboard, and — since M6 — the current screenshot, so tasks like "draft
     a reply to the message on screen" actually have something to look at
@@ -90,6 +94,16 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
         "entirely for every other task — most tasks don't need this.\n"
     )
 
+    github_block = (
+        "If the task requires looking at GitHub (issues, pull requests, repos, code, commits) and that "
+        "information isn't already visible in the screenshot or clipboard, respond with ONLY this JSON "
+        'instead: {"needs_github": true, "answer_text": "one short sentence on what you need to check"}. '
+        "Only for tasks that clearly reference GitHub — most tasks don't need this, and needs_github/"
+        "needs_filesystem/needs_multi_step are mutually exclusive (pick at most one).\n"
+        if github_token
+        else ""
+    )
+
     multi_step_block = (
         "If the task genuinely requires MULTIPLE desktop actions in sequence (e.g. open an app then type "
         "into it, or click through several steps to navigate somewhere and search for something), respond "
@@ -109,6 +123,7 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
         "you're unsure of). Don't search for things you can already answer confidently.\n"
         f"{screen_block}"
         f"{fs_block}"
+        f"{github_block}"
         f"{multi_step_block}"
         f"{ACTION_VOCAB_BLOCK}"
         f"{clipboard_block}"
@@ -119,6 +134,7 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
         '  "clipboard_write": null,\n'
         '  "proposed_action": null,\n'
         '  "needs_filesystem": false,\n'
+        '  "needs_github": false,\n'
         '  "needs_multi_step": false\n'
         "  // clipboard_write is optional: a string to replace the clipboard with, or null/omitted to leave it untouched\n"
         "  // proposed_action is optional: one of the two action objects above, or null/omitted\n"
@@ -146,7 +162,8 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
     try:
         parsed = _extract_json(raw)
         needs_filesystem = bool(parsed.get("needs_filesystem"))
-        needs_multi_step = bool(parsed.get("needs_multi_step")) and not needs_filesystem
+        needs_github = bool(parsed.get("needs_github")) and not needs_filesystem
+        needs_multi_step = bool(parsed.get("needs_multi_step")) and not needs_filesystem and not needs_github
         plan = parsed.get("plan")
         plan = [s for s in plan if isinstance(s, str)] if isinstance(plan, list) else []
         answer_text = parsed.get("answer_text") or raw
@@ -156,6 +173,7 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
         proposed_action = _validate_proposed_action(parsed.get("proposed_action"))
     except Exception:
         needs_filesystem = False
+        needs_github = False
         needs_multi_step = False
         plan = []
         answer_text = raw
@@ -211,6 +229,49 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
                 import traceback
                 traceback.print_exc()
                 answer_text = "Something went wrong reading files for this task."
+                clipboard_write = None
+                proposed_action = None
+
+    if needs_github:
+        if not github_token:
+            answer_text = "GitHub isn't connected yet — add a token in Settings."
+            clipboard_write = None
+            proposed_action = None
+        else:
+            gh_prompt = (
+                "You are an agent with read-only tool access to GitHub (issues, pull requests, repos, code, "
+                "commits) via the user's own token — you can only see what their token can see. Use at most "
+                "3 tool calls total, then work with what you already have.\n"
+                f"{screen_block}"
+                f"{ACTION_VOCAB_BLOCK}"
+                f"{clipboard_block}"
+                f"Task: {task_description}\n\n"
+                "Format your FINAL answer EXACTLY as JSON, no markdown fences:\n"
+                "{\n"
+                '  "answer_text": "...",\n'
+                '  "clipboard_write": null,\n'
+                '  "proposed_action": null\n'
+                "}"
+            )
+            try:
+                raw3 = run_agent_turn_with_github_sync(
+                    gh_prompt, settings.gemini_model, settings.gemini_api_key, github_token, image_bytes,
+                )
+                try:
+                    parsed3 = _extract_json(raw3)
+                    answer_text = parsed3.get("answer_text") or raw3
+                    clipboard_write = parsed3.get("clipboard_write")
+                    if not isinstance(clipboard_write, str):
+                        clipboard_write = None
+                    proposed_action = _validate_proposed_action(parsed3.get("proposed_action"))
+                except Exception:
+                    answer_text = raw3
+                    clipboard_write = None
+                    proposed_action = None
+            except Exception:
+                import traceback
+                traceback.print_exc()
+                answer_text = "Something went wrong checking GitHub for this task."
                 clipboard_write = None
                 proposed_action = None
 
