@@ -48,6 +48,33 @@ pub fn get_current_screenshot_base64(state: State<'_, Mutex<CaptureState>>) -> R
     Ok(base64::engine::general_purpose::STANDARD.encode(&state_lock.image_bytes))
 }
 
+/// Multi-step agent loop: unlike `get_current_screenshot_base64` (the stale
+/// capture from whenever the hotkey was originally pressed), each step needs
+/// a FRESH screenshot — the previous step's click/type/open_app just changed
+/// what's on screen. Captures the same monitor the sequence started on
+/// (recorded in `CaptureState` already) rather than re-deriving from the
+/// current cursor position, since our own clicks move the cursor around
+/// within that monitor and shouldn't cause a monitor switch mid-sequence.
+/// No marker burn-in needed here — this is for the model's eyes, not a
+/// human looking at a pointer.
+#[tauri::command]
+pub fn capture_fresh_screenshot(state: State<'_, Mutex<CaptureState>>) -> Result<String, String> {
+    let monitor = state
+        .lock()
+        .unwrap()
+        .monitor
+        .clone()
+        .ok_or_else(|| "No monitor recorded for this session".to_string())?;
+
+    let (img, _method) = crate::capture::screen::capture_monitor(&monitor)
+        .map_err(|e| format!("Capture failed: {}", e))?;
+    let resized = crate::capture::resize::cap_long_edge(&img);
+    let png_bytes = crate::capture::resize::encode_png(&resized)
+        .map_err(|e| format!("Failed to encode capture: {}", e))?;
+
+    Ok(base64::engine::general_purpose::STANDARD.encode(&png_bytes))
+}
+
 /// For the action-confirm prompt's "Type into {target}" display — the window
 /// title captured at the original hotkey press (same source `target_hwnd`
 /// focus-restoration uses), so what's shown matches where the text will

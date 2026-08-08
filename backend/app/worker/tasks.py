@@ -90,6 +90,17 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
         "entirely for every other task — most tasks don't need this.\n"
     )
 
+    multi_step_block = (
+        "If the task genuinely requires MULTIPLE desktop actions in sequence (e.g. open an app then type "
+        "into it, or click through several steps to navigate somewhere and search for something), respond "
+        'with ONLY this JSON instead: {"needs_multi_step": true, "plan": ["short step 1", "short step 2", '
+        '...], "answer_text": "one short sentence describing what you\'re about to do"}. Keep the plan to a '
+        "handful of high-level steps, not exact clicks — it's a rough guide the user confirms once, not a "
+        "precise script; the actual steps get worked out live against the real screen afterward. Only use "
+        "this for tasks that truly need more than one action — a single type_text/open_app should still use "
+        "proposed_action, and needs_multi_step/needs_filesystem are mutually exclusive (pick one).\n"
+    )
+
     prompt = (
         "You are an agent completing a small task for the user, using their clipboard and current screen "
         "as context and optionally producing a new clipboard value. You have access to "
@@ -98,6 +109,7 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
         "you're unsure of). Don't search for things you can already answer confidently.\n"
         f"{screen_block}"
         f"{fs_block}"
+        f"{multi_step_block}"
         f"{ACTION_VOCAB_BLOCK}"
         f"{clipboard_block}"
         f"Task: {task_description}\n\n"
@@ -106,7 +118,8 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
         '  "answer_text": "a short human-readable summary of what you did or found",\n'
         '  "clipboard_write": null,\n'
         '  "proposed_action": null,\n'
-        '  "needs_filesystem": false\n'
+        '  "needs_filesystem": false,\n'
+        '  "needs_multi_step": false\n'
         "  // clipboard_write is optional: a string to replace the clipboard with, or null/omitted to leave it untouched\n"
         "  // proposed_action is optional: one of the two action objects above, or null/omitted\n"
         "}"
@@ -133,6 +146,9 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
     try:
         parsed = _extract_json(raw)
         needs_filesystem = bool(parsed.get("needs_filesystem"))
+        needs_multi_step = bool(parsed.get("needs_multi_step")) and not needs_filesystem
+        plan = parsed.get("plan")
+        plan = [s for s in plan if isinstance(s, str)] if isinstance(plan, list) else []
         answer_text = parsed.get("answer_text") or raw
         clipboard_write = parsed.get("clipboard_write")
         if not isinstance(clipboard_write, str):
@@ -140,6 +156,8 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
         proposed_action = _validate_proposed_action(parsed.get("proposed_action"))
     except Exception:
         needs_filesystem = False
+        needs_multi_step = False
+        plan = []
         answer_text = raw
         clipboard_write = None
         proposed_action = None
@@ -196,6 +214,11 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
                 clipboard_write = None
                 proposed_action = None
 
+    # Multi-step tasks stop here — the plan is handed to the client to show
+    # a one-time confirm, then it drives the actual step loop itself against
+    # /api/agent/step (one action per fresh screenshot), not this task.
+    multi_step_plan = plan if (needs_multi_step and plan) else None
+
     record_exchange(session_id, f"agent: {task_description}", answer_text)
 
     return {
@@ -204,4 +227,5 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
         "pointer_target": None,
         "clipboard_write": clipboard_write,
         "proposed_action": proposed_action,
+        "multi_step_plan": multi_step_plan,
     }

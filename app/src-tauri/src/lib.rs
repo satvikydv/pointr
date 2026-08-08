@@ -269,6 +269,7 @@ pub fn run() {
             commands::analyze::process_explain,
             commands::analyze::get_current_screenshot_base64,
             commands::analyze::get_active_window_title,
+            commands::analyze::capture_fresh_screenshot,
             commands::clipboard::read_clipboard,
             commands::clipboard::write_clipboard,
             commands::tts::speak_text,
@@ -282,6 +283,8 @@ pub fn run() {
             commands::settings::set_os_actions_enabled,
             commands::actions::execute_type_text,
             commands::actions::execute_open_app,
+            commands::actions::execute_click,
+            commands::actions::execute_key_press,
             enable_escape_dismiss,
             disable_escape_dismiss
         ])
