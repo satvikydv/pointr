@@ -13,6 +13,26 @@ def _extract_json(raw: str) -> dict:
     return json.loads(cleaned)
 
 
+# Shared between the normal (phase-1) prompt and the filesystem-enabled
+# (phase-2) prompt — a task like "read my resume and answer this question on
+# the form on screen" needs BOTH file access AND the action vocabulary in
+# the SAME call to actually propose typing the answer in; phase 2 didn't
+# know this vocabulary existed at all until this was factored out and reused.
+ACTION_VOCAB_BLOCK = (
+    "You can also propose ONE desktop action, if the task clearly calls for it:\n"
+    '  - {"action_type": "type_text", "text": "...", "description": "..."} — types text into '
+    "whatever input field the user currently has focused (e.g. drafting a reply in an already-open "
+    "compose window, or filling in an answer on a form that's on screen). Only use this when it's "
+    "clear the user has something focused ready to receive text.\n"
+    '  - {"action_type": "open_app", "app_name": "...", "description": "..."} — opens an app via the '
+    "Start menu search (e.g. \"notepad\", \"calculator\"). app_name should be the plain app name, not a path.\n"
+    "The action does NOT run automatically — the user is shown your \"description\" and must explicitly "
+    "confirm before anything happens, so make the description a clear, honest, one-sentence summary of "
+    "exactly what will happen. Omit proposed_action entirely (null) for any task that's just a question "
+    "or doesn't need a desktop action.\n"
+)
+
+
 def _validate_proposed_action(proposed_action):
     if not isinstance(proposed_action, dict):
         return None
@@ -78,16 +98,7 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
         "you're unsure of). Don't search for things you can already answer confidently.\n"
         f"{screen_block}"
         f"{fs_block}"
-        "You can also propose ONE desktop action, if the task clearly calls for it:\n"
-        '  - {"action_type": "type_text", "text": "...", "description": "..."} — types text into '
-        "whatever input field the user currently has focused (e.g. drafting a reply in an already-open "
-        "compose window). Only use this when it's clear the user has something focused ready to receive text.\n"
-        '  - {"action_type": "open_app", "app_name": "...", "description": "..."} — opens an app via the '
-        "Start menu search (e.g. \"notepad\", \"calculator\"). app_name should be the plain app name, not a path.\n"
-        "The action does NOT run automatically — the user is shown your \"description\" and must explicitly "
-        "confirm before anything happens, so make the description a clear, honest, one-sentence summary of "
-        "exactly what will happen. Omit proposed_action entirely (null) for any task that's just a question "
-        "or doesn't need a desktop action.\n"
+        f"{ACTION_VOCAB_BLOCK}"
         f"{clipboard_block}"
         f"Task: {task_description}\n\n"
         "Format your answer EXACTLY as JSON, no markdown fences:\n"
@@ -101,14 +112,21 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
         "}"
     )
 
+    # Decoded once, reused for both phase 1 (below) and phase 2 (the
+    # filesystem-enabled call, further down) — a task needing both file
+    # access and screen context (e.g. "read my resume and answer this
+    # question on the form on screen") needs the same image both times.
+    image_bytes = None
     if screenshot_base64:
         try:
             image_bytes = base64.b64decode(screenshot_base64)
-            raw = gemini.analyze_sync(image_bytes, prompt, use_search=True)
         except Exception:
             import traceback
             traceback.print_exc()
-            raw = gemini.analyze_text_sync(prompt, use_search=True)
+            image_bytes = None
+
+    if image_bytes:
+        raw = gemini.analyze_sync(image_bytes, prompt, use_search=True)
     else:
         raw = gemini.analyze_text_sync(prompt, use_search=True)
 
@@ -142,15 +160,23 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
                 "ONCE to see what's there; do NOT recurse into subdirectories or call any further tool "
                 "unless the task explicitly names a specific file or subfolder to look inside. For .pdf "
                 "files, use read_pdf_text, never read_text_file (which can't handle PDF's binary format). "
-                "After at most 2 tool calls total, you MUST give your final answer from what you already "
-                "have — do not keep exploring.\n"
+                "Use at most 2 file tool calls total, then work with what you already have — do not keep "
+                "exploring.\n"
+                f"{screen_block}"
+                f"{ACTION_VOCAB_BLOCK}"
+                f"{clipboard_block}"
                 f"Task: {task_description}\n\n"
                 "Format your FINAL answer EXACTLY as JSON, no markdown fences:\n"
-                '{"answer_text": "...", "clipboard_write": null, "proposed_action": null}'
+                "{\n"
+                '  "answer_text": "...",\n'
+                '  "clipboard_write": null,\n'
+                '  "proposed_action": null\n'
+                "}"
             )
             try:
                 raw2 = run_agent_turn_with_filesystem_sync(
                     fs_prompt, settings.gemini_model, settings.gemini_api_key, settings.pointr_fs_root,
+                    image_bytes,
                 )
                 try:
                     parsed2 = _extract_json(raw2)

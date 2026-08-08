@@ -94,7 +94,7 @@ def _extract_pdf_text(path: str, fs_root: str) -> str:
     return text
 
 
-async def _run(prompt: str, model: str, api_key: str, fs_root: str) -> str:
+async def _run(prompt: str, model: str, api_key: str, fs_root: str, image_bytes: bytes | None = None) -> str:
     from google import genai
 
     client = genai.Client(api_key=api_key)
@@ -118,7 +118,14 @@ async def _run(prompt: str, model: str, api_key: str, fs_root: str) -> str:
                 for t in mcp_tools
             ] + [PDF_TOOL])
             config = types.GenerateContentConfig(tools=[gemini_tool])
-            contents = [types.Content(role="user", parts=[types.Part(text=prompt)])]
+            # Screen context matters here too — e.g. "read my resume and
+            # answer this question on the form on screen" needs both the
+            # file tools AND to see what the form is actually asking, in the
+            # same call, or the model can only do one half of the task.
+            initial_parts = [types.Part(text=prompt)]
+            if image_bytes:
+                initial_parts.append(types.Part.from_bytes(data=image_bytes, mime_type="image/png"))
+            contents = [types.Content(role="user", parts=initial_parts)]
 
             for _ in range(MAX_TOOL_CALL_STEPS):
                 response = await client.aio.models.generate_content(
@@ -155,7 +162,9 @@ async def _run(prompt: str, model: str, api_key: str, fs_root: str) -> str:
             return "I looked through the files but couldn't settle on an answer in time — try a more specific request."
 
 
-def run_agent_turn_with_filesystem_sync(prompt: str, model: str, api_key: str, fs_root: str) -> str:
+def run_agent_turn_with_filesystem_sync(
+    prompt: str, model: str, api_key: str, fs_root: str, image_bytes: bytes | None = None
+) -> str:
     """Blocking entry point for the Celery task (plain sync context, no
     running event loop) — mirrors GeminiService's *_sync methods."""
-    return asyncio.run(_run(prompt, model, api_key, fs_root))
+    return asyncio.run(_run(prompt, model, api_key, fs_root, image_bytes))
