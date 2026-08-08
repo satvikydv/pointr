@@ -14,6 +14,7 @@ filesystem access, not on every agent turn, so the ~1-2s subprocess startup
 cost isn't paid by the common case.
 """
 import asyncio
+import os
 from typing import Any
 
 from google.genai import types
@@ -34,7 +35,63 @@ READ_ONLY_TOOLS = {
     "list_allowed_directories",
 }
 
+# read_text_file (the MCP server's own tool) reads PDFs as raw bytes decoded
+# as text, which is garbage — PDF is a binary format, not text. This is a
+# local tool (not provided by the MCP server) declared alongside the MCP
+# ones and executed directly here via pypdf, not through session.call_tool.
+PDF_TOOL_NAME = "read_pdf_text"
+PDF_TOOL = types.FunctionDeclaration(
+    name=PDF_TOOL_NAME,
+    description=(
+        "Extract and return the text content of a PDF file. Use this instead of "
+        "read_text_file whenever the path ends in .pdf."
+    ),
+    parameters_json_schema={
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute path to the .pdf file, within the allowed folder."},
+        },
+        "required": ["path"],
+    },
+)
+MAX_PDF_CHARS = 12000
+
 MAX_TOOL_CALL_STEPS = 8
+
+
+def _extract_pdf_text(path: str, fs_root: str) -> str:
+    from pypdf import PdfReader
+    from pypdf.errors import PdfReadError
+
+    # Defense in depth alongside the read-only bind mount: refuse anything
+    # that resolves outside fs_root, even though the container has nothing
+    # sensitive mounted anywhere else.
+    resolved = os.path.realpath(path)
+    root = os.path.realpath(fs_root)
+    if os.path.commonpath([resolved, root]) != root:
+        return f"Error: '{path}' is outside the allowed folder."
+    if not resolved.lower().endswith(".pdf"):
+        return f"Error: '{path}' isn't a .pdf file."
+    if not os.path.isfile(resolved):
+        return f"Error: '{path}' doesn't exist."
+
+    try:
+        reader = PdfReader(resolved)
+    except PdfReadError as e:
+        return f"Error: couldn't open '{path}' as a PDF ({e})."
+    except Exception as e:
+        return f"Error reading '{path}': {e}"
+
+    if reader.is_encrypted:
+        return f"Error: '{path}' is password-protected — can't extract text."
+
+    text = "\n".join((page.extract_text() or "") for page in reader.pages)
+    text = text.strip()
+    if not text:
+        return f"'{path}' has no extractable text (likely a scanned/image-only PDF)."
+    if len(text) > MAX_PDF_CHARS:
+        text = text[:MAX_PDF_CHARS] + "\n...(truncated)"
+    return text
 
 
 async def _run(prompt: str, model: str, api_key: str, fs_root: str) -> str:
@@ -59,7 +116,7 @@ async def _run(prompt: str, model: str, api_key: str, fs_root: str) -> str:
                     parameters_json_schema=t.input_schema,
                 )
                 for t in mcp_tools
-            ])
+            ] + [PDF_TOOL])
             config = types.GenerateContentConfig(tools=[gemini_tool])
             contents = [types.Content(role="user", parts=[types.Part(text=prompt)])]
 
@@ -74,10 +131,17 @@ async def _run(prompt: str, model: str, api_key: str, fs_root: str) -> str:
                 contents.append(response.candidates[0].content)
                 response_parts = []
                 for fc in fcs:
-                    result = await session.call_tool(fc.name, fc.args or {})
-                    text_out = "\n".join(
-                        c.text for c in result.content if hasattr(c, "text")
-                    )
+                    if fc.name == PDF_TOOL_NAME:
+                        # Local tool, not an MCP one — runs in-process via
+                        # pypdf rather than session.call_tool. Blocking, so
+                        # off the event loop.
+                        path = (fc.args or {}).get("path", "")
+                        text_out = await asyncio.to_thread(_extract_pdf_text, path, fs_root)
+                    else:
+                        result = await session.call_tool(fc.name, fc.args or {})
+                        text_out = "\n".join(
+                            c.text for c in result.content if hasattr(c, "text")
+                        )
                     response_parts.append(
                         types.Part.from_function_response(
                             name=fc.name, response={"result": text_out}

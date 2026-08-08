@@ -140,9 +140,10 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
                 "(the user's Desktop). Always pass that exact path as the tool argument — you already know "
                 "it, don't call list_allowed_directories to look it up. Call list_directory on it AT MOST "
                 "ONCE to see what's there; do NOT recurse into subdirectories or call any further tool "
-                "unless the task explicitly names a specific file or subfolder to look inside. After at "
-                "most 2 tool calls total, you MUST give your final answer from what you already have — "
-                "do not keep exploring.\n"
+                "unless the task explicitly names a specific file or subfolder to look inside. For .pdf "
+                "files, use read_pdf_text, never read_text_file (which can't handle PDF's binary format). "
+                "After at most 2 tool calls total, you MUST give your final answer from what you already "
+                "have — do not keep exploring.\n"
                 f"Task: {task_description}\n\n"
                 "Format your FINAL answer EXACTLY as JSON, no markdown fences:\n"
                 '{"answer_text": "...", "clipboard_write": null, "proposed_action": null}'
