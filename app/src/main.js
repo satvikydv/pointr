@@ -85,12 +85,18 @@ let speakingOnEnded = null;
 // timer is now just a safety ceiling in case the event is ever missed
 // (playback error swallowed, event lost), generous enough to never fire
 // before real narration of that length would plausibly finish.
-async function startSpeakingIndicator(text, onEnded) {
+//
+// `header` must be passed explicitly by the caller, not looked up here via a
+// blind `.answer-header` selector — the normal answer tooltip's header and
+// the storyboard bar's header both alias the same class and are BOTH always
+// present in the DOM at once (the storyboard bar is just hidden via a CSS
+// class, not removed), and the storyboard bar happens to appear first in
+// document order. A blind selector silently toggled `.speaking` on the
+// hidden storyboard header for every normal narrated answer — no visible
+// effect, since it's not the one on screen — while storyboard mode's own
+// header happened to be right by coincidence. Real bug, found live.
+async function startSpeakingIndicator(text, onEnded, header) {
     stopSpeakingIndicator();
-    // Matches either the normal answer bubble's header or the storyboard
-    // bar's header (aliases the same class for the shared speaking-avatar
-    // CSS/markup) — only one exists in the DOM at a time in practice.
-    const header = document.querySelector('.answer-header');
     if (!header) return;
     header.classList.add('speaking');
     speakingOnEnded = onEnded || null;
@@ -125,11 +131,11 @@ function stopSpeakingIndicator() {
         ttsEndedUnlisten = null;
     }
     speakingOnEnded = null;
-    // Matches either the normal answer bubble's header or the storyboard
-    // bar's header (aliases the same class for the shared speaking-avatar
-    // CSS/markup) — only one exists in the DOM at a time in practice.
-    const header = document.querySelector('.answer-header');
-    if (header) header.classList.remove('speaking');
+    // Clears from whichever header(s) actually have it — both the tooltip's
+    // and the storyboard bar's answer-header alias the same class, and only
+    // one is ever actually marked speaking in practice, but this doesn't
+    // need to guess which; querySelectorAll finds it regardless of caller.
+    document.querySelectorAll('.answer-header.speaking').forEach((h) => h.classList.remove('speaking'));
 }
 
 let isDrawing = false;
@@ -372,7 +378,7 @@ async function playStoryboard(steps, requestId) {
     clearStoryboardShapes();
     bar.classList.add('hidden');
     if (closeTimer) clearTimeout(closeTimer);
-    closeTimer = setTimeout(() => dismissOverlay(), 3000);
+    closeTimer = setTimeout(() => dismissOverlay(), 5000);
 }
 
 function clearStoryboardShapes() {
@@ -493,7 +499,8 @@ function speakStepAndWait(text) {
                     setTimeout(resolve, 1800);
                     return;
                 }
-                await startSpeakingIndicator(text, resolve);
+                const header = document.querySelector('#storyboard-bar .answer-header');
+                await startSpeakingIndicator(text, resolve, header);
                 invoke('speak_text', { text, voiceId: null }).catch(() => resolve());
             })
             .catch(() => setTimeout(resolve, 1800));
@@ -921,18 +928,34 @@ function renderResponse(response, rect) {
     document.getElementById('answer-text').textContent = response.answer_text; // resync: authoritative final text
     document.getElementById('answer-caret').classList.add('hidden');
 
+    // Word-count estimate — the real dismiss timer only when speech is
+    // disabled/fails; the instant we confirm speech IS playing (below), this
+    // gets cancelled outright rather than left running. It used to only get
+    // cancelled once narration finished, which meant it could still fire on
+    // its own short schedule while a longer message was still being spoken —
+    // killing both audio and the overlay mid-sentence. Now nothing but real
+    // narration end (or its own generous fallback ceiling, see
+    // startSpeakingIndicator) decides when a spoken answer dismisses.
+    if (closeTimer) clearTimeout(closeTimer);
+    const wordCount = response.answer_text ? response.answer_text.split(/\s+/).length : 0;
+    const displayMs = Math.max(15000, (wordCount / 2.5) * 1000 + 4000);
+    closeTimer = setTimeout(() => dismissOverlay(), displayMs);
+
     if (response.answer_text) {
         invoke('get_speech_enabled')
             .then(async (enabled) => {
                 if (enabled) {
-                    // Once narration actually finishes (real tts-ended event,
-                    // or the fallback ceiling), give the user a short moment
-                    // to glance at the text, then dismiss — replaces the old
-                    // pure word-count guess for the whole on-screen duration.
+                    // Speech is about to play — the word-count estimate above
+                    // no longer applies at all, narration owns dismiss timing
+                    // from here. Once it actually finishes (real tts-ended
+                    // event, or its own fallback ceiling), give the user a
+                    // short moment to glance at the text, then dismiss.
+                    if (closeTimer) clearTimeout(closeTimer);
+                    const header = document.querySelector('#answer-tooltip .answer-header');
                     await startSpeakingIndicator(response.answer_text, () => {
                         if (closeTimer) clearTimeout(closeTimer);
-                        closeTimer = setTimeout(() => dismissOverlay(), 3000);
-                    });
+                        closeTimer = setTimeout(() => dismissOverlay(), 5000);
+                    }, header);
                     return invoke('speak_text', { text: response.answer_text, voiceId: null });
                 }
             })
@@ -945,14 +968,6 @@ function renderResponse(response, rect) {
     // Hide the selection box and toolbar so the user can see the result clearly
     selectionBox.style.display = 'none';
     toolbar.classList.add('hidden');
-
-    // Initial auto-dismiss estimate — acts as the real timer when speech is
-    // disabled/fails, and as a starting point otherwise (shortened once
-    // narration's real end is known, above).
-    if (closeTimer) clearTimeout(closeTimer);
-    const wordCount = response.answer_text ? response.answer_text.split(/\s+/).length : 0;
-    const displayMs = Math.max(15000, (wordCount / 2.5) * 1000 + 4000);
-    closeTimer = setTimeout(() => dismissOverlay(), displayMs);
 }
 
 // Close overlay on Escape

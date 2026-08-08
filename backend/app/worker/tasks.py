@@ -3,8 +3,46 @@ import json
 import re
 from app.worker.celery_app import celery_app
 from app.services.gemini import GeminiService
+from app.services.mcp_filesystem import run_agent_turn_with_filesystem_sync
 from app.services.session_memory import record_exchange
 from app.config import settings
+
+
+def _extract_json(raw: str) -> dict:
+    cleaned = re.sub(r"```(?:json)?\n?", "", raw, flags=re.IGNORECASE).strip()
+    return json.loads(cleaned)
+
+
+# Shared between the normal (phase-1) prompt and the filesystem-enabled
+# (phase-2) prompt — a task like "read my resume and answer this question on
+# the form on screen" needs BOTH file access AND the action vocabulary in
+# the SAME call to actually propose typing the answer in; phase 2 didn't
+# know this vocabulary existed at all until this was factored out and reused.
+ACTION_VOCAB_BLOCK = (
+    "You can also propose ONE desktop action, if the task clearly calls for it:\n"
+    '  - {"action_type": "type_text", "text": "...", "description": "..."} — types text into '
+    "whatever input field the user currently has focused (e.g. drafting a reply in an already-open "
+    "compose window, or filling in an answer on a form that's on screen). Only use this when it's "
+    "clear the user has something focused ready to receive text.\n"
+    '  - {"action_type": "open_app", "app_name": "...", "description": "..."} — opens an app via the '
+    "Start menu search (e.g. \"notepad\", \"calculator\"). app_name should be the plain app name, not a path.\n"
+    "The action does NOT run automatically — the user is shown your \"description\" and must explicitly "
+    "confirm before anything happens, so make the description a clear, honest, one-sentence summary of "
+    "exactly what will happen. Omit proposed_action entirely (null) for any task that's just a question "
+    "or doesn't need a desktop action.\n"
+)
+
+
+def _validate_proposed_action(proposed_action):
+    if not isinstance(proposed_action, dict):
+        return None
+    action_type = proposed_action.get("action_type")
+    description = proposed_action.get("description")
+    if action_type == "type_text" and isinstance(proposed_action.get("text"), str) and description:
+        return {"action_type": "type_text", "text": proposed_action["text"], "description": description}
+    if action_type == "open_app" and isinstance(proposed_action.get("app_name"), str) and description:
+        return {"action_type": "open_app", "app_name": proposed_action["app_name"], "description": description}
+    return None
 
 
 @celery_app.task(bind=True)
@@ -13,11 +51,18 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
     clipboard, and — since M6 — the current screenshot, so tasks like "draft
     a reply to the message on screen" actually have something to look at
     instead of falling back to clipboard content as the only available
-    context (the bug that motivated adding this: agent tasks were text-only
-    while the normal Q&A path was always vision-capable). The model can hand
-    back a replacement clipboard value or a proposed desktop action; neither
-    runs here — the client applies clipboard_write directly and gates
-    proposed_action behind an explicit user confirmation first."""
+    context. The model can hand back a replacement clipboard value or a
+    proposed desktop action; neither runs here — the client applies
+    clipboard_write directly and gates proposed_action behind an explicit
+    user confirmation first.
+
+    Two-phase filesystem access: the first call below never has filesystem
+    tools attached (they cost a subprocess spawn to even declare), so every
+    task pays exactly the same cost as before this existed. Only when the
+    model itself flags needs_filesystem=true — because the task clearly
+    needs to read/list something on the user's Desktop that isn't already
+    visible on screen — does a second call happen, this time through
+    services.mcp_filesystem with real (read-only) tools attached."""
     print(f"[agent_task] clipboard_text len={len(clipboard_text)} preview={clipboard_text[:40]!r} has_screenshot={bool(screenshot_base64)}")
     gemini = GeminiService(settings.gemini_api_key)
 
@@ -36,6 +81,15 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
         else ""
     )
 
+    fs_block = (
+        "You do NOT have file access on this turn. If the task clearly requires reading or listing "
+        "files on the user's Desktop (e.g. \"summarize the file X on my desktop\", \"find files mentioning "
+        "Y\") and that information isn't already visible in the screenshot or clipboard, respond with "
+        'ONLY this JSON instead of attempting to answer: {"needs_filesystem": true, "answer_text": '
+        '"one short sentence on what file access you need"}. Set needs_filesystem to false or omit it '
+        "entirely for every other task — most tasks don't need this.\n"
+    )
+
     prompt = (
         "You are an agent completing a small task for the user, using their clipboard and current screen "
         "as context and optionally producing a new clipboard value. You have access to "
@@ -43,63 +97,104 @@ def run_agent_task(self, task_description: str, session_id: str, clipboard_text:
         "what you'd otherwise know (news, prices, current versions, recent events, facts "
         "you're unsure of). Don't search for things you can already answer confidently.\n"
         f"{screen_block}"
-        "You can also propose ONE desktop action, if the task clearly calls for it:\n"
-        '  - {"action_type": "type_text", "text": "...", "description": "..."} — types text into '
-        "whatever input field the user currently has focused (e.g. drafting a reply in an already-open "
-        "compose window). Only use this when it's clear the user has something focused ready to receive text.\n"
-        '  - {"action_type": "open_app", "app_name": "...", "description": "..."} — opens an app via the '
-        "Start menu search (e.g. \"notepad\", \"calculator\"). app_name should be the plain app name, not a path.\n"
-        "The action does NOT run automatically — the user is shown your \"description\" and must explicitly "
-        "confirm before anything happens, so make the description a clear, honest, one-sentence summary of "
-        "exactly what will happen. Omit proposed_action entirely (null) for any task that's just a question "
-        "or doesn't need a desktop action.\n"
+        f"{fs_block}"
+        f"{ACTION_VOCAB_BLOCK}"
         f"{clipboard_block}"
         f"Task: {task_description}\n\n"
         "Format your answer EXACTLY as JSON, no markdown fences:\n"
         "{\n"
         '  "answer_text": "a short human-readable summary of what you did or found",\n'
         '  "clipboard_write": null,\n'
-        '  "proposed_action": null\n'
+        '  "proposed_action": null,\n'
+        '  "needs_filesystem": false\n'
         "  // clipboard_write is optional: a string to replace the clipboard with, or null/omitted to leave it untouched\n"
         "  // proposed_action is optional: one of the two action objects above, or null/omitted\n"
         "}"
     )
 
+    # Decoded once, reused for both phase 1 (below) and phase 2 (the
+    # filesystem-enabled call, further down) — a task needing both file
+    # access and screen context (e.g. "read my resume and answer this
+    # question on the form on screen") needs the same image both times.
+    image_bytes = None
     if screenshot_base64:
         try:
             image_bytes = base64.b64decode(screenshot_base64)
-            raw = gemini.analyze_sync(image_bytes, prompt, use_search=True)
         except Exception:
             import traceback
             traceback.print_exc()
-            raw = gemini.analyze_text_sync(prompt, use_search=True)
+            image_bytes = None
+
+    if image_bytes:
+        raw = gemini.analyze_sync(image_bytes, prompt, use_search=True)
     else:
         raw = gemini.analyze_text_sync(prompt, use_search=True)
 
     try:
-        cleaned = re.sub(r"```(?:json)?\n?", "", raw, flags=re.IGNORECASE).strip()
-        parsed = json.loads(cleaned)
+        parsed = _extract_json(raw)
+        needs_filesystem = bool(parsed.get("needs_filesystem"))
         answer_text = parsed.get("answer_text") or raw
         clipboard_write = parsed.get("clipboard_write")
         if not isinstance(clipboard_write, str):
             clipboard_write = None
-
-        proposed_action = parsed.get("proposed_action")
-        if isinstance(proposed_action, dict):
-            action_type = proposed_action.get("action_type")
-            description = proposed_action.get("description")
-            if action_type == "type_text" and isinstance(proposed_action.get("text"), str) and description:
-                proposed_action = {"action_type": "type_text", "text": proposed_action["text"], "description": description}
-            elif action_type == "open_app" and isinstance(proposed_action.get("app_name"), str) and description:
-                proposed_action = {"action_type": "open_app", "app_name": proposed_action["app_name"], "description": description}
-            else:
-                proposed_action = None
-        else:
-            proposed_action = None
+        proposed_action = _validate_proposed_action(parsed.get("proposed_action"))
     except Exception:
+        needs_filesystem = False
         answer_text = raw
         clipboard_write = None
         proposed_action = None
+
+    if needs_filesystem:
+        if not settings.pointr_fs_root:
+            answer_text = (
+                "File access isn't set up yet — set POINTR_FS_ROOT_HOST in the project's .env to a real "
+                "folder and restart the worker (docker compose up -d --build worker)."
+            )
+            clipboard_write = None
+            proposed_action = None
+        else:
+            fs_prompt = (
+                f"You are an agent with read-only tool access to exactly one folder: '{settings.pointr_fs_root}' "
+                "(the user's Desktop). Always pass that exact path as the tool argument — you already know "
+                "it, don't call list_allowed_directories to look it up. Call list_directory on it AT MOST "
+                "ONCE to see what's there; do NOT recurse into subdirectories or call any further tool "
+                "unless the task explicitly names a specific file or subfolder to look inside. For .pdf "
+                "files, use read_pdf_text, never read_text_file (which can't handle PDF's binary format). "
+                "Use at most 2 file tool calls total, then work with what you already have — do not keep "
+                "exploring.\n"
+                f"{screen_block}"
+                f"{ACTION_VOCAB_BLOCK}"
+                f"{clipboard_block}"
+                f"Task: {task_description}\n\n"
+                "Format your FINAL answer EXACTLY as JSON, no markdown fences:\n"
+                "{\n"
+                '  "answer_text": "...",\n'
+                '  "clipboard_write": null,\n'
+                '  "proposed_action": null\n'
+                "}"
+            )
+            try:
+                raw2 = run_agent_turn_with_filesystem_sync(
+                    fs_prompt, settings.gemini_model, settings.gemini_api_key, settings.pointr_fs_root,
+                    image_bytes,
+                )
+                try:
+                    parsed2 = _extract_json(raw2)
+                    answer_text = parsed2.get("answer_text") or raw2
+                    clipboard_write = parsed2.get("clipboard_write")
+                    if not isinstance(clipboard_write, str):
+                        clipboard_write = None
+                    proposed_action = _validate_proposed_action(parsed2.get("proposed_action"))
+                except Exception:
+                    answer_text = raw2
+                    clipboard_write = None
+                    proposed_action = None
+            except Exception:
+                import traceback
+                traceback.print_exc()
+                answer_text = "Something went wrong reading files for this task."
+                clipboard_write = None
+                proposed_action = None
 
     record_exchange(session_id, f"agent: {task_description}", answer_text)
 
