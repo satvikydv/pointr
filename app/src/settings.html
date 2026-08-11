@@ -23,7 +23,7 @@
       }
       #panel {
         width: 420px;
-        height: 460px;
+        height: 560px;
         box-sizing: border-box;
         background: rgba(22, 24, 29, 0.86);
         backdrop-filter: blur(30px) saturate(160%);
@@ -267,6 +267,70 @@
       }
       .dots span:nth-child(2) { animation-delay: 0.12s; }
       .dots span:nth-child(3) { animation-delay: 0.24s; }
+
+      #github-token-row {
+        display: flex;
+        gap: 8px;
+      }
+      #github-token-input {
+        flex: 1;
+        min-width: 0;
+        box-sizing: border-box;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.92);
+        font-family: 'Consolas', 'Segoe UI Mono', monospace;
+      }
+      #github-token-input::placeholder {
+        color: rgba(255, 255, 255, 0.3);
+        font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+      }
+      #btn-github-connect {
+        font-size: 12.5px;
+        font-weight: 600;
+        color: #0b1220;
+        background: #5b8cff;
+        padding: 0 16px;
+        border-radius: 7px;
+        cursor: pointer;
+        border: none;
+        flex-shrink: 0;
+      }
+      #github-connected-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      #github-connected-label {
+        font-size: 13.5px;
+        color: rgba(255, 255, 255, 0.92);
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      #github-connected-label .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #3ecf8e;
+      }
+      #btn-github-disconnect {
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.45);
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        text-decoration: underline;
+      }
+      #btn-github-disconnect:hover {
+        color: rgba(255, 255, 255, 0.75);
+      }
+      .hidden {
+        display: none !important;
+      }
     </style>
   </head>
   <body>
@@ -309,6 +373,21 @@
             </div>
             <div id="voice-dropdown" class="hidden"></div>
           </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div id="github-section">
+          <div class="section-label">GitHub connection</div>
+          <div id="github-connected-row" class="hidden">
+            <div id="github-connected-label"><span class="dot"></span>Connected</div>
+            <button id="btn-github-disconnect">Disconnect</button>
+          </div>
+          <div id="github-token-row">
+            <input id="github-token-input" type="password" placeholder="ghp_… or fine-grained token" autocomplete="off" />
+            <button id="btn-github-connect">Connect</button>
+          </div>
+          <div class="toggle-hint">Lets the agent file issues, check PRs, and read repos on your behalf — needs a token with repo access. Stored encrypted on this device (DPAPI), never written anywhere else.</div>
         </div>
 
         <div style="flex: 1"></div>

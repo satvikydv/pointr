@@ -107,6 +107,37 @@
         </div>
         <span id="action-running-text"></span>
       </div>
+
+      <!-- Multi-step automation: one confirm for the whole rough plan up
+           front (not per-step — tedious past 2-3 steps), then it runs
+           automatically with a live step indicator and Esc-to-abort at any
+           point. Same amber family as the single-action confirm above. -->
+      <div id="multistep-confirm-box" class="action-confirm-box hidden">
+        <div class="action-confirm-header">
+          <div class="action-confirm-dot-wrap">
+            <div class="action-confirm-dot"></div>
+            <div class="action-confirm-ring"></div>
+          </div>
+          <div class="action-confirm-eyebrow">Multi-step action requested</div>
+        </div>
+        <div id="multistep-confirm-title" class="action-confirm-title"></div>
+        <ol id="multistep-confirm-plan" class="multistep-plan-list"></ol>
+        <div class="action-confirm-footer">
+          <span class="action-confirm-key">Enter</span>
+          <span class="action-confirm-key-label">to run</span>
+          <span class="action-confirm-dot-sep"></span>
+          <span class="action-confirm-key">Esc</span>
+          <span class="action-confirm-key-label">to cancel</span>
+        </div>
+      </div>
+
+      <div id="multistep-progress-pill" class="action-running-pill hidden">
+        <div class="dot-bounce amber">
+          <span></span><span></span><span></span>
+        </div>
+        <span id="multistep-progress-text"></span>
+        <span class="multistep-abort-hint">Esc to stop</span>
+      </div>
     </div>
 
     <script type="module" src="/main.js"></script>

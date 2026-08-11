@@ -283,8 +283,9 @@ async function runDirectAnalysis(queryText) {
             return;
         }
 
+        const agentTaskDescription = agentMatch ? (agentMatch[1] || "Analyze this for agent actions") : null;
         const response = agentMatch
-            ? await runAgentTask(agentMatch[1] || "Analyze this for agent actions")
+            ? await runAgentTask(agentTaskDescription)
             : await invoke('process_direct', {
                 query: queryText || null,
                 requestId: String(requestId)
@@ -302,6 +303,11 @@ async function runDirectAnalysis(queryText) {
         await appWindow.show();
         await appWindow.setAlwaysOnTop(true);
         await appWindow.setFocus();
+
+        if (response.multi_step_plan) {
+            await runMultiStepLoop(agentTaskDescription, response.multi_step_plan);
+            return;
+        }
 
         await confirmProposedActionIfAny(response.proposed_action);
         if (requestId !== activeRequestId) return; // could've been superseded during the confirm wait
@@ -605,9 +611,17 @@ btnCancel.addEventListener('click', async () => {
     resetSelection();
 });
 
-// Poll cap: 20 attempts * 1s = 20s, matching PRD §8's client-side timeout for
-// a backend that never reaches a terminal state (worker down, stuck task).
-const AGENT_POLL_MAX_ATTEMPTS = 20;
+// Poll cap: originally 20 attempts * 1s = 20s, matching PRD §8's client-side
+// timeout for a backend that never reaches a terminal state (worker down,
+// stuck task). That was calibrated when every agent task was a single
+// Gemini call — the filesystem/GitHub/multi-step phases each add real extra
+// round trips (an MCP handshake, a second and sometimes third sequential
+// Gemini call) that can genuinely take longer than 20s, especially GitHub's
+// remote server over the network. User-reported: task succeeded (visible in
+// the worker logs) but the UI had already shown a timeout error by then.
+// 60s still catches a truly stuck/dead worker, just doesn't fire early on
+// a slower-but-healthy multi-phase task.
+const AGENT_POLL_MAX_ATTEMPTS = 60;
 const AGENT_POLL_INTERVAL_MS = 1000;
 
 async function runAgentTask(taskDescription) {
@@ -631,6 +645,16 @@ async function runAgentTask(taskDescription) {
         console.error("[agent] Failed to read current screenshot:", e);
     }
 
+    // Decrypted (DPAPI) fresh per request, same as clipboard/screenshot —
+    // never persisted anywhere beyond this one request; empty string if
+    // GitHub isn't connected in Settings, not an error.
+    let githubToken = "";
+    try {
+        githubToken = await invoke('get_github_token_for_request');
+    } catch (e) {
+        console.error("[agent] Failed to read GitHub token:", e);
+    }
+
     const postRes = await fetch("http://localhost:8000/api/agent/task", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -638,7 +662,8 @@ async function runAgentTask(taskDescription) {
             task_description: taskDescription,
             session_id: sessionId,
             clipboard_text: clipboardText,
-            screenshot_base64: screenshotBase64
+            screenshot_base64: screenshotBase64,
+            github_token: githubToken
         })
     });
     const { task_id } = await postRes.json();
@@ -661,7 +686,8 @@ async function runAgentTask(taskDescription) {
             return {
                 answer_text: statusData.result.result,
                 pointer_target: statusData.result.pointer_target,
-                proposed_action: statusData.result.proposed_action || null
+                proposed_action: statusData.result.proposed_action || null,
+                multi_step_plan: statusData.result.multi_step_plan || null
             };
         } else if (statusData.status === "FAILURE") {
             throw new Error("Task failed: " + statusData.result);
@@ -778,6 +804,183 @@ async function confirmProposedActionIfAny(action) {
     }
 }
 
+const MULTI_STEP_MAX_STEPS = 12;
+const MULTI_STEP_STEP_DELAY_MS = 900; // let the UI settle after an action before the next screenshot
+
+// Gate before a multi-step automation sequence runs — shows the model's
+// rough plan once (not per-step, tedious past 2-3 steps) and waits for a
+// real keypress, same confirm pattern as confirmProposedActionIfAny. Once
+// confirmed, steps run automatically: fresh screenshot -> ask the backend
+// for just the next action -> execute it -> repeat, re-grounding off the
+// real screen each time rather than trusting the upfront plan's guesses.
+// No-op if there's no plan (the common case).
+async function runMultiStepLoop(taskDescription, plan) {
+    if (!plan || !plan.length) return;
+
+    try {
+        const enabled = await invoke('get_os_actions_enabled');
+        if (!enabled) return; // OS actions off — skip silently, answer_text still shows normally
+    } catch (e) {
+        console.error('Failed to check os_actions_enabled:', e);
+        return; // fail closed
+    }
+
+    const appWindow = Window.getCurrent();
+    const box = document.getElementById('multistep-confirm-box');
+    const title = document.getElementById('multistep-confirm-title');
+    const planList = document.getElementById('multistep-confirm-plan');
+    const progressPill = document.getElementById('multistep-progress-pill');
+    const progressText = document.getElementById('multistep-progress-text');
+
+    title.textContent = `I'll do this in ${plan.length} steps:`;
+    planList.innerHTML = '';
+    plan.forEach((step) => {
+        const li = document.createElement('li');
+        li.textContent = step;
+        planList.appendChild(li);
+    });
+
+    await appWindow.setIgnoreCursorEvents(false);
+    await appWindow.setFocus();
+    box.classList.remove('hidden');
+
+    // Same race avoided as confirmProposedActionIfAny: disable the global
+    // Escape shortcut for the duration of this local keydown-based confirm,
+    // so only this listener can ever resolve it.
+    await disableEscapeDismiss();
+
+    const confirmed = await new Promise((resolve) => {
+        const onKey = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                document.removeEventListener('keydown', onKey);
+                resolve(true);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                document.removeEventListener('keydown', onKey);
+                resolve(false);
+            }
+        };
+        document.addEventListener('keydown', onKey);
+    });
+
+    box.classList.add('hidden');
+
+    if (!confirmed) {
+        await dismissOverlay();
+        return;
+    }
+
+    // Running phase: window goes click-through like every other answer
+    // state, and Escape routes through the global shortcut again (a
+    // click-through window can't reliably keep DOM keyboard focus — the
+    // same reason that shortcut exists at all). dismissOverlay() bumps
+    // activeRequestId, which this loop checks between every step to abort.
+    await appWindow.setIgnoreCursorEvents(true);
+    await enableEscapeDismiss();
+    const requestId = activeRequestId;
+
+    progressPill.classList.remove('hidden');
+    const completedSteps = [];
+    let finalAnswer = null;
+
+    for (let i = 0; i < MULTI_STEP_MAX_STEPS; i++) {
+        if (requestId !== activeRequestId) return; // aborted
+
+        progressText.textContent = `Step ${i + 1}: deciding…`;
+
+        let screenshotBase64;
+        try {
+            screenshotBase64 = await invoke('capture_fresh_screenshot');
+        } catch (e) {
+            console.error('Failed to capture screenshot for step:', e);
+            finalAnswer = 'Lost track of the screen mid-task — stopping here.';
+            break;
+        }
+
+        let step;
+        try {
+            const res = await fetch("http://localhost:8000/api/agent/step", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    task_description: taskDescription,
+                    plan,
+                    completed_steps: completedSteps,
+                    screenshot_base64: screenshotBase64
+                })
+            });
+            step = await res.json();
+        } catch (e) {
+            console.error('Step decision request failed:', e);
+            finalAnswer = 'Lost connection while figuring out the next step — stopping here.';
+            break;
+        }
+
+        if (requestId !== activeRequestId) return; // aborted while awaiting
+
+        console.log(`[multistep] step ${i + 1}:`, JSON.stringify(step));
+
+        if (step.action_type === 'done') {
+            finalAnswer = step.answer_text || 'Done.';
+            break;
+        }
+
+        progressText.textContent = step.description || `Step ${i + 1}…`;
+
+        try {
+            if (step.action_type === 'click' && step.point) {
+                // Gemini's native format is [y, x] normalized 0-1000 — same
+                // convention already validated in storyboard mode.
+                const yNorm = step.point[0] / 1000;
+                const xNorm = step.point[1] / 1000;
+                await invoke('execute_click', { xNorm, yNorm });
+            } else if (step.action_type === 'type_text' && step.text) {
+                // false: don't restore the pre-hotkey window's focus — this
+                // step should type into whatever the sequence itself just
+                // focused (e.g. Notepad after opening it), not yank focus
+                // back to whatever was open before the hotkey was pressed.
+                await invoke('execute_type_text', { text: step.text, restoreOriginalFocus: false });
+            } else if (step.action_type === 'open_app' && step.app_name) {
+                await invoke('execute_open_app', { appName: step.app_name });
+            } else if (step.action_type === 'key_press' && step.key) {
+                await invoke('execute_key_press', { key: step.key });
+            }
+        } catch (e) {
+            console.error('Step execution failed:', e);
+        }
+
+        completedSteps.push(step.description || step.action_type);
+        // Launching an app is much slower to actually render than a
+        // click/type/key press — the fixed delay wasn't enough for it in
+        // testing (a fresh screenshot could still show the desktop/Start
+        // menu, mid-launch), which made the model think the open failed and
+        // repeat it. Rust's execute_open_app also grew its own internal
+        // settle time; this is on top of that, before the NEXT step's
+        // screenshot is taken.
+        const settleMs = step.action_type === 'open_app' ? 2200 : MULTI_STEP_STEP_DELAY_MS;
+        await new Promise((r) => setTimeout(r, settleMs));
+    }
+
+    if (requestId !== activeRequestId) return; // aborted during the final delay
+
+    progressPill.classList.add('hidden');
+
+    if (!finalAnswer) {
+        finalAnswer = `Stopped after ${MULTI_STEP_MAX_STEPS} steps without finishing — try a narrower request.`;
+    }
+
+    // No TTS narration for the multi-step summary yet — deliberate v1 scope
+    // cut, not an oversight; text-only final answer, same dismiss-timing
+    // math as a spoken-off normal answer.
+    getOrCreateTooltip();
+    document.getElementById('answer-text').textContent = finalAnswer;
+    document.getElementById('answer-caret').classList.add('hidden');
+    if (closeTimer) clearTimeout(closeTimer);
+    const wordCount = finalAnswer.split(/\s+/).length;
+    closeTimer = setTimeout(() => dismissOverlay(), Math.max(15000, (wordCount / 2.5) * 1000 + 4000));
+}
+
 btnSubmit.addEventListener('click', async () => {
     if (!currentRect) return;
     // Snapshot: currentRect is a shared global that Escape, a new selection,
@@ -803,9 +1006,10 @@ btnSubmit.addEventListener('click', async () => {
 
     try {
         let response;
+        let agentTaskDescription = null;
         if (agentMatch) {
-            const taskDescription = agentMatch[1] || "Analyze this UI area for agent actions";
-            response = await runAgentTask(taskDescription);
+            agentTaskDescription = agentMatch[1] || "Analyze this UI area for agent actions";
+            response = await runAgentTask(agentTaskDescription);
         } else {
             response = await invoke('process_crop', {
                 rect,
@@ -821,6 +1025,11 @@ btnSubmit.addEventListener('click', async () => {
         await appWindow.show();
         await appWindow.setFocus();
         await enableEscapeDismiss();
+
+        if (response.multi_step_plan) {
+            await runMultiStepLoop(agentTaskDescription, response.multi_step_plan);
+            return;
+        }
 
         await confirmProposedActionIfAny(response.proposed_action);
         if (requestId !== activeRequestId) return; // could've been superseded during the confirm wait
@@ -871,6 +1080,8 @@ async function dismissOverlay() {
     clearStoryboardShapes();
     document.getElementById('action-confirm-box').classList.add('hidden');
     document.getElementById('action-running-pill').classList.add('hidden');
+    document.getElementById('multistep-confirm-box').classList.add('hidden');
+    document.getElementById('multistep-progress-pill').classList.add('hidden');
     loadingIndicator.classList.add('hidden');
     if (errorTimer) { clearTimeout(errorTimer); errorTimer = null; }
     errorToast.classList.add('hidden');
