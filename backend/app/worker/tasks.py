@@ -5,6 +5,7 @@ from app.worker.celery_app import celery_app
 from app.services.gemini import GeminiService
 from app.services.mcp_filesystem import run_agent_turn_with_filesystem_sync
 from app.services.github_mcp import run_agent_turn_with_github_sync
+from app.services.tavily_mcp import run_agent_turn_with_web_search_sync
 from app.services.session_memory import record_exchange
 from app.config import settings
 
@@ -104,6 +105,17 @@ def run_agent_task(
         else ""
     )
 
+    web_search_block = (
+        "If the task needs current/live information from the web (news, prices, facts outside your "
+        "training data, anything time-sensitive) and that information isn't already visible in the "
+        "screenshot or clipboard, respond with ONLY this JSON instead: "
+        '{"needs_web_search": true, "answer_text": "one short sentence on what you\'re about to look up"}. '
+        "Only for tasks that clearly need a live web lookup — most tasks don't, and needs_web_search/"
+        "needs_filesystem/needs_github/needs_multi_step are mutually exclusive (pick at most one).\n"
+        if settings.tavily_api_key
+        else ""
+    )
+
     multi_step_block = (
         "If the task genuinely requires MULTIPLE desktop actions in sequence (e.g. open an app then type "
         "into it, or click through several steps to navigate somewhere and search for something), respond "
@@ -117,13 +129,11 @@ def run_agent_task(
 
     prompt = (
         "You are an agent completing a small task for the user, using their clipboard and current screen "
-        "as context and optionally producing a new clipboard value. You have access to "
-        "live Google Search — use it for anything time-sensitive, current, or outside "
-        "what you'd otherwise know (news, prices, current versions, recent events, facts "
-        "you're unsure of). Don't search for things you can already answer confidently.\n"
+        "as context and optionally producing a new clipboard value.\n"
         f"{screen_block}"
         f"{fs_block}"
         f"{github_block}"
+        f"{web_search_block}"
         f"{multi_step_block}"
         f"{ACTION_VOCAB_BLOCK}"
         f"{clipboard_block}"
@@ -135,6 +145,7 @@ def run_agent_task(
         '  "proposed_action": null,\n'
         '  "needs_filesystem": false,\n'
         '  "needs_github": false,\n'
+        '  "needs_web_search": false,\n'
         '  "needs_multi_step": false\n'
         "  // clipboard_write is optional: a string to replace the clipboard with, or null/omitted to leave it untouched\n"
         "  // proposed_action is optional: one of the two action objects above, or null/omitted\n"
@@ -155,15 +166,21 @@ def run_agent_task(
             image_bytes = None
 
     if image_bytes:
-        raw = gemini.analyze_sync(image_bytes, prompt, use_search=True)
+        raw = gemini.analyze_sync(image_bytes, prompt)
     else:
-        raw = gemini.analyze_text_sync(prompt, use_search=True)
+        raw = gemini.analyze_text_sync(prompt)
 
     try:
         parsed = _extract_json(raw)
         needs_filesystem = bool(parsed.get("needs_filesystem"))
         needs_github = bool(parsed.get("needs_github")) and not needs_filesystem
-        needs_multi_step = bool(parsed.get("needs_multi_step")) and not needs_filesystem and not needs_github
+        needs_web_search = (
+            bool(parsed.get("needs_web_search")) and not needs_filesystem and not needs_github
+        )
+        needs_multi_step = (
+            bool(parsed.get("needs_multi_step"))
+            and not needs_filesystem and not needs_github and not needs_web_search
+        )
         plan = parsed.get("plan")
         plan = [s for s in plan if isinstance(s, str)] if isinstance(plan, list) else []
         answer_text = parsed.get("answer_text") or raw
@@ -174,6 +191,7 @@ def run_agent_task(
     except Exception:
         needs_filesystem = False
         needs_github = False
+        needs_web_search = False
         needs_multi_step = False
         plan = []
         answer_text = raw
@@ -272,6 +290,50 @@ def run_agent_task(
                 import traceback
                 traceback.print_exc()
                 answer_text = "Something went wrong checking GitHub for this task."
+                clipboard_write = None
+                proposed_action = None
+
+    if needs_web_search:
+        if not settings.tavily_api_key:
+            answer_text = "Web search isn't set up yet — set TAVILY_API_KEY in the project's .env."
+            clipboard_write = None
+            proposed_action = None
+        else:
+            ws_prompt = (
+                "You are an agent with access to live web search (tavily_search) and page extraction "
+                "(tavily_extract) tools. Use at most 3 tool calls total, then work with what you already "
+                "have — don't keep searching once you have enough to answer.\n"
+                f"{screen_block}"
+                f"{ACTION_VOCAB_BLOCK}"
+                f"{clipboard_block}"
+                f"Task: {task_description}\n\n"
+                "Format your FINAL answer EXACTLY as JSON, no markdown fences:\n"
+                "{\n"
+                '  "answer_text": "...",\n'
+                '  "clipboard_write": null,\n'
+                '  "proposed_action": null\n'
+                "}"
+            )
+            try:
+                raw4 = run_agent_turn_with_web_search_sync(
+                    ws_prompt, settings.gemini_model, settings.gemini_api_key, settings.tavily_api_key,
+                    image_bytes,
+                )
+                try:
+                    parsed4 = _extract_json(raw4)
+                    answer_text = parsed4.get("answer_text") or raw4
+                    clipboard_write = parsed4.get("clipboard_write")
+                    if not isinstance(clipboard_write, str):
+                        clipboard_write = None
+                    proposed_action = _validate_proposed_action(parsed4.get("proposed_action"))
+                except Exception:
+                    answer_text = raw4
+                    clipboard_write = None
+                    proposed_action = None
+            except Exception:
+                import traceback
+                traceback.print_exc()
+                answer_text = "Something went wrong searching the web for this task."
                 clipboard_write = None
                 proposed_action = None
 
