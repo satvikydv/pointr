@@ -40,6 +40,74 @@ const state = {
 let statusTimer = null;
 let playTimer = null;
 
+// BYOK: Gemini/Tavily key sections share identical markup/behavior (unlike
+// GitHub's, which predates this and uses its own dedicated wiring below) —
+// one generic setup function instead of duplicating connect/disconnect/
+// status logic per key. Each section gets its own state.<prefix>Connected/
+// state.<prefix>Busy fields, rendered generically in render() below.
+function wireKeySection(prefix, { saveCmd, statusCmd, clearCmd }) {
+    const connectedRow = document.getElementById(`${prefix}-connected-row`);
+    const keyRow = document.getElementById(`${prefix}-key-row`);
+    const input = document.getElementById(`${prefix}-key-input`);
+    const btnConnect = document.getElementById(`btn-${prefix}-connect`);
+    const btnDisconnect = document.getElementById(`btn-${prefix}-disconnect`);
+    const connectedKey = `${prefix}Connected`;
+    const busyKey = `${prefix}Busy`;
+    state[connectedKey] = false;
+    state[busyKey] = false;
+
+    btnConnect.addEventListener('click', async () => {
+        const key = input.value.trim();
+        if (!key || state[busyKey]) return;
+        state[busyKey] = true;
+        render();
+        try {
+            await invoke(saveCmd, { key });
+            input.value = '';
+            state[connectedKey] = true;
+            state.statusText = 'Saved.';
+            state.statusIsUnsaved = false;
+        } catch (e) {
+            console.error(`Failed to save ${prefix} key:`, e);
+            state.statusText = `Failed to connect: ${e}`;
+            state.statusIsUnsaved = true;
+        }
+        state[busyKey] = false;
+        render();
+        clearTimeout(statusTimer);
+        statusTimer = setTimeout(() => {
+            state.statusText = '';
+            render();
+        }, 2200);
+    });
+
+    btnDisconnect.addEventListener('click', async () => {
+        try {
+            await invoke(clearCmd);
+        } catch (e) {
+            console.error(`Failed to clear ${prefix} key:`, e);
+        }
+        state[connectedKey] = false;
+        render();
+    });
+
+    return {
+        prefix, connectedRow, keyRow, btnConnect,
+        async loadStatus() {
+            try {
+                state[connectedKey] = await invoke(statusCmd);
+            } catch (e) {
+                console.error(`Failed to load ${prefix} key status:`, e);
+            }
+        },
+    };
+}
+
+const keySections = [
+    wireKeySection('gemini', { saveCmd: 'save_gemini_key', statusCmd: 'get_gemini_key_status', clearCmd: 'clear_gemini_key' }),
+    wireKeySection('tavily', { saveCmd: 'save_tavily_key', statusCmd: 'get_tavily_key_status', clearCmd: 'clear_tavily_key' }),
+];
+
 function voiceLabel(voice) {
     return voice ? `${voice.display_name} (${voice.language})` : 'No voices found';
 }
@@ -100,6 +168,15 @@ function render() {
     githubTokenRow.classList.toggle('hidden', state.githubConnected);
     btnGithubConnect.disabled = state.githubBusy;
     btnGithubConnect.textContent = state.githubBusy ? 'Connecting…' : 'Connect';
+
+    // BYOK key sections (Gemini, Tavily)
+    for (const s of keySections) {
+        const connected = state[`${s.prefix}Connected`];
+        s.connectedRow.classList.toggle('hidden', !connected);
+        s.keyRow.classList.toggle('hidden', connected);
+        s.btnConnect.disabled = state[`${s.prefix}Busy`];
+        s.btnConnect.textContent = state[`${s.prefix}Busy`] ? 'Connecting…' : 'Connect';
+    }
 }
 
 function selectVoice(id) {
@@ -246,6 +323,10 @@ async function init() {
         state.githubConnected = await invoke('get_github_token_status');
     } catch (e) {
         console.error('Failed to load GitHub connection status:', e);
+    }
+
+    for (const s of keySections) {
+        await s.loadStatus();
     }
 
     try {

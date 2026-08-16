@@ -84,6 +84,7 @@
         display: flex;
         flex-direction: column;
         position: relative;
+        overflow-y: auto;
       }
       .toggle-row {
         display: flex;
@@ -268,11 +269,11 @@
       .dots span:nth-child(2) { animation-delay: 0.12s; }
       .dots span:nth-child(3) { animation-delay: 0.24s; }
 
-      #github-token-row {
+      .key-row {
         display: flex;
         gap: 8px;
       }
-      #github-token-input {
+      .key-input {
         flex: 1;
         min-width: 0;
         box-sizing: border-box;
@@ -284,11 +285,11 @@
         color: rgba(255, 255, 255, 0.92);
         font-family: 'Consolas', 'Segoe UI Mono', monospace;
       }
-      #github-token-input::placeholder {
+      .key-input::placeholder {
         color: rgba(255, 255, 255, 0.3);
         font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
       }
-      #btn-github-connect {
+      .btn-key-connect {
         font-size: 12.5px;
         font-weight: 600;
         color: #0b1220;
@@ -299,25 +300,25 @@
         border: none;
         flex-shrink: 0;
       }
-      #github-connected-row {
+      .connected-row {
         display: flex;
         align-items: center;
         justify-content: space-between;
       }
-      #github-connected-label {
+      .connected-label {
         font-size: 13.5px;
         color: rgba(255, 255, 255, 0.92);
         display: flex;
         align-items: center;
         gap: 7px;
       }
-      #github-connected-label .dot {
+      .connected-label .dot {
         width: 7px;
         height: 7px;
         border-radius: 50%;
         background: #3ecf8e;
       }
-      #btn-github-disconnect {
+      .btn-key-disconnect {
         font-size: 12px;
         color: rgba(255, 255, 255, 0.45);
         background: transparent;
@@ -325,7 +326,7 @@
         cursor: pointer;
         text-decoration: underline;
       }
-      #btn-github-disconnect:hover {
+      .btn-key-disconnect:hover {
         color: rgba(255, 255, 255, 0.75);
       }
       .hidden {
@@ -377,15 +378,45 @@
 
         <div class="divider"></div>
 
+        <div id="gemini-section">
+          <div class="section-label">Gemini API key</div>
+          <div id="gemini-connected-row" class="connected-row hidden">
+            <div class="connected-label"><span class="dot"></span>Connected</div>
+            <button id="btn-gemini-disconnect" class="btn-key-disconnect">Disconnect</button>
+          </div>
+          <div id="gemini-key-row" class="key-row">
+            <input id="gemini-key-input" class="key-input" type="password" placeholder="AIza… (from aistudio.google.com)" autocomplete="off" />
+            <button id="btn-gemini-connect" class="btn-key-connect">Connect</button>
+          </div>
+          <div class="toggle-hint">Required for Pointr to work — every request uses your own free Gemini API key, not a shared one. Stored encrypted on this device (DPAPI), never written anywhere else.</div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div id="tavily-section">
+          <div class="section-label">Tavily API key (optional)</div>
+          <div id="tavily-connected-row" class="connected-row hidden">
+            <div class="connected-label"><span class="dot"></span>Connected</div>
+            <button id="btn-tavily-disconnect" class="btn-key-disconnect">Disconnect</button>
+          </div>
+          <div id="tavily-key-row" class="key-row">
+            <input id="tavily-key-input" class="key-input" type="password" placeholder="tvly-… (optional)" autocomplete="off" />
+            <button id="btn-tavily-connect" class="btn-key-connect">Connect</button>
+          </div>
+          <div class="toggle-hint">Enables live web search for agent tasks (agent: what's the latest...). Skip this if you don't need it.</div>
+        </div>
+
+        <div class="divider"></div>
+
         <div id="github-section">
           <div class="section-label">GitHub connection</div>
-          <div id="github-connected-row" class="hidden">
-            <div id="github-connected-label"><span class="dot"></span>Connected</div>
-            <button id="btn-github-disconnect">Disconnect</button>
+          <div id="github-connected-row" class="connected-row hidden">
+            <div class="connected-label"><span class="dot"></span>Connected</div>
+            <button id="btn-github-disconnect" class="btn-key-disconnect">Disconnect</button>
           </div>
-          <div id="github-token-row">
-            <input id="github-token-input" type="password" placeholder="ghp_… or fine-grained token" autocomplete="off" />
-            <button id="btn-github-connect">Connect</button>
+          <div id="github-token-row" class="key-row">
+            <input id="github-token-input" class="key-input" type="password" placeholder="ghp_… or fine-grained token" autocomplete="off" />
+            <button id="btn-github-connect" class="btn-key-connect">Connect</button>
           </div>
           <div class="toggle-hint">Lets the agent file issues, check PRs, and read repos on your behalf — needs a token with repo access. Stored encrypted on this device (DPAPI), never written anywhere else.</div>
         </div>

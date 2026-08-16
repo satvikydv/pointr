@@ -1,6 +1,7 @@
 use tauri::{AppHandle, Emitter, State};
 use serde::{Deserialize, Serialize};
 use crate::CaptureState;
+use crate::api_config::{API_BASE_URL, CLIENT_KEY};
 use base64::Engine;
 use futures_util::StreamExt;
 use std::sync::Mutex;
@@ -98,7 +99,8 @@ async fn post_and_stream(
     let client = reqwest::Client::new();
 
     let res = client
-        .post("http://localhost:8000/api/analyze-screen-stream")
+        .post(format!("{}/api/analyze-screen-stream", API_BASE_URL))
+        .header("X-Pointr-Client-Key", CLIENT_KEY)
         .json(&payload)
         .send()
         .await
@@ -207,6 +209,7 @@ pub async fn process_crop(
 
     let query_text = query.unwrap_or_else(|| "What is this?".to_string());
     let timestamp = chrono::Utc::now().to_rfc3339();
+    let gemini_api_key = crate::commands::settings::get_gemini_key_for_request(app.clone()).unwrap_or_default();
 
     let payload = serde_json::json!({
         "screenshot_base64": image_base64,
@@ -223,7 +226,8 @@ pub async fn process_crop(
         "session_duration_secs": session_duration_secs,
         "query_text": query_text,
         "session_id": session_id,
-        "timestamp": timestamp
+        "timestamp": timestamp,
+        "gemini_api_key": gemini_api_key
     });
 
     post_and_stream(&app, &request_id, payload).await
@@ -237,6 +241,7 @@ pub async fn process_crop(
 /// toolbar.
 #[tauri::command]
 pub async fn process_explain(
+    app: AppHandle,
     topic: String,
     state: State<'_, Mutex<CaptureState>>,
 ) -> Result<StoryboardResponse, String> {
@@ -262,6 +267,7 @@ pub async fn process_explain(
     };
 
     let timestamp = chrono::Utc::now().to_rfc3339();
+    let gemini_api_key = crate::commands::settings::get_gemini_key_for_request(app.clone()).unwrap_or_default();
     let payload = serde_json::json!({
         "screenshot_base64": image_base64,
         "cursor_position": {
@@ -277,12 +283,14 @@ pub async fn process_explain(
         "session_duration_secs": session_duration_secs,
         "query_text": topic,
         "session_id": session_id,
-        "timestamp": timestamp
+        "timestamp": timestamp,
+        "gemini_api_key": gemini_api_key
     });
 
     let client = reqwest::Client::new();
     let res = client
-        .post("http://localhost:8000/api/analyze-explain")
+        .post(format!("{}/api/analyze-explain", API_BASE_URL))
+        .header("X-Pointr-Client-Key", CLIENT_KEY)
         .json(&payload)
         .send()
         .await
@@ -333,6 +341,7 @@ pub async fn process_direct(
         .filter(|q| !q.trim().is_empty())
         .unwrap_or_else(|| "What is this?".to_string());
     let timestamp = chrono::Utc::now().to_rfc3339();
+    let gemini_api_key = crate::commands::settings::get_gemini_key_for_request(app.clone()).unwrap_or_default();
 
     let payload = serde_json::json!({
         "screenshot_base64": image_base64,
@@ -349,7 +358,8 @@ pub async fn process_direct(
         "session_duration_secs": session_duration_secs,
         "query_text": query_text,
         "session_id": session_id,
-        "timestamp": timestamp
+        "timestamp": timestamp,
+        "gemini_api_key": gemini_api_key
     });
 
     post_and_stream(&app, &request_id, payload).await

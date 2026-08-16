@@ -2,6 +2,13 @@ const { listen } = window.__TAURI__.event;
 const { invoke } = window.__TAURI__.core;
 const { Window } = window.__TAURI__.window;
 
+// Backend URL + client key come from Rust (app/src-tauri/src/api_config.rs),
+// which picks local vs. prod at compile time from POINTR_ENV in its own
+// .env — JS has no build step of its own, so it just follows whatever this
+// particular build was compiled for instead of keeping a second switch here.
+const { base_url: API_BASE_URL, client_key: CLIENT_KEY } = await invoke('get_api_config');
+const API_HEADERS = { "Content-Type": "application/json", "X-Pointr-Client-Key": CLIENT_KEY };
+
 const container = document.getElementById('overlay-container');
 const img = document.getElementById('screenshot-img');
 const selectionBox = document.getElementById('selection-box');
@@ -655,15 +662,33 @@ async function runAgentTask(taskDescription) {
         console.error("[agent] Failed to read GitHub token:", e);
     }
 
-    const postRes = await fetch("http://localhost:8000/api/agent/task", {
+    // BYOK — same decrypt-fresh-per-request pattern as the GitHub token.
+    // Empty if the user hasn't added a key in Settings yet; the backend
+    // falls back to its own .env key (if any) rather than erroring.
+    let geminiApiKey = "";
+    try {
+        geminiApiKey = await invoke('get_gemini_key_for_request');
+    } catch (e) {
+        console.error("[agent] Failed to read Gemini key:", e);
+    }
+    let tavilyApiKey = "";
+    try {
+        tavilyApiKey = await invoke('get_tavily_key_for_request');
+    } catch (e) {
+        console.error("[agent] Failed to read Tavily key:", e);
+    }
+
+    const postRes = await fetch(`${API_BASE_URL}/api/agent/task`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: API_HEADERS,
         body: JSON.stringify({
             task_description: taskDescription,
             session_id: sessionId,
             clipboard_text: clipboardText,
             screenshot_base64: screenshotBase64,
-            github_token: githubToken
+            github_token: githubToken,
+            gemini_api_key: geminiApiKey,
+            tavily_api_key: tavilyApiKey
         })
     });
     const { task_id } = await postRes.json();
@@ -671,7 +696,9 @@ async function runAgentTask(taskDescription) {
     for (let attempt = 0; attempt < AGENT_POLL_MAX_ATTEMPTS; attempt++) {
         await new Promise(r => setTimeout(r, AGENT_POLL_INTERVAL_MS));
 
-        const getRes = await fetch(`http://localhost:8000/api/agent/task/${task_id}`);
+        const getRes = await fetch(`${API_BASE_URL}/api/agent/task/${task_id}`, {
+            headers: { "X-Pointr-Client-Key": CLIENT_KEY }
+        });
         const statusData = await getRes.json();
 
         if (statusData.status === "SUCCESS") {
@@ -884,6 +911,13 @@ async function runMultiStepLoop(taskDescription, plan) {
     const completedSteps = [];
     let finalAnswer = null;
 
+    let geminiApiKey = "";
+    try {
+        geminiApiKey = await invoke('get_gemini_key_for_request');
+    } catch (e) {
+        console.error('[multistep] Failed to read Gemini key:', e);
+    }
+
     for (let i = 0; i < MULTI_STEP_MAX_STEPS; i++) {
         if (requestId !== activeRequestId) return; // aborted
 
@@ -900,14 +934,15 @@ async function runMultiStepLoop(taskDescription, plan) {
 
         let step;
         try {
-            const res = await fetch("http://localhost:8000/api/agent/step", {
+            const res = await fetch(`${API_BASE_URL}/api/agent/step`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: API_HEADERS,
                 body: JSON.stringify({
                     task_description: taskDescription,
                     plan,
                     completed_steps: completedSteps,
-                    screenshot_base64: screenshotBase64
+                    screenshot_base64: screenshotBase64,
+                    gemini_api_key: geminiApiKey
                 })
             });
             step = await res.json();
