@@ -18,5 +18,14 @@ class Settings(BaseSettings):
     # not per-user like the GitHub token, so it lives in .env like the Gemini
     # key rather than being entered in Settings.
     tavily_api_key: str = ""
+    # Shared secret the desktop client sends on every request once this is
+    # set — deterrent against random scraping on a publicly-reachable,
+    # quota-metered backend. Empty (local dev) = gate is a no-op.
+    pointr_client_key: str = ""
+    # Per-IP cap on the expensive (Gemini/Tavily-calling) endpoints only —
+    # protects the server's own CPU/Celery capacity from bombardment,
+    # independent of BYOK (which only removes the API-quota-cost risk, not
+    # a plain request flood). Cheap polling endpoints aren't gated by this.
+    rate_limit_per_minute: int = 30
 
 settings = Settings()

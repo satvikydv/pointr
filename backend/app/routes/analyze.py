@@ -4,9 +4,10 @@ import re
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from app.models.analyze import AnalyzeRequest, AnalyzeResponse, PointerTarget, StoryboardResponse, StoryboardStep
-from app.dependencies import get_gemini_service
 from app.services.gemini import GeminiService
 from app.services.session_memory import build_session_context_block, record_exchange
+from app.config import settings
+from app.rate_limit import rate_limit
 
 router = APIRouter()
 
@@ -15,11 +16,9 @@ router = APIRouter()
 # streaming so the user only ever sees clean prose, never a half-typed marker.
 POINTER_SENTINEL = "POINTER:"
 
-@router.post("/analyze-screen", response_model=AnalyzeResponse)
-async def analyze_screen(
-    request: AnalyzeRequest,
-    gemini: GeminiService = Depends(get_gemini_service)
-):
+@router.post("/analyze-screen", response_model=AnalyzeResponse, dependencies=[Depends(rate_limit)])
+async def analyze_screen(request: AnalyzeRequest):
+    gemini = GeminiService(request.gemini_api_key or settings.gemini_api_key)
     try:
         # Decode image
         image_bytes = base64.b64decode(request.screenshot_base64)
@@ -180,11 +179,9 @@ async def _stream_analyze_events(request: AnalyzeRequest, gemini: GeminiService)
     }) + "\n"
 
 
-@router.post("/analyze-screen-stream")
-async def analyze_screen_stream(
-    request: AnalyzeRequest,
-    gemini: GeminiService = Depends(get_gemini_service)
-):
+@router.post("/analyze-screen-stream", dependencies=[Depends(rate_limit)])
+async def analyze_screen_stream(request: AnalyzeRequest):
+    gemini = GeminiService(request.gemini_api_key or settings.gemini_api_key)
     try:
         base64.b64decode(request.screenshot_base64)
     except Exception:
@@ -196,15 +193,13 @@ async def analyze_screen_stream(
     )
 
 
-@router.post("/analyze-explain", response_model=StoryboardResponse)
-async def analyze_explain(
-    request: AnalyzeRequest,
-    gemini: GeminiService = Depends(get_gemini_service)
-):
+@router.post("/analyze-explain", response_model=StoryboardResponse, dependencies=[Depends(rate_limit)])
+async def analyze_explain(request: AnalyzeRequest):
     """'explain: <topic>' mode — a short multi-step walkthrough (narration +
     optional point-at-marker per step) instead of one answer, played back
     sequentially by the client with TTS between steps. Non-streaming: the
     client needs the whole step list up front to play it back in order."""
+    gemini = GeminiService(request.gemini_api_key or settings.gemini_api_key)
     try:
         image_bytes = base64.b64decode(request.screenshot_base64)
     except Exception:

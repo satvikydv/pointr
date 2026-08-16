@@ -7,6 +7,9 @@ class AgentTaskRequest(BaseModel):
     clipboard_text: str = ""
     screenshot_base64: str = ""
     github_token: str = ""
+    # BYOK — see AnalyzeRequest.gemini_api_key for the fallback rule.
+    gemini_api_key: str = ""
+    tavily_api_key: str = ""
 
 class AgentTaskResponse(BaseModel):
     task_id: str
@@ -21,6 +24,7 @@ class AgentStepRequest(BaseModel):
     plan: List[str] = []
     completed_steps: List[str] = []
     screenshot_base64: str
+    gemini_api_key: str = ""
 
 class AgentStepResponse(BaseModel):
     action_type: str  # "click" | "type_text" | "open_app" | "key_press" | "done"

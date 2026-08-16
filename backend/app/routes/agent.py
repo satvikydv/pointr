@@ -1,7 +1,7 @@
 import base64
 import json
 import re
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from celery.result import AsyncResult
 from app.models.agent import (
     AgentTaskRequest, AgentTaskResponse, AgentTaskStatusResponse,
@@ -10,6 +10,7 @@ from app.models.agent import (
 from app.worker.tasks import run_agent_task
 from app.services.gemini import GeminiService
 from app.config import settings
+from app.rate_limit import rate_limit
 
 router = APIRouter()
 
@@ -49,12 +50,13 @@ def _build_step_prompt(task_description: str, plan: list, completed_steps: list)
         "Format your answer as EXACTLY one JSON object, no markdown fences, no extra fields, no commentary."
     )
 
-@router.post("/task", response_model=AgentTaskResponse)
+@router.post("/task", response_model=AgentTaskResponse, dependencies=[Depends(rate_limit)])
 async def create_agent_task(request: AgentTaskRequest):
     # Queue the Celery task
     task = run_agent_task.delay(
         request.task_description, request.session_id, request.clipboard_text,
         request.screenshot_base64, request.github_token,
+        request.gemini_api_key, request.tavily_api_key,
     )
     return AgentTaskResponse(task_id=task.id)
 
@@ -79,9 +81,9 @@ async def get_agent_task_status(task_id: str):
 # Sync, not queued through Celery — each step needs to feel responsive as
 # the automation runs (the client drives the loop, awaiting one step at a
 # time), unlike the normal agent task which is fine polled over ~1-2s.
-@router.post("/step", response_model=AgentStepResponse)
+@router.post("/step", response_model=AgentStepResponse, dependencies=[Depends(rate_limit)])
 async def agent_step(request: AgentStepRequest):
-    gemini = GeminiService(settings.gemini_api_key)
+    gemini = GeminiService(request.gemini_api_key or settings.gemini_api_key)
     prompt = _build_step_prompt(request.task_description, request.plan, request.completed_steps)
 
     try:

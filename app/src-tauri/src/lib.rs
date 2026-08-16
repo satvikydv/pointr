@@ -1,3 +1,4 @@
+pub mod api_config;
 pub mod capture;
 pub mod overlay;
 pub mod commands;
@@ -263,6 +264,7 @@ pub fn run() {
         .manage(Mutex::new(SessionState::new()))
         .manage(commands::tts::TtsState::new())
         .invoke_handler(tauri::generate_handler![
+            api_config::get_api_config,
             trigger_capture,
             commands::analyze::process_crop,
             commands::analyze::process_direct,
@@ -285,6 +287,14 @@ pub fn run() {
             commands::settings::get_github_token_status,
             commands::settings::clear_github_token,
             commands::settings::get_github_token_for_request,
+            commands::settings::save_gemini_key,
+            commands::settings::get_gemini_key_status,
+            commands::settings::clear_gemini_key,
+            commands::settings::get_gemini_key_for_request,
+            commands::settings::save_tavily_key,
+            commands::settings::get_tavily_key_status,
+            commands::settings::clear_tavily_key,
+            commands::settings::get_tavily_key_for_request,
             commands::actions::execute_type_text,
             commands::actions::execute_open_app,
             commands::actions::execute_click,

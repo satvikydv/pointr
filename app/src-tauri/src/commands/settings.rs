@@ -30,6 +30,13 @@ struct PersistedSettings {
     /// plaintext-on-disk.
     #[serde(default)]
     github_token_encrypted: Option<String>,
+    /// Same DPAPI treatment as github_token_encrypted — the user's own
+    /// Gemini/Tavily API keys (BYOK), sent with every backend request
+    /// instead of the server footing everyone's API bill on its own key.
+    #[serde(default)]
+    gemini_api_key_encrypted: Option<String>,
+    #[serde(default)]
+    tavily_api_key_encrypted: Option<String>,
 }
 
 fn default_speech_enabled() -> bool {
@@ -47,6 +54,8 @@ impl Default for PersistedSettings {
             speech_enabled: true,
             os_actions_enabled: true,
             github_token_encrypted: None,
+            gemini_api_key_encrypted: None,
+            tavily_api_key_encrypted: None,
         }
     }
 }
@@ -204,6 +213,72 @@ pub fn get_github_token_for_request(app: AppHandle) -> Result<String, String> {
         .map_err(|e| format!("Corrupt stored token: {}", e))?;
     let plaintext = dpapi_unprotect(&encrypted)?;
     String::from_utf8(plaintext).map_err(|e| format!("Corrupt stored token: {}", e))
+}
+
+#[tauri::command]
+pub fn save_gemini_key(app: AppHandle, key: String) -> Result<(), String> {
+    let encrypted = dpapi_protect(key.as_bytes())?;
+    let mut settings = load_settings(&app);
+    settings.gemini_api_key_encrypted = Some(general_purpose::STANDARD.encode(encrypted));
+    save_settings(&app, &settings)
+}
+
+#[tauri::command]
+pub fn get_gemini_key_status(app: AppHandle) -> Result<bool, String> {
+    Ok(load_settings(&app).gemini_api_key_encrypted.is_some())
+}
+
+#[tauri::command]
+pub fn clear_gemini_key(app: AppHandle) -> Result<(), String> {
+    let mut settings = load_settings(&app);
+    settings.gemini_api_key_encrypted = None;
+    save_settings(&app, &settings)
+}
+
+#[tauri::command]
+pub fn get_gemini_key_for_request(app: AppHandle) -> Result<String, String> {
+    let settings = load_settings(&app);
+    let Some(encoded) = settings.gemini_api_key_encrypted else {
+        return Ok(String::new());
+    };
+    let encrypted = general_purpose::STANDARD
+        .decode(&encoded)
+        .map_err(|e| format!("Corrupt stored key: {}", e))?;
+    let plaintext = dpapi_unprotect(&encrypted)?;
+    String::from_utf8(plaintext).map_err(|e| format!("Corrupt stored key: {}", e))
+}
+
+#[tauri::command]
+pub fn save_tavily_key(app: AppHandle, key: String) -> Result<(), String> {
+    let encrypted = dpapi_protect(key.as_bytes())?;
+    let mut settings = load_settings(&app);
+    settings.tavily_api_key_encrypted = Some(general_purpose::STANDARD.encode(encrypted));
+    save_settings(&app, &settings)
+}
+
+#[tauri::command]
+pub fn get_tavily_key_status(app: AppHandle) -> Result<bool, String> {
+    Ok(load_settings(&app).tavily_api_key_encrypted.is_some())
+}
+
+#[tauri::command]
+pub fn clear_tavily_key(app: AppHandle) -> Result<(), String> {
+    let mut settings = load_settings(&app);
+    settings.tavily_api_key_encrypted = None;
+    save_settings(&app, &settings)
+}
+
+#[tauri::command]
+pub fn get_tavily_key_for_request(app: AppHandle) -> Result<String, String> {
+    let settings = load_settings(&app);
+    let Some(encoded) = settings.tavily_api_key_encrypted else {
+        return Ok(String::new());
+    };
+    let encrypted = general_purpose::STANDARD
+        .decode(&encoded)
+        .map_err(|e| format!("Corrupt stored key: {}", e))?;
+    let plaintext = dpapi_unprotect(&encrypted)?;
+    String::from_utf8(plaintext).map_err(|e| format!("Corrupt stored key: {}", e))
 }
 
 #[cfg(test)]

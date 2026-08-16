@@ -51,6 +51,7 @@ def _validate_proposed_action(proposed_action):
 def run_agent_task(
     self, task_description: str, session_id: str, clipboard_text: str = "",
     screenshot_base64: str = "", github_token: str = "",
+    gemini_api_key: str = "", tavily_api_key: str = "",
 ):
     """Runs an agent turn: task description, whatever's on the user's
     clipboard, and — since M6 — the current screenshot, so tasks like "draft
@@ -69,7 +70,12 @@ def run_agent_task(
     visible on screen — does a second call happen, this time through
     services.mcp_filesystem with real (read-only) tools attached."""
     print(f"[agent_task] clipboard_text len={len(clipboard_text)} preview={clipboard_text[:40]!r} has_screenshot={bool(screenshot_base64)}")
-    gemini = GeminiService(settings.gemini_api_key)
+    # BYOK: prefer the key sent with this request (the user's own, from
+    # Settings) and fall back to the server's own .env key — keeps local dev
+    # and a future centralized deployment working without this being set.
+    resolved_gemini_key = gemini_api_key or settings.gemini_api_key
+    resolved_tavily_key = tavily_api_key or settings.tavily_api_key
+    gemini = GeminiService(resolved_gemini_key)
 
     clipboard_block = (
         f'The user\'s clipboard currently contains:\n"""\n{clipboard_text}\n"""\n'
@@ -112,7 +118,7 @@ def run_agent_task(
         '{"needs_web_search": true, "answer_text": "one short sentence on what you\'re about to look up"}. '
         "Only for tasks that clearly need a live web lookup — most tasks don't, and needs_web_search/"
         "needs_filesystem/needs_github/needs_multi_step are mutually exclusive (pick at most one).\n"
-        if settings.tavily_api_key
+        if resolved_tavily_key
         else ""
     )
 
@@ -229,7 +235,7 @@ def run_agent_task(
             )
             try:
                 raw2 = run_agent_turn_with_filesystem_sync(
-                    fs_prompt, settings.gemini_model, settings.gemini_api_key, settings.pointr_fs_root,
+                    fs_prompt, settings.gemini_model, resolved_gemini_key, settings.pointr_fs_root,
                     image_bytes,
                 )
                 try:
@@ -273,7 +279,7 @@ def run_agent_task(
             )
             try:
                 raw3 = run_agent_turn_with_github_sync(
-                    gh_prompt, settings.gemini_model, settings.gemini_api_key, github_token, image_bytes,
+                    gh_prompt, settings.gemini_model, resolved_gemini_key, github_token, image_bytes,
                 )
                 try:
                     parsed3 = _extract_json(raw3)
@@ -294,8 +300,8 @@ def run_agent_task(
                 proposed_action = None
 
     if needs_web_search:
-        if not settings.tavily_api_key:
-            answer_text = "Web search isn't set up yet — set TAVILY_API_KEY in the project's .env."
+        if not resolved_tavily_key:
+            answer_text = "Web search isn't set up yet — add a Tavily API key in Settings."
             clipboard_write = None
             proposed_action = None
         else:
@@ -316,7 +322,7 @@ def run_agent_task(
             )
             try:
                 raw4 = run_agent_turn_with_web_search_sync(
-                    ws_prompt, settings.gemini_model, settings.gemini_api_key, settings.tavily_api_key,
+                    ws_prompt, settings.gemini_model, resolved_gemini_key, resolved_tavily_key,
                     image_bytes,
                 )
                 try:

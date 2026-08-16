@@ -8,6 +8,7 @@ services:
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.1-flash-lite}
       - REDIS_URL=redis://redis:6379/0
       - MARKER_MODE=${MARKER_MODE:-burned_in}
+      - POINTR_CLIENT_KEY=${POINTR_CLIENT_KEY:-}
     depends_on: [redis]
     restart: unless-stopped
 

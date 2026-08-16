@@ -26,6 +26,10 @@ class AnalyzeRequest(BaseModel):
     query_text: str = Field(min_length=1, max_length=2000)
     session_id: str
     timestamp: datetime
+    # BYOK: the user's own Gemini API key, entered in Settings. Empty falls
+    # back to the server's own key (settings.gemini_api_key), if any — kept
+    # so local dev / a future centralized deployment don't need this set.
+    gemini_api_key: str = ""
 
 class PointerTarget(BaseModel):
     x_norm: float = Field(ge=0.0, le=1.0)
