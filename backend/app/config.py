@@ -14,5 +14,9 @@ class Settings(BaseSettings):
     # agent's needs_filesystem path answers with a clear "not set up" message
     # instead of trying to spawn a server against a path that doesn't exist.
     pointr_fs_root: str = ""
+    # Tavily's own remote-hosted MCP server key — a single project-owned key,
+    # not per-user like the GitHub token, so it lives in .env like the Gemini
+    # key rather than being entered in Settings.
+    tavily_api_key: str = ""
 
 settings = Settings()
