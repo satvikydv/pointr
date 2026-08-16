@@ -10,6 +10,20 @@
     "withGlobalTauri": true,
     "windows": [
       {
+        "title": "Pointr",
+        "label": "splash",
+        "url": "splash.html",
+        "width": 300,
+        "height": 180,
+        "resizable": false,
+        "visible": true,
+        "center": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "transparent": true,
+        "decorations": false
+      },
+      {
         "title": "Pointr Overlay",
         "label": "main",
         "width": 800,

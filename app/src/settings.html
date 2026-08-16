@@ -16,6 +16,7 @@
       html, body {
         margin: 0;
         padding: 0;
+        height: 100%;
         background: transparent;
         font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
         user-select: none;
@@ -23,7 +24,10 @@
       }
       #panel {
         width: 420px;
-        height: 560px;
+        /* Fills whatever the OS window's actual height is — a hardcoded px
+           value here previously drifted out of sync with tauri.conf.json's
+           window height (560 vs. the real 640) without anyone noticing. */
+        height: 100vh;
         box-sizing: border-box;
         background: rgba(22, 24, 29, 0.86);
         backdrop-filter: blur(30px) saturate(160%);
@@ -78,13 +82,41 @@
         background: rgba(255, 255, 255, 0.08);
         color: rgba(255, 255, 255, 0.85);
       }
+      #body {
+        flex: 1;
+        min-height: 0;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+      }
       #content {
         flex: 1;
-        padding: 18px 20px 20px;
+        min-height: 0;
+        padding: 18px 20px 14px;
         display: flex;
         flex-direction: column;
         position: relative;
         overflow-y: auto;
+        scrollbar-width: thin;
+      }
+      #content::-webkit-scrollbar {
+        width: 6px;
+      }
+      #content::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.16);
+        border-radius: 3px;
+      }
+      #content::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      #scroll-fade {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 22px;
+        background: linear-gradient(to bottom, rgba(22, 24, 29, 0), rgba(22, 24, 29, 0.95));
+        pointer-events: none;
       }
       .toggle-row {
         display: flex;
@@ -212,10 +244,12 @@
         font-size: 13px;
       }
       #footer {
+        flex-shrink: 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        padding: 14px 20px;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        margin-top: 14px;
       }
       #status {
         font-size: 12px;
@@ -344,6 +378,7 @@
         <button id="btn-close">&times;</button>
       </div>
 
+      <div id="body">
       <div id="content">
         <div class="toggle-row">
           <div class="toggle-title">Read answers aloud</div>
@@ -420,18 +455,18 @@
           </div>
           <div class="toggle-hint">Lets the agent file issues, check PRs, and read repos on your behalf — needs a token with repo access. Stored encrypted on this device (DPAPI), never written anywhere else.</div>
         </div>
+      </div>
+      <div id="scroll-fade"></div>
+      </div>
 
-        <div style="flex: 1"></div>
-
-        <div id="footer">
-          <div id="status"></div>
-          <div id="footer-actions">
-            <button id="btn-test">
-              <div class="dots" id="test-dots"><span></span><span></span><span></span></div>
-              <div id="test-label">Test</div>
-            </button>
-            <button id="btn-save">Save</button>
-          </div>
+      <div id="footer">
+        <div id="status"></div>
+        <div id="footer-actions">
+          <button id="btn-test">
+            <div class="dots" id="test-dots"><span></span><span></span><span></span></div>
+            <div id="test-label">Test</div>
+          </button>
+          <button id="btn-save">Save</button>
         </div>
       </div>
     </div>
