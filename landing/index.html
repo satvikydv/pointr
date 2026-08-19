@@ -21,6 +21,10 @@ a:hover { color: #b7cdff; }
 .feature-card-1:hover { transform: rotate(-1.4deg) translateY(-8px); }
 .feature-image-2:hover { transform: translateY(-8px); }
 .feature-card-4:hover { transform: rotate(-0.8deg) translateY(-8px); }
+#changelog-scroll { scrollbar-width: thin; }
+#changelog-scroll::-webkit-scrollbar { width: 6px; }
+#changelog-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.16); border-radius: 3px; }
+#changelog-scroll::-webkit-scrollbar-track { background: transparent; }
 </style>
 </head>
 <body>
@@ -181,10 +185,12 @@ a:hover { color: #b7cdff; }
       <div style="font-size:34px;font-weight:600;">Changelog</div>
       <div style="display:flex;align-items:center;gap:8px;font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:rgba(255,255,255,0.5);">
         <div style="width:7px;height:7px;border-radius:50%;background:#3fb59a;animation:pointrLiveDot 2s ease infinite;"></div>
-        v0.5.0 currently live
+        v0.1.0 currently live
       </div>
     </div>
 
+    <div style="position:relative;">
+    <div id="changelog-scroll" style="max-height:520px;overflow-y:auto;">
     <div style="position:relative;padding-left:28px;">
       <div style="position:absolute;left:5px;top:6px;bottom:6px;width:1px;background:rgba(255,255,255,0.1);"></div>
 
@@ -194,12 +200,12 @@ a:hover { color: #b7cdff; }
           <div style="position:absolute;left:-3px;top:-3px;width:17px;height:17px;border-radius:50%;border:1.5px solid #3fb59a;animation:pointrPulseRing 1.8s ease-out infinite;"></div>
         </div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:14px;font-weight:600;color:rgba(255,255,255,0.9);">v0.5.0</div>
+          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:14px;font-weight:600;color:rgba(255,255,255,0.9);">v0.1.0</div>
           <div style="font-size:12.5px;color:rgba(255,255,255,0.4);">Aug 2026</div>
           <div style="font-size:10.5px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#3fb59a;background:rgba(63,181,154,0.12);border:1px solid rgba(63,181,154,0.3);border-radius:5px;padding:2px 7px;">Live</div>
         </div>
         <ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;">
-          <li style="font-size:14px;line-height:1.55;color:rgba(255,255,255,0.62);">Windows installer now available — download and run, no build step required.</li>
+          <li style="font-size:14px;line-height:1.55;color:rgba(255,255,255,0.62);">First public Windows installer — download and run, no build step required.</li>
           <li style="font-size:14px;line-height:1.55;color:rgba(255,255,255,0.62);">Bring your own Gemini API key in Settings — nothing shared, nothing metered on our end.</li>
           <li style="font-size:14px;line-height:1.55;color:rgba(255,255,255,0.62);">Agent tasks can now search the live web and read your GitHub repos, issues, and pull requests.</li>
           <li style="font-size:14px;line-height:1.55;color:rgba(255,255,255,0.62);">Redesigned Settings panel and a startup splash screen so you always know Pointr is running.</li>
@@ -209,7 +215,7 @@ a:hover { color: #b7cdff; }
       <div style="position:relative;margin-bottom:44px;">
         <div style="position:absolute;left:-28px;top:4px;width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,0.25);"></div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:14px;font-weight:600;color:rgba(255,255,255,0.75);">v0.4.2</div>
+          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:14px;font-weight:600;color:rgba(255,255,255,0.75);">v0.0.5</div>
           <div style="font-size:12.5px;color:rgba(255,255,255,0.4);">Aug 2026</div>
         </div>
         <ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;">
@@ -221,7 +227,7 @@ a:hover { color: #b7cdff; }
       <div style="position:relative;margin-bottom:44px;">
         <div style="position:absolute;left:-28px;top:4px;width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,0.25);"></div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:14px;font-weight:600;color:rgba(255,255,255,0.75);">v0.4.0</div>
+          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:14px;font-weight:600;color:rgba(255,255,255,0.75);">v0.0.4</div>
           <div style="font-size:12.5px;color:rgba(255,255,255,0.4);">Jul 2026</div>
         </div>
         <ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;">
@@ -233,7 +239,7 @@ a:hover { color: #b7cdff; }
       <div style="position:relative;margin-bottom:44px;">
         <div style="position:absolute;left:-28px;top:4px;width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,0.25);"></div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:14px;font-weight:600;color:rgba(255,255,255,0.75);">v0.3.0</div>
+          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:14px;font-weight:600;color:rgba(255,255,255,0.75);">v0.0.3</div>
           <div style="font-size:12.5px;color:rgba(255,255,255,0.4);">Jun 2026</div>
         </div>
         <ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;">
@@ -245,7 +251,7 @@ a:hover { color: #b7cdff; }
       <div style="position:relative;margin-bottom:44px;">
         <div style="position:absolute;left:-28px;top:4px;width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,0.25);"></div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:14px;font-weight:600;color:rgba(255,255,255,0.75);">v0.2.0</div>
+          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:14px;font-weight:600;color:rgba(255,255,255,0.75);">v0.0.2</div>
           <div style="font-size:12.5px;color:rgba(255,255,255,0.4);">May 2026</div>
         </div>
         <ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;">
@@ -257,13 +263,16 @@ a:hover { color: #b7cdff; }
       <div style="position:relative;">
         <div style="position:absolute;left:-28px;top:4px;width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,0.25);"></div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:14px;font-weight:600;color:rgba(255,255,255,0.75);">v0.1.0</div>
+          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:14px;font-weight:600;color:rgba(255,255,255,0.75);">v0.0.1</div>
           <div style="font-size:12.5px;color:rgba(255,255,255,0.4);">Apr 2026</div>
         </div>
         <ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;">
           <li style="font-size:14px;line-height:1.55;color:rgba(255,255,255,0.5);">Initial overlay: direct-ask input, loading states, answer bubbles.</li>
         </ul>
       </div>
+    </div>
+    </div>
+    <div style="position:absolute;left:0;right:0;bottom:0;height:32px;background:linear-gradient(to bottom, transparent, #0a0e16);pointer-events:none;"></div>
     </div>
   </div>
 
