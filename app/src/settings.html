@@ -98,6 +98,7 @@
         position: relative;
         overflow-y: auto;
         scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
       }
       #content::-webkit-scrollbar {
         width: 6px;
@@ -450,10 +451,10 @@
             <button id="btn-github-disconnect" class="btn-key-disconnect">Disconnect</button>
           </div>
           <div id="github-token-row" class="key-row">
-            <input id="github-token-input" class="key-input" type="password" placeholder="ghp_… or fine-grained token" autocomplete="off" />
+            <input id="github-token-input" class="key-input" type="password" placeholder="github_pat_… (fine-grained, read-only)" autocomplete="off" />
             <button id="btn-github-connect" class="btn-key-connect">Connect</button>
           </div>
-          <div class="toggle-hint">Lets the agent file issues, check PRs, and read repos on your behalf — needs a token with repo access. Stored encrypted on this device (DPAPI), never written anywhere else.</div>
+          <div class="toggle-hint">Lets the agent read repos, issues, pull requests, and commits on your behalf — read-only, a fine-grained token with read access is enough. Stored encrypted on this device (DPAPI), never written anywhere else.</div>
         </div>
       </div>
       <div id="scroll-fade"></div>

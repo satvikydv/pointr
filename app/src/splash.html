@@ -107,6 +107,20 @@
         transition: opacity 0.18s ease;
         min-height: 16px;
       }
+      #update-line {
+        font-size: 12px;
+        color: #8fb4ff;
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.18s ease;
+      }
+      #update-line.visible {
+        opacity: 1;
+      }
+      #update-line:hover {
+        color: #b9cdff;
+        text-decoration: underline;
+      }
     </style>
   </head>
   <body>
@@ -120,6 +134,7 @@
       </div>
       <div id="wordmark">Pointr</div>
       <div id="status">Starting…</div>
+      <div id="update-line"></div>
     </div>
 
     <script type="module" src="/splash.js"></script>
