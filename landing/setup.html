@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pointr — Setup Guide</title>
+<meta name="description" content="How to set up Pointr: Gemini API key, optional Tavily and GitHub connections, and keyboard shortcuts.">
+<style>
+body { margin: 0; background: #0a0e16; }
+a { color: #8fb4ff; text-decoration: none; }
+a:hover { color: #b7cdff; }
+#pointrGuideSidebar a:hover { color: rgba(255,255,255,0.95); background: rgba(255,255,255,0.04); }
+</style>
+</head>
+<body>
+
+<div style="width:100%;min-height:100vh;background:radial-gradient(ellipse 900px 560px at 50% -8%,rgba(91,140,255,0.12),transparent 60%),linear-gradient(175deg,#0a0e16 0%,#0d1220 40%,#0a0e16 100%);font-family:'Segoe UI Variable','Segoe UI',system-ui,sans-serif;color:rgba(255,255,255,0.92);position:relative;">
+
+  <div style="position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:18px 56px;background:rgba(10,14,22,0.55);backdrop-filter:blur(20px) saturate(140%);border-bottom:1px solid rgba(255,255,255,0.06);">
+    <a href="./index.html" style="display:flex;align-items:center;gap:10px;">
+      <div style="width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#dce8ff,#5B8CFF 55%,#2c4a99 100%);box-shadow:0 0 10px rgba(91,140,255,0.6);"></div>
+      <div style="font-size:16px;font-weight:600;letter-spacing:0.01em;color:rgba(255,255,255,0.92);">Pointr</div>
+    </a>
+    <div style="display:flex;align-items:center;gap:36px;">
+      <a href="./index.html#features" style="font-size:13.5px;color:rgba(255,255,255,0.6);">Features</a>
+      <a href="./index.html#changelog" style="font-size:13.5px;color:rgba(255,255,255,0.6);">Changelog</a>
+      <div style="font-size:13.5px;color:rgba(255,255,255,0.95);font-weight:600;">Setup Guide</div>
+    </div>
+  </div>
+
+  <div style="max-width:1080px;margin:0 auto;padding:56px 24px 140px;display:flex;gap:64px;align-items:flex-start;">
+
+    <!-- sidebar -->
+    <div id="pointrGuideSidebar" style="width:220px;flex-shrink:0;position:sticky;top:96px;display:flex;flex-direction:column;gap:4px;">
+      <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.35);margin-bottom:8px;padding-left:12px;">First-time setup</div>
+      <a href="#getting-started" style="font-size:13.5px;color:rgba(255,255,255,0.65);padding:7px 12px;border-radius:7px;display:block;">Getting started</a>
+      <a href="#gemini" style="font-size:13.5px;color:rgba(255,255,255,0.65);padding:7px 12px;border-radius:7px;display:flex;align-items:center;gap:8px;"><span style="width:5px;height:5px;border-radius:50%;background:#5B8CFF;flex-shrink:0;"></span>Gemini API key</a>
+      <a href="#tavily" style="font-size:13.5px;color:rgba(255,255,255,0.65);padding:7px 12px;border-radius:7px;display:flex;align-items:center;gap:8px;"><span style="width:5px;height:5px;border-radius:50%;background:#f2b84b;flex-shrink:0;"></span>Tavily API key</a>
+      <a href="#github" style="font-size:13.5px;color:rgba(255,255,255,0.65);padding:7px 12px;border-radius:7px;display:flex;align-items:center;gap:8px;"><span style="width:5px;height:5px;border-radius:50%;background:#f2b84b;flex-shrink:0;"></span>GitHub connection</a>
+      <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.35);margin:18px 0 8px;padding-left:12px;">Options</div>
+      <a href="#audio" style="font-size:13.5px;color:rgba(255,255,255,0.65);padding:7px 12px;border-radius:7px;display:block;">Audio &amp; voice</a>
+      <a href="#actions" style="font-size:13.5px;color:rgba(255,255,255,0.65);padding:7px 12px;border-radius:7px;display:block;">On-screen actions</a>
+      <a href="#hotkeys" style="font-size:13.5px;color:rgba(255,255,255,0.65);padding:7px 12px;border-radius:7px;display:block;">Keyboard shortcuts</a>
+    </div>
+
+    <!-- content -->
+    <div style="flex:1;min-width:0;max-width:700px;display:flex;flex-direction:column;gap:80px;">
+
+      <div id="getting-started">
+        <div style="font-size:36px;font-weight:700;letter-spacing:-0.01em;margin-bottom:16px;">First-time setup</div>
+        <div style="font-size:16px;line-height:1.65;color:rgba(255,255,255,0.6);margin-bottom:32px;max-width:560px;">Pointr needs one thing to work at all, and offers two more that make it more capable. All three are configured from the tray icon → <span style="color:rgba(255,255,255,0.85);">Settings</span>.</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div style="display:flex;align-items:center;gap:14px;background:rgba(255,255,255,0.04);border:1px solid rgba(91,140,255,0.25);border-radius:10px;padding:14px 16px;">
+            <div style="width:22px;height:22px;border-radius:50%;background:rgba(91,140,255,0.18);border:1px solid rgba(91,140,255,0.5);color:#8fb4ff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">1</div>
+            <div style="font-size:14.5px;color:rgba(255,255,255,0.85);">Connect a <a href="#gemini">Gemini API key</a> — required, free, takes under a minute.</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px 16px;">
+            <div style="width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);color:rgba(255,255,255,0.7);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">2</div>
+            <div style="font-size:14.5px;color:rgba(255,255,255,0.7);">Optionally connect <a href="#tavily">Tavily</a> for live web search, and <a href="#github">GitHub</a> if you want Pointr reading your repos, issues, and pull requests.</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px 16px;">
+            <div style="width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);color:rgba(255,255,255,0.7);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">3</div>
+            <div style="font-size:14.5px;color:rgba(255,255,255,0.7);">Press <span style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:12.5px;color:rgba(255,255,255,0.85);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 7px;">Ctrl + Alt + Space</span> anywhere to start asking.</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="gemini">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#8fb4ff;background:rgba(91,140,255,0.12);border:1px solid rgba(91,140,255,0.3);border-radius:5px;padding:3px 8px;">Required</div>
+        </div>
+        <div style="font-size:26px;font-weight:600;margin-bottom:10px;">Gemini API key</div>
+        <div style="font-size:15px;line-height:1.65;color:rgba(255,255,255,0.6);margin-bottom:24px;max-width:560px;">Pointr uses Google's Gemini models to read your screen and answer questions. Every request runs on your own free API key — there's no shared or metered backend, so nothing you ask ever passes through Pointr's servers.</div>
+        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:24px 26px;">
+          <div style="font-size:12px;letter-spacing:0.05em;text-transform:uppercase;color:rgba(255,255,255,0.4);margin-bottom:16px;">How to get one</div>
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#8fb4ff;flex-shrink:0;width:18px;">1.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Go to <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">aistudio.google.com</span> and sign in with a Google account.</div></div>
+            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#8fb4ff;flex-shrink:0;width:18px;">2.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Click <span style="color:rgba(255,255,255,0.95);">"Get API key"</span>, then <span style="color:rgba(255,255,255,0.95);">"Create API key"</span>. The free tier is enough for normal use.</div></div>
+            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#8fb4ff;flex-shrink:0;width:18px;">3.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Copy the key — it starts with <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">AIza…</span></div></div>
+            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#8fb4ff;flex-shrink:0;width:18px;">4.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">In Pointr, open <span style="color:rgba(255,255,255,0.95);">Settings → Gemini API key</span>, paste it in, and click <span style="color:rgba(255,255,255,0.95);">Connect</span>.</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="tavily">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#f2b84b;background:rgba(242,184,75,0.1);border:1px solid rgba(242,184,75,0.3);border-radius:5px;padding:3px 8px;">Optional</div>
+        </div>
+        <div style="font-size:26px;font-weight:600;margin-bottom:10px;">Tavily API key</div>
+        <div style="font-size:15px;line-height:1.65;color:rgba(255,255,255,0.6);margin-bottom:24px;max-width:560px;">Tavily gives Pointr live web search, so agent tasks can pull in current information instead of relying only on what's on your screen. Skip this if you don't need Pointr searching the web.</div>
+        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:24px 26px;">
+          <div style="font-size:12px;letter-spacing:0.05em;text-transform:uppercase;color:rgba(255,255,255,0.4);margin-bottom:16px;">How to get one</div>
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">1.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Go to <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">tavily.com</span> and create a free account.</div></div>
+            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">2.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Copy the API key from your dashboard — it starts with <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">tvly-…</span></div></div>
+            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">3.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">In Pointr, open <span style="color:rgba(255,255,255,0.95);">Settings → Tavily API key</span>, paste it in, and click <span style="color:rgba(255,255,255,0.95);">Connect</span>.</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="github">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#f2b84b;background:rgba(242,184,75,0.1);border:1px solid rgba(242,184,75,0.3);border-radius:5px;padding:3px 8px;">Optional</div>
+        </div>
+        <div style="font-size:26px;font-weight:600;margin-bottom:10px;">GitHub connection</div>
+        <div style="font-size:15px;line-height:1.65;color:rgba(255,255,255,0.6);margin-bottom:24px;max-width:560px;">Lets Pointr read repositories, issues, pull requests, and commits on your behalf when you ask it about GitHub. Read-only — Pointr never pushes, comments, merges, or opens anything on GitHub for you. Only needed if you plan to ask Pointr about your code.</div>
+        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:24px 26px;">
+          <div style="font-size:12px;letter-spacing:0.05em;text-transform:uppercase;color:rgba(255,255,255,0.4);margin-bottom:16px;">How to get one</div>
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">1.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Go to <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">github.com/settings/personal-access-tokens/new</span> to create a <span style="color:rgba(255,255,255,0.95);">fine-grained</span> token, not a classic one.</div></div>
+            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">2.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Under Repository permissions, grant <span style="color:rgba(255,255,255,0.95);">read-only</span> access to Contents, Issues, and Pull requests. Don't grant any write permissions — Pointr doesn't need or use them.</div></div>
+            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">3.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Copy the token — it starts with <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">github_pat_…</span></div></div>
+            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">4.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">In Pointr, open <span style="color:rgba(255,255,255,0.95);">Settings → GitHub</span>, paste it in, and click <span style="color:rgba(255,255,255,0.95);">Connect</span>.</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="audio">
+        <div style="font-size:26px;font-weight:600;margin-bottom:20px;">Audio &amp; voice</div>
+        <div style="display:flex;flex-direction:column;gap:20px;">
+          <div>
+            <div style="font-size:15.5px;font-weight:600;color:rgba(255,255,255,0.9);margin-bottom:6px;">Read answers aloud</div>
+            <div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.55);max-width:560px;">When on, Pointr speaks each answer as it arrives, in addition to showing it. Turn this off if you'd rather read silently.</div>
+          </div>
+          <div>
+            <div style="font-size:15.5px;font-weight:600;color:rgba(255,255,255,0.9);margin-bottom:6px;">Narration voice</div>
+            <div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.55);max-width:560px;">Picks which system voice reads answers and storyboard narration aloud. Only applies while "Read answers aloud" is on — use the Test button in Settings to preview a voice before saving.</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="actions">
+        <div style="font-size:26px;font-weight:600;margin-bottom:20px;">On-screen actions</div>
+        <div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.55);max-width:560px;margin-bottom:16px;">When on, Pointr is allowed to type into a focused field or open an app for you — but only after showing exactly what it's about to do and waiting for you to press Enter. Turning this off limits Pointr to answering questions; it will never click or type on your behalf.</div>
+      </div>
+
+      <div id="hotkeys">
+        <div style="font-size:26px;font-weight:600;margin-bottom:20px;">Keyboard shortcuts</div>
+        <div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.55);max-width:560px;margin-bottom:20px;">Pointr has two ways to ask a question, plus a couple of keys used while an answer or action is on screen.</div>
+        <div style="display:flex;flex-direction:column;gap:1px;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:rgba(255,255,255,0.03);">
+            <div style="font-size:14px;color:rgba(255,255,255,0.75);">Ask directly, no region select</div>
+            <span style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:12px;color:rgba(255,255,255,0.85);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:3px 8px;">Ctrl + Alt + Space</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:rgba(255,255,255,0.015);">
+            <div style="font-size:14px;color:rgba(255,255,255,0.75);">Draw a box, ask about just that region</div>
+            <span style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:12px;color:rgba(255,255,255,0.85);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:3px 8px;">Ctrl + Alt + Shift + Space</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:rgba(255,255,255,0.03);">
+            <div style="font-size:14px;color:rgba(255,255,255,0.75);">Confirm a requested action</div>
+            <span style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:12px;color:rgba(255,255,255,0.85);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:3px 8px;">Enter</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:rgba(255,255,255,0.015);">
+            <div style="font-size:14px;color:rgba(255,255,255,0.75);">Cancel an action, or close Pointr</div>
+            <span style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:12px;color:rgba(255,255,255,0.85);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:3px 8px;">Esc</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div style="border-top:1px solid rgba(255,255,255,0.06);padding:36px 56px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div style="width:10px;height:10px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#dce8ff,#5B8CFF 55%,#2c4a99 100%);"></div>
+      <div style="font-size:13px;color:rgba(255,255,255,0.45);">Pointr — built for Windows.</div>
+    </div>
+    <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:12px;color:rgba(255,255,255,0.3);">© 2026 Pointr</div>
+  </div>
+
+</div>
+
+</body>
+</html>
