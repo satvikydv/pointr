@@ -41,7 +41,7 @@ a:hover { color: #b7cdff; }
       <a href="#changelog" class="nav-link" style="font-size:13.5px;color:rgba(255,255,255,0.6);transition:color 0.2s;">Changelog</a>
       <div style="display:flex;align-items:center;gap:6px;font-family:'Consolas','Segoe UI Mono',monospace;font-size:11.5px;color:rgba(255,255,255,0.5);background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.09);border-radius:999px;padding:5px 11px;">
         <div style="width:6px;height:6px;border-radius:50%;background:#3fb59a;animation:pointrLiveDot 2s ease infinite;"></div>
-        v0.5.0
+        v0.1.1
       </div>
     </div>
   </div>
@@ -61,7 +61,7 @@ a:hover { color: #b7cdff; }
     <div style="font-size:64px;font-weight:700;letter-spacing:-0.015em;line-height:1.08;max-width:780px;margin-bottom:20px;">Ask your screen <span style="background:linear-gradient(120deg,#ffffff,#b9cdff 55%,#5B8CFF);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;color:transparent;">anything.</span></div>
     <div style="font-size:18px;line-height:1.6;color:rgba(255,255,255,0.6);max-width:560px;margin-bottom:44px;">Pointr is a Windows overlay that sees what's on your screen, answers in place, and can act on your behalf — with your permission, every time.</div>
 
-    <a href="https://github.com/satvikydv/pointr/releases/download/v0.1.0/Pointr_0.1.0_x64-setup.exe" class="cta-button" style="display:flex;align-items:center;gap:12px;text-decoration:none;background:linear-gradient(160deg,rgba(91,140,255,0.22),rgba(58,99,204,0.14));border:1px solid rgba(91,140,255,0.4);border-radius:14px;padding:16px 30px;box-shadow:0 20px 45px rgba(0,0,0,0.4),0 0 30px rgba(91,140,255,0.18);transition:transform 0.25s ease,box-shadow 0.25s ease;">
+    <a href="https://github.com/satvikydv/pointr/releases/download/v0.1.1/Pointr_0.1.1_x64-setup.exe" class="cta-button" style="display:flex;align-items:center;gap:12px;text-decoration:none;background:linear-gradient(160deg,rgba(91,140,255,0.22),rgba(58,99,204,0.14));border:1px solid rgba(91,140,255,0.4);border-radius:14px;padding:16px 30px;box-shadow:0 20px 45px rgba(0,0,0,0.4),0 0 30px rgba(91,140,255,0.18);transition:transform 0.25s ease,box-shadow 0.25s ease;">
       <div style="width:18px;height:18px;display:grid;grid-template-columns:repeat(2,1fr);gap:2px;">
         <div style="background:rgba(255,255,255,0.85);border-radius:1px;"></div>
         <div style="background:rgba(255,255,255,0.85);border-radius:1px;"></div>
@@ -185,7 +185,7 @@ a:hover { color: #b7cdff; }
       <div style="font-size:34px;font-weight:600;">Changelog</div>
       <div style="display:flex;align-items:center;gap:8px;font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:rgba(255,255,255,0.5);">
         <div style="width:7px;height:7px;border-radius:50%;background:#3fb59a;animation:pointrLiveDot 2s ease infinite;"></div>
-        v0.1.0 currently live
+        v0.1.1 currently live
       </div>
     </div>
 
@@ -200,15 +200,28 @@ a:hover { color: #b7cdff; }
           <div style="position:absolute;left:-3px;top:-3px;width:17px;height:17px;border-radius:50%;border:1.5px solid #3fb59a;animation:pointrPulseRing 1.8s ease-out infinite;"></div>
         </div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:14px;font-weight:600;color:rgba(255,255,255,0.9);">v0.1.0</div>
+          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:14px;font-weight:600;color:rgba(255,255,255,0.9);">v0.1.1</div>
           <div style="font-size:12.5px;color:rgba(255,255,255,0.4);">Aug 2026</div>
           <div style="font-size:10.5px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#3fb59a;background:rgba(63,181,154,0.12);border:1px solid rgba(63,181,154,0.3);border-radius:5px;padding:2px 7px;">Live</div>
         </div>
         <ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;">
-          <li style="font-size:14px;line-height:1.55;color:rgba(255,255,255,0.62);">First public Windows installer — download and run, no build step required.</li>
-          <li style="font-size:14px;line-height:1.55;color:rgba(255,255,255,0.62);">Bring your own Gemini API key in Settings — nothing shared, nothing metered on our end.</li>
-          <li style="font-size:14px;line-height:1.55;color:rgba(255,255,255,0.62);">Agent tasks can now search the live web and read your GitHub repos, issues, and pull requests.</li>
-          <li style="font-size:14px;line-height:1.55;color:rgba(255,255,255,0.62);">Redesigned Settings panel and a startup splash screen so you always know Pointr is running.</li>
+          <li style="font-size:14px;line-height:1.55;color:rgba(255,255,255,0.62);">Custom app and tray icon — no more the default Tauri logo.</li>
+          <li style="font-size:14px;line-height:1.55;color:rgba(255,255,255,0.62);">Redesigned Settings panel — pinned Save/Test footer, no more scrolling to find it.</li>
+          <li style="font-size:14px;line-height:1.55;color:rgba(255,255,255,0.62);">Startup splash screen confirms Pointr is running the moment you launch it.</li>
+          <li style="font-size:14px;line-height:1.55;color:rgba(255,255,255,0.62);">Lightweight update check — you'll get a prompt when a newer version is out.</li>
+        </ul>
+      </div>
+
+      <div style="position:relative;margin-bottom:44px;">
+        <div style="position:absolute;left:-28px;top:4px;width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,0.25);"></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:14px;font-weight:600;color:rgba(255,255,255,0.75);">v0.1.0</div>
+          <div style="font-size:12.5px;color:rgba(255,255,255,0.4);">Aug 2026</div>
+        </div>
+        <ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;">
+          <li style="font-size:14px;line-height:1.55;color:rgba(255,255,255,0.5);">First public Windows installer — download and run, no build step required.</li>
+          <li style="font-size:14px;line-height:1.55;color:rgba(255,255,255,0.5);">Bring your own Gemini API key in Settings — nothing shared, nothing metered on our end.</li>
+          <li style="font-size:14px;line-height:1.55;color:rgba(255,255,255,0.5);">Agent tasks can now search the live web and read your GitHub repos, issues, and pull requests.</li>
         </ul>
       </div>
 
