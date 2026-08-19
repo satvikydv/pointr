@@ -299,6 +299,8 @@ pub fn run() {
             commands::actions::execute_open_app,
             commands::actions::execute_click,
             commands::actions::execute_key_press,
+            commands::update::check_for_update,
+            commands::update::open_release_page,
             enable_escape_dismiss,
             disable_escape_dismiss
         ])
