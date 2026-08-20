@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pointr — Setup Guide</title>
+<title>Pointr - Setup Guide</title>
 <meta name="description" content="How to set up Pointr: Gemini API key, optional Tavily and GitHub connections, and keyboard shortcuts.">
 <style>
 body { margin: 0; background: #0a0e16; }
@@ -38,6 +38,7 @@ a:hover { color: #b7cdff; }
       <a href="#tavily" style="font-size:13.5px;color:rgba(255,255,255,0.65);padding:7px 12px;border-radius:7px;display:flex;align-items:center;gap:8px;"><span style="width:5px;height:5px;border-radius:50%;background:#f2b84b;flex-shrink:0;"></span>Tavily API key</a>
       <a href="#github" style="font-size:13.5px;color:rgba(255,255,255,0.65);padding:7px 12px;border-radius:7px;display:flex;align-items:center;gap:8px;"><span style="width:5px;height:5px;border-radius:50%;background:#f2b84b;flex-shrink:0;"></span>GitHub connection</a>
       <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.35);margin:18px 0 8px;padding-left:12px;">Options</div>
+      <a href="#keywords" style="font-size:13.5px;color:rgba(255,255,255,0.65);padding:7px 12px;border-radius:7px;display:block;">Keywords &amp; agent flows</a>
       <a href="#audio" style="font-size:13.5px;color:rgba(255,255,255,0.65);padding:7px 12px;border-radius:7px;display:block;">Audio &amp; voice</a>
       <a href="#actions" style="font-size:13.5px;color:rgba(255,255,255,0.65);padding:7px 12px;border-radius:7px;display:block;">On-screen actions</a>
       <a href="#hotkeys" style="font-size:13.5px;color:rgba(255,255,255,0.65);padding:7px 12px;border-radius:7px;display:block;">Keyboard shortcuts</a>
@@ -52,7 +53,7 @@ a:hover { color: #b7cdff; }
         <div style="display:flex;flex-direction:column;gap:10px;">
           <div style="display:flex;align-items:center;gap:14px;background:rgba(255,255,255,0.04);border:1px solid rgba(91,140,255,0.25);border-radius:10px;padding:14px 16px;">
             <div style="width:22px;height:22px;border-radius:50%;background:rgba(91,140,255,0.18);border:1px solid rgba(91,140,255,0.5);color:#8fb4ff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">1</div>
-            <div style="font-size:14.5px;color:rgba(255,255,255,0.85);">Connect a <a href="#gemini">Gemini API key</a> — required, free, takes under a minute.</div>
+            <div style="font-size:14.5px;color:rgba(255,255,255,0.85);">Connect a <a href="#gemini">Gemini API key</a> - required, free, takes under a minute.</div>
           </div>
           <div style="display:flex;align-items:center;gap:14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px 16px;">
             <div style="width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);color:rgba(255,255,255,0.7);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">2</div>
@@ -70,13 +71,13 @@ a:hover { color: #b7cdff; }
           <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#8fb4ff;background:rgba(91,140,255,0.12);border:1px solid rgba(91,140,255,0.3);border-radius:5px;padding:3px 8px;">Required</div>
         </div>
         <div style="font-size:26px;font-weight:600;margin-bottom:10px;">Gemini API key</div>
-        <div style="font-size:15px;line-height:1.65;color:rgba(255,255,255,0.6);margin-bottom:24px;max-width:560px;">Pointr uses Google's Gemini models to read your screen and answer questions. Every request runs on your own free API key — there's no shared or metered backend, so nothing you ask ever passes through Pointr's servers.</div>
+        <div style="font-size:15px;line-height:1.65;color:rgba(255,255,255,0.6);margin-bottom:24px;max-width:560px;">Pointr uses Google's Gemini models to read your screen and answer questions. Every request runs on your own free API key - there's no shared or metered backend, so nothing you ask ever passes through Pointr's servers.</div>
         <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:24px 26px;">
           <div style="font-size:12px;letter-spacing:0.05em;text-transform:uppercase;color:rgba(255,255,255,0.4);margin-bottom:16px;">How to get one</div>
           <div style="display:flex;flex-direction:column;gap:14px;">
             <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#8fb4ff;flex-shrink:0;width:18px;">1.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Go to <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">aistudio.google.com</span> and sign in with a Google account.</div></div>
             <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#8fb4ff;flex-shrink:0;width:18px;">2.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Click <span style="color:rgba(255,255,255,0.95);">"Get API key"</span>, then <span style="color:rgba(255,255,255,0.95);">"Create API key"</span>. The free tier is enough for normal use.</div></div>
-            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#8fb4ff;flex-shrink:0;width:18px;">3.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Copy the key — it starts with <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">AIza…</span></div></div>
+            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#8fb4ff;flex-shrink:0;width:18px;">3.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Copy the key - it starts with <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">AIza…</span></div></div>
             <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#8fb4ff;flex-shrink:0;width:18px;">4.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">In Pointr, open <span style="color:rgba(255,255,255,0.95);">Settings → Gemini API key</span>, paste it in, and click <span style="color:rgba(255,255,255,0.95);">Connect</span>.</div></div>
           </div>
         </div>
@@ -92,7 +93,7 @@ a:hover { color: #b7cdff; }
           <div style="font-size:12px;letter-spacing:0.05em;text-transform:uppercase;color:rgba(255,255,255,0.4);margin-bottom:16px;">How to get one</div>
           <div style="display:flex;flex-direction:column;gap:14px;">
             <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">1.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Go to <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">tavily.com</span> and create a free account.</div></div>
-            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">2.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Copy the API key from your dashboard — it starts with <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">tvly-…</span></div></div>
+            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">2.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Copy the API key from your dashboard - it starts with <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">tvly-…</span></div></div>
             <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">3.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">In Pointr, open <span style="color:rgba(255,255,255,0.95);">Settings → Tavily API key</span>, paste it in, and click <span style="color:rgba(255,255,255,0.95);">Connect</span>.</div></div>
           </div>
         </div>
@@ -103,13 +104,13 @@ a:hover { color: #b7cdff; }
           <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#f2b84b;background:rgba(242,184,75,0.1);border:1px solid rgba(242,184,75,0.3);border-radius:5px;padding:3px 8px;">Optional</div>
         </div>
         <div style="font-size:26px;font-weight:600;margin-bottom:10px;">GitHub connection</div>
-        <div style="font-size:15px;line-height:1.65;color:rgba(255,255,255,0.6);margin-bottom:24px;max-width:560px;">Lets Pointr read repositories, issues, pull requests, and commits on your behalf when you ask it about GitHub. Read-only — Pointr never pushes, comments, merges, or opens anything on GitHub for you. Only needed if you plan to ask Pointr about your code.</div>
+        <div style="font-size:15px;line-height:1.65;color:rgba(255,255,255,0.6);margin-bottom:24px;max-width:560px;">Lets Pointr read repositories, issues, pull requests, and commits on your behalf when you ask it about GitHub. Read-only - Pointr never pushes, comments, merges, or opens anything on GitHub for you. Only needed if you plan to ask Pointr about your code.</div>
         <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:24px 26px;">
           <div style="font-size:12px;letter-spacing:0.05em;text-transform:uppercase;color:rgba(255,255,255,0.4);margin-bottom:16px;">How to get one</div>
           <div style="display:flex;flex-direction:column;gap:14px;">
             <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">1.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Go to <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">github.com/settings/personal-access-tokens/new</span> to create a <span style="color:rgba(255,255,255,0.95);">fine-grained</span> token, not a classic one.</div></div>
-            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">2.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Under Repository permissions, grant <span style="color:rgba(255,255,255,0.95);">read-only</span> access to Contents, Issues, and Pull requests. Don't grant any write permissions — Pointr doesn't need or use them.</div></div>
-            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">3.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Copy the token — it starts with <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">github_pat_…</span></div></div>
+            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">2.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Under Repository permissions, grant <span style="color:rgba(255,255,255,0.95);">read-only</span> access to Contents, Issues, and Pull requests. Don't grant any write permissions - Pointr doesn't need or use them.</div></div>
+            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">3.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Copy the token - it starts with <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">github_pat_…</span></div></div>
             <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">4.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">In Pointr, open <span style="color:rgba(255,255,255,0.95);">Settings → GitHub</span>, paste it in, and click <span style="color:rgba(255,255,255,0.95);">Connect</span>.</div></div>
           </div>
         </div>
@@ -124,14 +125,115 @@ a:hover { color: #b7cdff; }
           </div>
           <div>
             <div style="font-size:15.5px;font-weight:600;color:rgba(255,255,255,0.9);margin-bottom:6px;">Narration voice</div>
-            <div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.55);max-width:560px;">Picks which system voice reads answers and storyboard narration aloud. Only applies while "Read answers aloud" is on — use the Test button in Settings to preview a voice before saving.</div>
+            <div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.55);max-width:560px;">Picks which system voice reads answers and storyboard narration aloud. Only applies while "Read answers aloud" is on - use the Test button in Settings to preview a voice before saving.</div>
           </div>
         </div>
       </div>
 
       <div id="actions">
         <div style="font-size:26px;font-weight:600;margin-bottom:20px;">On-screen actions</div>
-        <div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.55);max-width:560px;margin-bottom:16px;">When on, Pointr is allowed to type into a focused field or open an app for you — but only after showing exactly what it's about to do and waiting for you to press Enter. Turning this off limits Pointr to answering questions; it will never click or type on your behalf.</div>
+        <div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.55);max-width:560px;margin-bottom:16px;">When on, Pointr is allowed to type into a focused field or open an app for you - but only after showing exactly what it's about to do and waiting for you to press Enter. Turning this off limits Pointr to answering questions; it will never click or type on your behalf.</div>
+      </div>
+
+      <div id="keywords">
+        <div style="font-size:26px;font-weight:600;margin-bottom:10px;">Keywords &amp; agentic flows</div>
+        <div style="font-size:15px;line-height:1.65;color:rgba(255,255,255,0.6);margin-bottom:28px;max-width:600px;">Pointr reads plain questions by default. A couple of keywords at the start of your prompt switch it into a different mode - narrated walkthroughs or multi-step agent tasks.</div>
+
+        <div style="display:flex;flex-direction:column;gap:16px;">
+
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:22px 24px;display:flex;gap:24px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:260px;">
+              <span style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;font-weight:700;color:#8fb4ff;background:rgba(91,140,255,0.12);border:1px solid rgba(91,140,255,0.3);border-radius:6px;padding:4px 10px;">explain: &lt;topic&gt;</span>
+              <div style="font-size:15.5px;font-weight:600;color:rgba(255,255,255,0.92);margin:12px 0 6px;">Storyboard walkthrough</div>
+              <div style="font-size:14px;line-height:1.6;color:rgba(255,255,255,0.6);">Breaks the answer into narrated steps, speaking each one aloud while drawing point, box, and arrow annotations directly on your screen. Good for "explain this codebase" or "explain how this chart works."</div>
+            </div>
+            <svg viewBox="0 0 260 150" style="width:260px;height:150px;flex-shrink:0;border-radius:10px;background:#12151c;border:1px solid rgba(255,255,255,0.08);">
+              <rect x="16" y="14" width="140" height="96" rx="6" fill="#1a1e28" stroke="rgba(255,255,255,0.1)"></rect>
+              <rect x="28" y="28" width="70" height="8" rx="2" fill="rgba(255,255,255,0.18)"></rect>
+              <rect x="28" y="44" width="110" height="5" rx="2" fill="rgba(255,255,255,0.1)"></rect>
+              <rect x="28" y="54" width="90" height="5" rx="2" fill="rgba(255,255,255,0.1)"></rect>
+              <rect x="75" y="70" width="36" height="24" rx="3" fill="none" stroke="#5B8CFF" stroke-width="1.6"></rect>
+              <circle cx="93" cy="82" r="2" fill="#5B8CFF"></circle>
+              <path d="M111 82 L150 82" stroke="#5B8CFF" stroke-width="1.4" stroke-dasharray="3 3"></path>
+              <g transform="translate(168,30)">
+                <rect x="0" y="0" width="78" height="90" rx="8" fill="#1a1e28" stroke="rgba(255,255,255,0.1)"></rect>
+                <circle cx="14" cy="16" r="7" fill="rgba(91,140,255,0.18)" stroke="#5B8CFF"></circle>
+                <text x="14" y="19" font-size="8" fill="#8fb4ff" text-anchor="middle" font-family="Consolas,monospace">1</text>
+                <rect x="26" y="12" width="42" height="7" rx="2" fill="rgba(255,255,255,0.5)"></rect>
+                <circle cx="14" cy="40" r="7" fill="rgba(91,140,255,0.3)" stroke="#5B8CFF"></circle>
+                <text x="14" y="43" font-size="8" fill="#dce8ff" text-anchor="middle" font-family="Consolas,monospace">2</text>
+                <rect x="26" y="36" width="42" height="7" rx="2" fill="rgba(255,255,255,0.75)"></rect>
+                <circle cx="14" cy="64" r="7" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.3)"></circle>
+                <text x="14" y="67" font-size="8" fill="rgba(255,255,255,0.5)" text-anchor="middle" font-family="Consolas,monospace">3</text>
+                <rect x="26" y="60" width="42" height="7" rx="2" fill="rgba(255,255,255,0.22)"></rect>
+              </g>
+            </svg>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:22px 24px;display:flex;gap:24px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:260px;">
+              <span style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;font-weight:700;color:#8fb4ff;background:rgba(91,140,255,0.12);border:1px solid rgba(91,140,255,0.3);border-radius:6px;padding:4px 10px;">agent: &lt;task&gt;</span>
+              <div style="font-size:15.5px;font-weight:600;color:rgba(255,255,255,0.92);margin:12px 0 6px;">Multi-step agent task</div>
+              <div style="font-size:14px;line-height:1.6;color:rgba(255,255,255,0.6);">Hands the request to Pointr's agent loop: it can read your clipboard and screen, search the live web when Tavily is connected, read your GitHub repos/issues/PRs when connected, and propose typing into a field or opening an app. Every proposed action stops for your confirmation first, and nothing is ever written back to GitHub. Try "agent: summarize the open issues in this repo" or "agent: what's the latest stable Node version."</div>
+            </div>
+            <svg viewBox="0 0 260 150" style="width:260px;height:150px;flex-shrink:0;border-radius:10px;background:#12151c;border:1px solid rgba(255,255,255,0.08);">
+              <g font-family="Consolas,monospace" font-size="9">
+                <rect x="14" y="64" width="48" height="24" rx="5" fill="rgba(91,140,255,0.14)" stroke="#5B8CFF" stroke-width="1.3"></rect>
+                <text x="38" y="79" fill="#8fb4ff" text-anchor="middle">task</text>
+                <path d="M62 76 L92 76" stroke="rgba(255,255,255,0.35)" stroke-width="1.3"></path>
+                <rect x="92" y="30" width="58" height="24" rx="5" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.2)" stroke-width="1.3"></rect>
+                <text x="121" y="45" fill="rgba(255,255,255,0.75)" text-anchor="middle">search</text>
+                <rect x="92" y="64" width="58" height="24" rx="5" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.2)" stroke-width="1.3"></rect>
+                <text x="121" y="79" fill="rgba(255,255,255,0.75)" text-anchor="middle">read</text>
+                <rect x="92" y="98" width="58" height="24" rx="5" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.2)" stroke-width="1.3"></rect>
+                <text x="121" y="113" fill="rgba(255,255,255,0.75)" text-anchor="middle">act</text>
+                <path d="M150 42 L172 76 M150 76 L172 76 M150 110 L172 76" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.3"></path>
+                <circle cx="196" cy="76" r="18" fill="rgba(242,184,75,0.14)" stroke="#f2b84b" stroke-width="1.4"></circle>
+                <path d="M188 76 L194 82 L206 68" fill="none" stroke="#f2b84b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                <text x="196" y="105" fill="rgba(242,184,75,0.85)" text-anchor="middle">confirm</text>
+              </g>
+            </svg>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:22px 24px;display:flex;gap:24px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:260px;">
+              <span style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;font-weight:700;color:rgba(255,255,255,0.85);background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.16);border-radius:6px;padding:4px 10px;">no keyword</span>
+              <div style="font-size:15.5px;font-weight:600;color:rgba(255,255,255,0.92);margin:12px 0 6px;">Direct ask</div>
+              <div style="font-size:14px;line-height:1.6;color:rgba(255,255,255,0.6);">Anything typed without a keyword is answered directly from what's visible on your screen - the default, fastest path for quick questions.</div>
+            </div>
+            <svg viewBox="0 0 260 150" style="width:260px;height:150px;flex-shrink:0;border-radius:10px;background:#12151c;border:1px solid rgba(255,255,255,0.08);">
+              <rect x="20" y="26" width="150" height="36" rx="18" fill="rgba(255,255,255,0.07)" stroke="rgba(255,255,255,0.16)"></rect>
+              <text x="95" y="49" font-family="Consolas,monospace" font-size="11" fill="rgba(255,255,255,0.7)" text-anchor="middle">what does this mean?</text>
+              <g transform="translate(60,80)">
+                <circle cx="14" cy="14" r="14" fill="#5B8CFF"></circle>
+                <circle cx="10" cy="10" r="4" fill="rgba(255,255,255,0.5)"></circle>
+              </g>
+              <rect x="88" y="84" width="152" height="36" rx="10" fill="rgba(91,140,255,0.1)" stroke="#5B8CFF" stroke-width="1"></rect>
+              <rect x="100" y="94" width="90" height="6" rx="2" fill="rgba(220,235,255,0.7)"></rect>
+              <rect x="100" y="105" width="120" height="6" rx="2" fill="rgba(220,235,255,0.4)"></rect>
+            </svg>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:22px 24px;display:flex;gap:24px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:260px;">
+              <span style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;font-weight:700;color:rgba(255,255,255,0.85);background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.16);border-radius:6px;padding:4px 10px;">drag a region</span>
+              <div style="font-size:15.5px;font-weight:600;color:rgba(255,255,255,0.92);margin:12px 0 6px;">Region select</div>
+              <div style="font-size:14px;line-height:1.6;color:rgba(255,255,255,0.6);">Not typed - held via <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">Ctrl + Alt + Shift + Space</span>. Draw a box around any part of the screen to scope a question to exactly that chart, error, or paragraph.</div>
+            </div>
+            <svg viewBox="0 0 260 150" style="width:260px;height:150px;flex-shrink:0;border-radius:10px;background:#12151c;border:1px solid rgba(255,255,255,0.08);">
+              <rect x="14" y="14" width="232" height="122" rx="6" fill="#1a1e28" stroke="rgba(255,255,255,0.08)"></rect>
+              <rect x="30" y="28" width="60" height="6" rx="2" fill="rgba(255,255,255,0.14)"></rect>
+              <rect x="30" y="40" width="180" height="5" rx="2" fill="rgba(255,255,255,0.08)"></rect>
+              <rect x="30" y="50" width="150" height="5" rx="2" fill="rgba(255,255,255,0.08)"></rect>
+              <rect x="66" y="66" width="128" height="52" rx="3" fill="rgba(91,140,255,0.1)" stroke="#5B8CFF" stroke-width="1.6" stroke-dasharray="5 3"></rect>
+              <rect x="63" y="63" width="6" height="6" fill="#5B8CFF"></rect>
+              <rect x="191" y="63" width="6" height="6" fill="#5B8CFF"></rect>
+              <rect x="63" y="115" width="6" height="6" fill="#5B8CFF"></rect>
+              <rect x="191" y="115" width="6" height="6" fill="#5B8CFF"></rect>
+            </svg>
+          </div>
+
+        </div>
       </div>
 
       <div id="hotkeys">
@@ -163,7 +265,7 @@ a:hover { color: #b7cdff; }
   <div style="border-top:1px solid rgba(255,255,255,0.06);padding:36px 56px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;">
     <div style="display:flex;align-items:center;gap:8px;">
       <div style="width:10px;height:10px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#dce8ff,#5B8CFF 55%,#2c4a99 100%);"></div>
-      <div style="font-size:13px;color:rgba(255,255,255,0.45);">Pointr — built for Windows.</div>
+      <div style="font-size:13px;color:rgba(255,255,255,0.45);">Pointr - built for Windows.</div>
     </div>
     <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:12px;color:rgba(255,255,255,0.3);">© 2026 Pointr</div>
   </div>
