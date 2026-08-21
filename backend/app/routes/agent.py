@@ -17,13 +17,32 @@ router = APIRouter()
 _VALID_ACTION_TYPES = {"click", "type_text", "open_app", "key_press", "scroll", "wait", "done"}
 
 
-def _build_step_prompt(task_description: str, plan: list, completed_steps: list) -> str:
+def _build_step_prompt(task_description: str, plan: list, completed_steps: list, stuck: bool = False) -> str:
     plan_block = "\n".join(f"{i+1}. {s}" for i, s in enumerate(plan)) if plan else "(no plan given)"
     completed_block = "\n".join(f"- {s}" for s in completed_steps) if completed_steps else "(none yet)"
+    # Prepended, not buried in the general instructions further down — the
+    # client only sets this when it's DETECTED (by comparing real action
+    # parameters, not free-text descriptions) that the exact same action is
+    # about to be proposed a 2nd time in a row. A general "don't repeat"
+    # instruction lower in this prompt already exists and isn't reliably
+    # followed on its own (confirmed for real, repeatedly); this is a
+    # one-shot, impossible-to-miss correction for that specific moment.
+    stuck_block = (
+        "STOP AND RECONSIDER: the action you're about to propose is IDENTICAL (same type, same text/point/key) "
+        "to the one you just did last call, and the screen shows no visible change from it — it did not work. "
+        "Do NOT propose that same action again. If your most recent completed step was open_app, the field "
+        "you want to type into almost certainly does NOT have real keyboard focus yet — your next action MUST "
+        "be a click at the exact point in the screenshot where that field actually is (look carefully — for a "
+        "browser this is the address/search bar near the top, not the page body). If you already clicked and "
+        "it still isn't working, try a different approach entirely rather than repeating.\n\n"
+        if stuck
+        else ""
+    )
     return (
         "You are executing a multi-step desktop automation task, ONE action at a time. You'll be called "
         "again after each action with a fresh screenshot, so don't try to plan ahead — just decide the "
         "single best next action given what's actually on screen right now.\n\n"
+        f"{stuck_block}"
         f"Overall task: {task_description}\n\n"
         f"Rough plan (a guide, not a script — deviate from it if the screen shows something different):\n"
         f"{plan_block}\n\n"
@@ -106,7 +125,9 @@ async def get_agent_task_status(task_id: str):
 @router.post("/step", response_model=AgentStepResponse, dependencies=[Depends(rate_limit)])
 async def agent_step(request: AgentStepRequest):
     gemini = GeminiService(request.gemini_api_key or settings.gemini_api_key)
-    prompt = _build_step_prompt(request.task_description, request.plan, request.completed_steps)
+    prompt = _build_step_prompt(
+        request.task_description, request.plan, request.completed_steps, stuck=request.stuck_on_repeat,
+    )
 
     # "error" (not in _VALID_ACTION_TYPES — the model never emits it, only
     # this route does) is a distinct signal from "done": every fallback below

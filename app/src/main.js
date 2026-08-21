@@ -1024,10 +1024,9 @@ async function runMultiStepLoop(taskDescription, plan) {
     // for real: 8 consecutive retypes of the same text, each phrased
     // differently — "Type the identified IP address...", "Typing the
     // identified IPv4 address...", none recognized by the model itself as
-    // a repeat of the last one). The prompt already tells the model not to
-    // do this; this is the code-level backstop for when it doesn't listen.
+    // a repeat of the last one). On detection, one corrective re-ask is
+    // attempted (see stuck_on_repeat below) before giving up.
     let lastActionSignature = null;
-    let repeatCount = 0;
     const actionSignature = (s) => JSON.stringify({
         t: s.action_type, text: s.text || null, point: s.point || null,
         app: s.app_name || null, key: s.key || null, button: s.button || null,
@@ -1074,6 +1073,52 @@ async function runMultiStepLoop(taskDescription, plan) {
 
         console.log(`[multistep] step ${i + 1}:`, JSON.stringify(step));
 
+        // Repeat detection + ONE active corrective re-ask, before checking
+        // action_type at all — a correction can itself resolve to done/error,
+        // so those checks run after this, against whatever `step` ends up
+        // being (original or corrected). This replaced a passive "count to
+        // 3 identical repeats then give up" — that let the model burn 2
+        // guaranteed-failing repeats before stopping, on the assumption it
+        // might self-correct on its own from the prompt's general "don't
+        // repeat" instruction. It doesn't, reliably (confirmed for real,
+        // repeatedly). Now it gets exactly one forceful, targeted nudge at
+        // the moment it's detected stuck, then stops if that doesn't help.
+        let signature = actionSignature(step);
+        if (step.action_type !== 'done' && step.action_type !== 'error' && signature === lastActionSignature) {
+            progressText.textContent = 'Correcting course…';
+            let corrected = null;
+            try {
+                const res2 = await fetch(`${API_BASE_URL}/api/agent/step`, {
+                    method: "POST",
+                    headers: API_HEADERS,
+                    body: JSON.stringify({
+                        task_description: taskDescription,
+                        plan,
+                        completed_steps: completedSteps,
+                        screenshot_base64: screenshotBase64,
+                        gemini_api_key: geminiApiKey,
+                        stuck_on_repeat: true,
+                    })
+                });
+                corrected = await res2.json();
+            } catch (e) {
+                console.error('Corrective re-ask failed:', e);
+            }
+
+            if (requestId !== activeRequestId) { finishAgentTrace(trace, 'aborted', null); return; }
+
+            if (corrected && corrected.action_type) {
+                const correctedSignature = actionSignature(corrected);
+                if (corrected.action_type === 'done' || corrected.action_type === 'error' || correctedSignature !== signature) {
+                    console.log(`[multistep] step ${i + 1} corrected:`, JSON.stringify(corrected));
+                    step = corrected;
+                    signature = correctedSignature;
+                }
+                // else: proposed the exact same thing even after an explicit
+                // warning — genuinely stuck, falls through to the check below.
+            }
+        }
+
         // Backend-synthesized only (agent.py's /step route) — a Gemini call
         // failure or malformed response, never a real model decision. Was
         // previously indistinguishable from "done" (same action_type),
@@ -1119,19 +1164,12 @@ async function runMultiStepLoop(taskDescription, plan) {
             break;
         }
 
-        const signature = actionSignature(step);
         if (signature === lastActionSignature) {
-            repeatCount++;
-        } else {
-            repeatCount = 0;
-            lastActionSignature = signature;
-        }
-
-        if (repeatCount >= 2) {
-            // 3rd identical action in a row (by real parameters) with no
-            // visible change in between — stop instead of burning the rest
-            // of the step budget on the same failing action.
-            finalAnswer = `Stuck repeating the same action ("${step.description || step.action_type}") with no visible change — stopping instead of wasting the remaining steps.`;
+            // Either the guard above didn't apply (shouldn't happen given
+            // the check that gates it) or the corrective re-ask still came
+            // back identical — genuinely stuck, not just transiently
+            // repeating. Stop instead of burning the rest of the budget.
+            finalAnswer = `Stuck repeating the same action ("${step.description || step.action_type}") even after a corrective retry — stopping instead of wasting the remaining steps.`;
             stopReason = 'stuck_repeating';
             trace.steps.push({
                 index: i + 1,
@@ -1149,10 +1187,11 @@ async function runMultiStepLoop(taskDescription, plan) {
                 wait_ms: step.wait_ms || null,
                 screenshot_base64: screenshotBase64,
                 executed: false,
-                executionError: 'Skipped — identical to the previous 2 actions.',
+                executionError: 'Skipped — identical to the previous action even after a corrective retry.',
             });
             break;
         }
+        lastActionSignature = signature;
 
         progressText.textContent = step.description || `Step ${i + 1}…`;
 

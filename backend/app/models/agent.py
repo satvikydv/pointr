@@ -25,6 +25,12 @@ class AgentStepRequest(BaseModel):
     completed_steps: List[str] = []
     screenshot_base64: str
     gemini_api_key: str = ""
+    # Set by the client when it detected the model about to propose the
+    # exact same action (by real parameters, not the free-text description)
+    # it just proposed last call — a targeted, forceful correction for this
+    # one call, since the general "don't repeat" instruction in the prompt
+    # isn't reliably followed on its own.
+    stuck_on_repeat: bool = False
 
 class AgentStepResponse(BaseModel):
     # "error" is backend-synthesized only (Gemini call failed, malformed
