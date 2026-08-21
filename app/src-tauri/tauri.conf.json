@@ -46,6 +46,19 @@
         "skipTaskbar": false,
         "transparent": true,
         "decorations": false
+      },
+      {
+        "title": "Pointr Agent History",
+        "label": "history",
+        "url": "history.html",
+        "width": 460,
+        "height": 620,
+        "resizable": false,
+        "visible": false,
+        "center": true,
+        "skipTaskbar": false,
+        "transparent": true,
+        "decorations": false
       }
     ],
     "security": {

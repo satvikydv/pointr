@@ -14,7 +14,7 @@ from app.rate_limit import rate_limit
 
 router = APIRouter()
 
-_VALID_ACTION_TYPES = {"click", "type_text", "open_app", "key_press", "done"}
+_VALID_ACTION_TYPES = {"click", "type_text", "open_app", "key_press", "scroll", "wait", "done"}
 
 
 def _build_step_prompt(task_description: str, plan: list, completed_steps: list) -> str:
@@ -29,24 +29,46 @@ def _build_step_prompt(task_description: str, plan: list, completed_steps: list)
         f"{plan_block}\n\n"
         f"Steps completed so far:\n{completed_block}\n\n"
         "Look at the attached screenshot and decide ONE next action, formatted as one of:\n"
-        '  {"action_type": "click", "point": [y, x], "description": "..."} — click a screen location. '
-        "point is [y, x] normalized 0-1000 (Gemini's native grounding format — NOT 0-1 fractions, NOT pixels, "
-        "y BEFORE x). Aim for the center of the actual clickable element.\n"
+        '  {"action_type": "click", "point": [y, x], "button": "left", "double": false, "description": "..."} '
+        "— click a screen location. point is [y, x] normalized 0-1000 (Gemini's native grounding format — NOT "
+        "0-1 fractions, NOT pixels, y BEFORE x). Aim for the center of the actual clickable element. button is "
+        "\"left\" (default — omit it for a normal click) or \"right\" for a context menu. double is true only "
+        "for double-click-to-open (e.g. a file/folder icon); omit or false otherwise.\n"
         '  {"action_type": "type_text", "text": "...", "description": "..."} — types into whatever is '
         "currently focused. Click the target field first (as a separate step) if nothing is focused yet.\n"
-        '  {"action_type": "key_press", "key": "Enter", "description": "..."} — presses one key. Supported: '
-        "Enter, Tab, Escape, Backspace, ArrowDown, ArrowUp, ArrowLeft, ArrowRight.\n"
+        '  {"action_type": "key_press", "key": "Enter", "description": "..."} — presses a key, or a modifier '
+        "combo. Bare key: Enter, Tab, Escape, Backspace, Delete, ArrowDown, ArrowUp, ArrowLeft, ArrowRight, or "
+        "any single letter/digit. Combo: modifiers joined with \"+\", the real key last — e.g. \"Ctrl+S\" "
+        "(save), \"Ctrl+C\" (copy), \"Ctrl+V\" (paste), \"Ctrl+A\" (select all), \"Alt+Tab\" (switch window). "
+        "Modifiers: Ctrl, Alt, Shift, Win.\n"
+        '  {"action_type": "scroll", "direction": "down", "amount": 3, "description": "..."} — scrolls the '
+        "mouse wheel. direction is \"up\"/\"down\"/\"left\"/\"right\". amount is wheel notches (default 3) — "
+        "use a bigger amount (e.g. 8-10) to cover more ground in one step instead of repeating scroll actions "
+        "many times.\n"
+        '  {"action_type": "wait", "wait_ms": 1000, "description": "..."} — does nothing but pause before the '
+        "next screenshot. Only use this when the LAST screenshot genuinely looked mid-transition (a page still "
+        "loading, a spinner, a window still opening) — not as a default before every step. wait_ms is "
+        "300-3000, default 1000.\n"
         '  {"action_type": "open_app", "app_name": "...", "description": "..."} — opens an app via the Start '
         "menu search.\n"
         '  {"action_type": "done", "answer_text": "..."} — the task is complete, or can\'t proceed further; '
         "answer_text summarizes the outcome for the user.\n\n"
+        "Clicking is the least reliable action here — small targets (icons, avatars, profile pickers, close "
+        "buttons) are easy to miss. Before clicking, check if a keyboard path gets the same result instead "
+        "(type a URL/search query and press Enter, or a key_press like Escape/Tab); only click when there's "
+        "no keyboard alternative, and if a screen shows something you don't actually need for the task (e.g. "
+        "a profile picker on browser launch), try Escape or Tab+Enter before attempting to click its icons.\n"
         "description is a short present-tense phrase shown to the user while this step runs (e.g. \"Clicking "
         "the Jobs tab\"). If \"steps completed so far\" already includes an open_app for the app this task "
         "needs, do NOT call open_app again — assume it opened and look at the screenshot for where to click "
         "or type next, even if the window looks like it's still loading (blank/white is normal right after "
-        "launch, not a failure). More generally: if you've been given the same screen with no visible "
-        "progress after your last action, don't repeat that exact action — either try something different "
-        "or return done with an explanation. "
+        "launch, not a failure). If the step right before this one was open_app, your next step should almost "
+        "always be a click into the middle of that new window's actual content area (not typing yet) — a "
+        "freshly opened app doesn't reliably have real keyboard focus on its own editable area even once "
+        "it's visually in front, and typing straight into it can silently go nowhere. Only skip this click if "
+        "the screenshot already clearly shows a text cursor/caret active in the target field. More generally: "
+        "if you've been given the same screen with no visible progress after your last action, don't repeat "
+        "that exact action — either try something different or return done with an explanation. "
         "Format your answer as EXACTLY one JSON object, no markdown fences, no extra fields, no commentary."
     )
 
@@ -86,27 +108,45 @@ async def agent_step(request: AgentStepRequest):
     gemini = GeminiService(request.gemini_api_key or settings.gemini_api_key)
     prompt = _build_step_prompt(request.task_description, request.plan, request.completed_steps)
 
+    # "error" (not in _VALID_ACTION_TYPES — the model never emits it, only
+    # this route does) is a distinct signal from "done": every fallback below
+    # used to return "done" for these, which made a failed Gemini call or a
+    # malformed response indistinguishable from genuine task completion on
+    # the client (confirmed for real: a Gemini "Server disconnected" error
+    # showed up as a green "Completed" run). GeminiService.analyze() itself
+    # swallows exceptions into an error STRING rather than raising, so the
+    # first except below is defense in depth (base64 decode failure); the
+    # second is what actually catches a Gemini-call failure, since that
+    # string fails json.loads.
     try:
         image_bytes = base64.b64decode(request.screenshot_base64)
-        raw = await gemini.analyze(image_bytes, prompt)
+        raw = await gemini.analyze(image_bytes, prompt, json_mode=True)
     except Exception:
         import traceback
         traceback.print_exc()
-        return AgentStepResponse(action_type="done", answer_text="Something went wrong deciding the next step.")
+        return AgentStepResponse(action_type="error", answer_text="Something went wrong deciding the next step.")
 
     try:
         cleaned = re.sub(r"```(?:json)?\n?", "", raw, flags=re.IGNORECASE).strip()
         parsed = json.loads(cleaned)
     except Exception:
-        return AgentStepResponse(action_type="done", answer_text=raw)
+        return AgentStepResponse(action_type="error", answer_text=raw)
 
     action_type = parsed.get("action_type")
     if action_type not in _VALID_ACTION_TYPES:
-        return AgentStepResponse(action_type="done", answer_text="I couldn't figure out what to do next.")
+        return AgentStepResponse(action_type="error", answer_text="I couldn't figure out what to do next.")
 
     point = parsed.get("point")
     if not (isinstance(point, list) and len(point) == 2 and all(isinstance(v, (int, float)) for v in point)):
         point = None
+
+    button = parsed.get("button") if parsed.get("button") in ("left", "right") else None
+    double = parsed.get("double") if isinstance(parsed.get("double"), bool) else None
+    direction = parsed.get("direction") if parsed.get("direction") in ("up", "down", "left", "right") else None
+    amount = parsed.get("amount") if isinstance(parsed.get("amount"), (int, float)) else None
+    wait_ms = parsed.get("wait_ms") if isinstance(parsed.get("wait_ms"), (int, float)) else None
+    if wait_ms is not None:
+        wait_ms = max(300, min(3000, int(wait_ms)))  # clamp — a runaway wait shouldn't stall the whole run
 
     return AgentStepResponse(
         action_type=action_type,
@@ -114,6 +154,11 @@ async def agent_step(request: AgentStepRequest):
         text=parsed.get("text") if isinstance(parsed.get("text"), str) else None,
         app_name=parsed.get("app_name") if isinstance(parsed.get("app_name"), str) else None,
         key=parsed.get("key") if isinstance(parsed.get("key"), str) else None,
+        button=button,
+        double=double,
+        direction=direction,
+        amount=int(amount) if amount is not None else None,
+        wait_ms=wait_ms,
         description=parsed.get("description") if isinstance(parsed.get("description"), str) else "",
         answer_text=parsed.get("answer_text") if isinstance(parsed.get("answer_text"), str) else None,
     )

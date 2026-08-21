@@ -11,15 +11,17 @@ class GeminiService:
         # message" behavior by not constructing it at all without a key.
         self.client = genai.Client(api_key=api_key) if api_key else None
 
-    async def analyze(self, image_bytes: bytes, prompt: str) -> str:
+    async def analyze(self, image_bytes: bytes, prompt: str, json_mode: bool = False) -> str:
         if not self.client:
             return "Gemini API key not configured."
 
         try:
             image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/png")
+            config = types.GenerateContentConfig(response_mime_type="application/json") if json_mode else None
             response = await self.client.aio.models.generate_content(
                 model=settings.gemini_model,
                 contents=[prompt, image_part],
+                config=config,
             )
             return response.text
         except Exception as e:

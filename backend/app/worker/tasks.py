@@ -131,6 +131,18 @@ def run_agent_task(
         "precise script; the actual steps get worked out live against the real screen afterward. Only use "
         "this for tasks that truly need more than one action — a single type_text/open_app should still use "
         "proposed_action, and needs_multi_step/needs_filesystem are mutually exclusive (pick one).\n"
+        "IMPORTANT: opening an app is never the whole task by itself if the task needs information that "
+        "only appears AFTER you interact with that app. Any task that means 'run a command/search and tell "
+        "me the result' (e.g. 'how many Docker containers are running', 'what's my IP address', 'find file "
+        "X') is ALWAYS needs_multi_step — open_app only gets the app on screen, it can't type the command, "
+        "press Enter, or read the result. Never propose a single open_app action and then write an answer_"
+        "text that sounds like you already know the answer — if you don't have the actual result yet, use "
+        "needs_multi_step instead of proposed_action.\n"
+        "When planning steps, prefer a keyboard-driven path (Command Prompt, a typed URL, a typed search "
+        "query + Enter) over a mouse-driven one whenever both would get the same answer — clicking small UI "
+        "elements (icons, avatars, tabs) is much less reliable than typing, and a wrong click can strand the "
+        "whole sequence. For example, for 'what's my IP address' plan Command Prompt + 'ipconfig', not opening "
+        "a browser and searching.\n"
     )
 
     prompt = (

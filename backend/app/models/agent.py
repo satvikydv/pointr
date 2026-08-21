@@ -27,10 +27,18 @@ class AgentStepRequest(BaseModel):
     gemini_api_key: str = ""
 
 class AgentStepResponse(BaseModel):
-    action_type: str  # "click" | "type_text" | "open_app" | "key_press" | "done"
+    # "error" is backend-synthesized only (Gemini call failed, malformed
+    # response) — the model itself never emits it, distinct from "done" so
+    # a failed step is never mistaken for a completed one.
+    action_type: str  # "click" | "type_text" | "open_app" | "key_press" | "scroll" | "wait" | "done" | "error"
     point: Optional[List[float]] = None  # [y, x], 0-1000 — Gemini's native grounding format
     text: Optional[str] = None
     app_name: Optional[str] = None
-    key: Optional[str] = None
+    key: Optional[str] = None  # bare ("Enter") or a "+"-joined combo ("Ctrl+S")
+    button: Optional[str] = None  # "left" | "right", for click
+    double: Optional[bool] = None  # double-click, for click
+    direction: Optional[str] = None  # "up" | "down" | "left" | "right", for scroll
+    amount: Optional[int] = None  # wheel notches, for scroll
+    wait_ms: Optional[int] = None  # for wait
     description: str = ""
     answer_text: Optional[str] = None

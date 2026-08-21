@@ -299,8 +299,12 @@ pub fn run() {
             commands::actions::execute_open_app,
             commands::actions::execute_click,
             commands::actions::execute_key_press,
+            commands::actions::execute_scroll,
             commands::update::check_for_update,
             commands::update::open_release_page,
+            commands::history::save_agent_trace,
+            commands::history::get_agent_history,
+            commands::history::clear_agent_history,
             enable_escape_dismiss,
             disable_escape_dismiss
         ])
@@ -354,8 +358,9 @@ pub fn run() {
             use tauri::tray::TrayIconBuilder;
 
             let settings_item = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
+            let history_item = MenuItem::with_id(app, "history", "Agent History...", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit Pointr", true, None::<&str>)?;
-            let tray_menu = Menu::with_items(app, &[&settings_item, &quit_item])?;
+            let tray_menu = Menu::with_items(app, &[&settings_item, &history_item, &quit_item])?;
 
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -363,6 +368,12 @@ pub fn run() {
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "settings" => {
                         if let Some(win) = app.get_webview_window("settings") {
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        }
+                    }
+                    "history" => {
+                        if let Some(win) = app.get_webview_window("history") {
                             let _ = win.show();
                             let _ = win.set_focus();
                         }
