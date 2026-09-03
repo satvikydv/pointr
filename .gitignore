@@ -1,5 +1,6 @@
 .agents
 .vscode
+.claude
 implementation-tracking.md
 PRD.md
 backend/.env

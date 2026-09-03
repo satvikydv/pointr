@@ -1026,12 +1026,35 @@ async function runMultiStepLoop(taskDescription, plan) {
     // identified IPv4 address...", none recognized by the model itself as
     // a repeat of the last one). On detection, one corrective re-ask is
     // attempted (see stuck_on_repeat below) before giving up.
-    let lastActionSignature = null;
+    //
+    // click gets its own comparison: Gemini's point estimate jitters a few
+    // units between repeated attempts at the same visual target instead of
+    // landing on the exact same [y, x] twice — confirmed for real, a run
+    // that clicked a LinkedIn shortcut 3 times at [226,792]/[227,792]/
+    // [226,792], never byte-identical, so exact-match comparison never
+    // caught it as a repeat and the corrective re-ask never fired. Distance
+    // within CLICK_REPEAT_DISTANCE (normalized 0-1000, same space as point)
+    // counts as "the same attempt" for every other action type; anything
+    // else still needs an exact match.
+    const CLICK_REPEAT_DISTANCE = 40;
+    let lastAction = null;
     const actionSignature = (s) => JSON.stringify({
         t: s.action_type, text: s.text || null, point: s.point || null,
         app: s.app_name || null, key: s.key || null, button: s.button || null,
         double: s.double || null, direction: s.direction || null, amount: s.amount || null,
     });
+    const sameAction = (a, b) => {
+        if (!a || !b || a.action_type !== b.action_type) return false;
+        if (a.action_type === 'click') {
+            if ((a.button || 'left') !== (b.button || 'left')) return false;
+            if (!!a.double !== !!b.double) return false;
+            if (!Array.isArray(a.point) || !Array.isArray(b.point)) return false;
+            const dy = a.point[0] - b.point[0];
+            const dx = a.point[1] - b.point[1];
+            return Math.sqrt(dy * dy + dx * dx) <= CLICK_REPEAT_DISTANCE;
+        }
+        return actionSignature(a) === actionSignature(b);
+    };
 
     for (let i = 0; i < MULTI_STEP_MAX_STEPS; i++) {
         if (requestId !== activeRequestId) { finishAgentTrace(trace, 'aborted', null); return; } // aborted
@@ -1083,8 +1106,7 @@ async function runMultiStepLoop(taskDescription, plan) {
         // repeat" instruction. It doesn't, reliably (confirmed for real,
         // repeatedly). Now it gets exactly one forceful, targeted nudge at
         // the moment it's detected stuck, then stops if that doesn't help.
-        let signature = actionSignature(step);
-        if (step.action_type !== 'done' && step.action_type !== 'error' && signature === lastActionSignature) {
+        if (step.action_type !== 'done' && step.action_type !== 'error' && sameAction(step, lastAction)) {
             progressText.textContent = 'Correcting course…';
             let corrected = null;
             try {
@@ -1108,11 +1130,9 @@ async function runMultiStepLoop(taskDescription, plan) {
             if (requestId !== activeRequestId) { finishAgentTrace(trace, 'aborted', null); return; }
 
             if (corrected && corrected.action_type) {
-                const correctedSignature = actionSignature(corrected);
-                if (corrected.action_type === 'done' || corrected.action_type === 'error' || correctedSignature !== signature) {
+                if (corrected.action_type === 'done' || corrected.action_type === 'error' || !sameAction(corrected, step)) {
                     console.log(`[multistep] step ${i + 1} corrected:`, JSON.stringify(corrected));
                     step = corrected;
-                    signature = correctedSignature;
                 }
                 // else: proposed the exact same thing even after an explicit
                 // warning — genuinely stuck, falls through to the check below.
@@ -1164,10 +1184,11 @@ async function runMultiStepLoop(taskDescription, plan) {
             break;
         }
 
-        if (signature === lastActionSignature) {
+        if (sameAction(step, lastAction)) {
             // Either the guard above didn't apply (shouldn't happen given
             // the check that gates it) or the corrective re-ask still came
-            // back identical — genuinely stuck, not just transiently
+            // back identical (or, for click, still within the same
+            // near-miss cluster) — genuinely stuck, not just transiently
             // repeating. Stop instead of burning the rest of the budget.
             finalAnswer = `Stuck repeating the same action ("${step.description || step.action_type}") even after a corrective retry — stopping instead of wasting the remaining steps.`;
             stopReason = 'stuck_repeating';
@@ -1191,7 +1212,7 @@ async function runMultiStepLoop(taskDescription, plan) {
             });
             break;
         }
-        lastActionSignature = signature;
+        lastAction = step;
 
         progressText.textContent = step.description || `Step ${i + 1}…`;
 
