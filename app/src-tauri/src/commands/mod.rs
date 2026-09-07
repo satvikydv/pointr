@@ -1,5 +1,6 @@
 pub mod actions;
 pub mod analyze;
+pub mod browser;
 pub mod clipboard;
 pub mod history;
 pub mod settings;

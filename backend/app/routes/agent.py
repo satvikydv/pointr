@@ -14,10 +14,17 @@ from app.rate_limit import rate_limit
 
 router = APIRouter()
 
-_VALID_ACTION_TYPES = {"click", "type_text", "open_app", "key_press", "scroll", "wait", "done"}
+_VALID_ACTION_TYPES = {
+    "click", "type_text", "open_app", "key_press", "scroll", "wait",
+    "browser_open", "browser_navigate", "browser_click", "browser_type", "browser_close",
+    "done",
+}
 
 
-def _build_step_prompt(task_description: str, plan: list, completed_steps: list, stuck: bool = False) -> str:
+def _build_step_prompt(
+    task_description: str, plan: list, completed_steps: list, stuck: bool = False,
+    browser_snapshot: str | None = None,
+) -> str:
     plan_block = "\n".join(f"{i+1}. {s}" for i, s in enumerate(plan)) if plan else "(no plan given)"
     completed_block = "\n".join(f"- {s}" for s in completed_steps) if completed_steps else "(none yet)"
     # Prepended, not buried in the general instructions further down — the
@@ -38,6 +45,26 @@ def _build_step_prompt(task_description: str, plan: list, completed_steps: list,
         if stuck
         else ""
     )
+    # Parsed here (not left as raw JSON in the prompt) so the model sees a
+    # short, readable element list instead of a JSON blob to parse itself.
+    # Capped at 60 elements — a busy page shouldn't blow up prompt size.
+    browser_snapshot_block = ""
+    if browser_snapshot:
+        try:
+            snap = json.loads(browser_snapshot)
+            elements = snap.get("elements", [])
+            el_lines = "\n".join(f'  ref={e["ref"]}: {e["role"]} "{e["name"]}"' for e in elements[:60])
+            browser_snapshot_block = (
+                f"\nA browser window is open, currently at {snap.get('url', '?')} "
+                f"(\"{snap.get('title', '')}\"). Interactive elements on this page, by ref:\n"
+                f"{el_lines or '  (none found)'}\n"
+                "Use browser_click/browser_type with one of these refs to interact with the page precisely "
+                "instead of the generic click/type_text actions. Refs are only valid until the next "
+                "screenshot — a navigation or page change invalidates them, so always use the CURRENT list "
+                "above, never one from an earlier step.\n\n"
+            )
+        except Exception:
+            browser_snapshot_block = ""
     return (
         "You are executing a multi-step desktop automation task, ONE action at a time. You'll be called "
         "again after each action with a fresh screenshot, so don't try to plan ahead — just decide the "
@@ -47,6 +74,7 @@ def _build_step_prompt(task_description: str, plan: list, completed_steps: list,
         f"Rough plan (a guide, not a script — deviate from it if the screen shows something different):\n"
         f"{plan_block}\n\n"
         f"Steps completed so far:\n{completed_block}\n\n"
+        f"{browser_snapshot_block}"
         "Look at the attached screenshot and decide ONE next action, formatted as one of:\n"
         '  {"action_type": "click", "point": [y, x], "button": "left", "double": false, "description": "..."} '
         "— click a screen location. point is [y, x] normalized 0-1000 (Gemini's native grounding format — NOT "
@@ -70,13 +98,27 @@ def _build_step_prompt(task_description: str, plan: list, completed_steps: list,
         "300-3000, default 1000.\n"
         '  {"action_type": "open_app", "app_name": "...", "description": "..."} — opens an app via the Start '
         "menu search.\n"
+        '  {"action_type": "browser_open", "description": "..."} — opens a real, separate, freshly-launched '
+        "browser window that you then control precisely by element instead of by guessing pixel coordinates. "
+        "ALWAYS use this instead of open_app for any task that involves a website or web search — never "
+        "open_app with a browser name.\n"
+        '  {"action_type": "browser_navigate", "url": "https://...", "description": "..."} — navigates the '
+        "browser (from browser_open) to a URL. Only valid after browser_open.\n"
+        '  {"action_type": "browser_click", "ref": "3", "description": "..."} — clicks the element with that '
+        "ref, from the numbered element list you were shown (see below). Only valid after browser_open.\n"
+        '  {"action_type": "browser_type", "ref": "3", "text": "...", "description": "..."} — types into the '
+        "element with that ref. Only valid after browser_open.\n"
+        '  {"action_type": "browser_close", "description": "..."} — closes the browser window. Use this once '
+        "the browser is no longer needed for the rest of the task, not automatically at the end.\n"
         '  {"action_type": "done", "answer_text": "..."} — the task is complete, or can\'t proceed further; '
         "answer_text summarizes the outcome for the user.\n\n"
         "Clicking is the least reliable action here — small targets (icons, avatars, profile pickers, close "
         "buttons) are easy to miss. Before clicking, check if a keyboard path gets the same result instead "
         "(type a URL/search query and press Enter, or a key_press like Escape/Tab); only click when there's "
         "no keyboard alternative, and if a screen shows something you don't actually need for the task (e.g. "
-        "a profile picker on browser launch), try Escape or Tab+Enter before attempting to click its icons.\n"
+        "a profile picker on browser launch), try Escape or Tab+Enter before attempting to click its icons. "
+        "This pixel-click caution does NOT apply inside an open browser_open window — there, browser_click/"
+        "browser_type by ref is exact, always prefer it over the generic click/type_text actions.\n"
         "description is a short present-tense phrase shown to the user while this step runs (e.g. \"Clicking "
         "the Jobs tab\"). If \"steps completed so far\" already includes an open_app for the app this task "
         "needs, do NOT call open_app again — assume it opened and look at the screenshot for where to click "
@@ -127,6 +169,7 @@ async def agent_step(request: AgentStepRequest):
     gemini = GeminiService(request.gemini_api_key or settings.gemini_api_key)
     prompt = _build_step_prompt(
         request.task_description, request.plan, request.completed_steps, stuck=request.stuck_on_repeat,
+        browser_snapshot=request.browser_snapshot,
     )
 
     # "error" (not in _VALID_ACTION_TYPES — the model never emits it, only
@@ -169,6 +212,13 @@ async def agent_step(request: AgentStepRequest):
     if wait_ms is not None:
         wait_ms = max(300, min(3000, int(wait_ms)))  # clamp — a runaway wait shouldn't stall the whole run
 
+    # The prompt asks for a string ref matching the snapshot list, but a
+    # model emitting a bare JSON number (e.g. ref: 3) is an easy slip —
+    # coerce rather than reject, since the driver script keys refMap by
+    # string anyway.
+    ref_raw = parsed.get("ref")
+    ref = str(ref_raw) if isinstance(ref_raw, (str, int)) else None
+
     return AgentStepResponse(
         action_type=action_type,
         point=point,
@@ -180,6 +230,8 @@ async def agent_step(request: AgentStepRequest):
         direction=direction,
         amount=int(amount) if amount is not None else None,
         wait_ms=wait_ms,
+        url=parsed.get("url") if isinstance(parsed.get("url"), str) else None,
+        ref=ref,
         description=parsed.get("description") if isinstance(parsed.get("description"), str) else "",
         answer_text=parsed.get("answer_text") if isinstance(parsed.get("answer_text"), str) else None,
     )

@@ -31,12 +31,19 @@ class AgentStepRequest(BaseModel):
     # one call, since the general "don't repeat" instruction in the prompt
     # isn't reliably followed on its own.
     stuck_on_repeat: bool = False
+    # JSON string from the client's browser_snapshot command (Rust ->
+    # local Playwright driver) — present only when a browser_open has
+    # already run this task. Supplements screenshot_base64, doesn't
+    # replace it: the model still benefits from seeing the page visually,
+    # but picks click/type targets by accessibility ref from this instead
+    # of guessing a pixel coordinate.
+    browser_snapshot: Optional[str] = None
 
 class AgentStepResponse(BaseModel):
     # "error" is backend-synthesized only (Gemini call failed, malformed
     # response) — the model itself never emits it, distinct from "done" so
     # a failed step is never mistaken for a completed one.
-    action_type: str  # "click" | "type_text" | "open_app" | "key_press" | "scroll" | "wait" | "done" | "error"
+    action_type: str  # "click" | "type_text" | "open_app" | "key_press" | "scroll" | "wait" | "browser_open" | "browser_navigate" | "browser_click" | "browser_type" | "browser_close" | "done" | "error"
     point: Optional[List[float]] = None  # [y, x], 0-1000 — Gemini's native grounding format
     text: Optional[str] = None
     app_name: Optional[str] = None
@@ -46,5 +53,7 @@ class AgentStepResponse(BaseModel):
     direction: Optional[str] = None  # "up" | "down" | "left" | "right", for scroll
     amount: Optional[int] = None  # wheel notches, for scroll
     wait_ms: Optional[int] = None  # for wait
+    url: Optional[str] = None  # for browser_navigate
+    ref: Optional[str] = None  # accessibility ref from the last browser_snapshot, for browser_click/browser_type
     description: str = ""
     answer_text: Optional[str] = None

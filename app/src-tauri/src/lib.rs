@@ -263,6 +263,7 @@ pub fn run() {
         }))
         .manage(Mutex::new(SessionState::new()))
         .manage(commands::tts::TtsState::new())
+        .manage(Mutex::new(None::<commands::browser::BrowserSession>))
         .invoke_handler(tauri::generate_handler![
             api_config::get_api_config,
             trigger_capture,
@@ -305,6 +306,12 @@ pub fn run() {
             commands::history::save_agent_trace,
             commands::history::get_agent_history,
             commands::history::clear_agent_history,
+            commands::browser::start_browser_session,
+            commands::browser::browser_navigate,
+            commands::browser::browser_snapshot,
+            commands::browser::browser_click,
+            commands::browser::browser_type,
+            commands::browser::close_browser_session,
             enable_escape_dismiss,
             disable_escape_dismiss
         ])
