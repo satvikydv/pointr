@@ -915,6 +915,9 @@ function traceToHistoryRecord(trace) {
             direction: s.direction ?? null,
             amount: s.amount ?? null,
             waitMs: s.wait_ms ?? null,
+            url: s.url ?? null,
+            ref: s.ref ?? null,
+            browserSnapshotError: s.browserSnapshotError ?? null,
             answerText: s.answer_text ?? null,
             executed: s.executed,
             executionError: s.executionError ?? null,
@@ -941,6 +944,18 @@ function finishAgentTrace(trace, stopReason, finalAnswer) {
 // No-op if there's no plan (the common case).
 async function runMultiStepLoop(taskDescription, plan) {
     if (!plan || !plan.length) return;
+
+    // A browser session (commands/browser.rs) is deliberately left open
+    // after a PAST run ends cleanly, so the user can actually see/use its
+    // result — but that means a fresh run has no local memory of it. Clear
+    // any such leftover here so a new task never silently inherits a
+    // stale, already-navigated browser from an unrelated earlier one.
+    // Best-effort: no session to close is the common case, not an error.
+    try {
+        await invoke('close_browser_session');
+    } catch (e) {
+        console.error('Failed to clear a leftover browser session:', e);
+    }
 
     try {
         const enabled = await invoke('get_os_actions_enabled');
@@ -1055,9 +1070,35 @@ async function runMultiStepLoop(taskDescription, plan) {
         }
         return actionSignature(a) === actionSignature(b);
     };
+    // browser_open/browser_close are idempotent in Rust (start_browser_
+    // session is a no-op if a session's already open) — repeating either
+    // costs nothing, so they shouldn't count toward "stuck". Confirmed for
+    // real: the model proposed browser_open twice in a row (plan text
+    // still said "Open the Brave browser", a holdover from before this
+    // action existed) and the ONLY actual problem was the repeat-guard
+    // killing an otherwise-harmless run over it.
+    const EXEMPT_FROM_REPEAT_CHECK = new Set(['done', 'error', 'browser_open', 'browser_close']);
+
+    // Local Playwright browser session (commands/browser.rs) — spawned on
+    // the user's own machine so browser steps click by accessibility ref
+    // instead of guessed pixel coordinates. Tracked here so (a) the loop
+    // knows whether to fetch a browser_snapshot before each decision, and
+    // (b) the process actually gets torn down on every exit path, not just
+    // the happy one — a Chromium instance left running after an aborted or
+    // errored task would otherwise linger silently.
+    let browserSessionActive = false;
+    async function closeBrowserIfOpen() {
+        if (!browserSessionActive) return;
+        browserSessionActive = false;
+        try {
+            await invoke('close_browser_session');
+        } catch (e) {
+            console.error('Failed to close browser session:', e);
+        }
+    }
 
     for (let i = 0; i < MULTI_STEP_MAX_STEPS; i++) {
-        if (requestId !== activeRequestId) { finishAgentTrace(trace, 'aborted', null); return; } // aborted
+        if (requestId !== activeRequestId) { await closeBrowserIfOpen(); finishAgentTrace(trace, 'aborted', null); return; } // aborted
 
         progressText.textContent = `Step ${i + 1}: deciding…`;
 
@@ -1071,6 +1112,30 @@ async function runMultiStepLoop(taskDescription, plan) {
             break;
         }
 
+        // Supplements the pixel screenshot when a browser_open has already
+        // run this task — the backend folds it into the prompt as a
+        // ref-tagged element list, which is what lets browser_click/
+        // browser_type target exactly instead of guessing a coordinate.
+        // A failure here just means one step falls back to pixel clicking,
+        // not worth aborting the whole run over.
+        let browserSnapshot = null;
+        let browserSnapshotError = null;
+        if (browserSessionActive) {
+            try {
+                browserSnapshot = await invoke('browser_snapshot');
+            } catch (e) {
+                // Recorded onto the step below, not just console.error'd —
+                // this failing silently is exactly how a totally broken
+                // snapshot (a removed Playwright API) went unnoticed for
+                // the whole life of the feature: every browser run quietly
+                // degraded to pixel-guessing and the trace showed nothing
+                // wrong. A silent fallback that hides a dead feature is
+                // worse than a loud one.
+                browserSnapshotError = String(e);
+                console.error('Failed to capture browser snapshot:', e);
+            }
+        }
+
         let step;
         try {
             const res = await fetch(`${API_BASE_URL}/api/agent/step`, {
@@ -1081,7 +1146,8 @@ async function runMultiStepLoop(taskDescription, plan) {
                     plan,
                     completed_steps: completedSteps,
                     screenshot_base64: screenshotBase64,
-                    gemini_api_key: geminiApiKey
+                    gemini_api_key: geminiApiKey,
+                    browser_snapshot: browserSnapshot,
                 })
             });
             step = await res.json();
@@ -1092,7 +1158,7 @@ async function runMultiStepLoop(taskDescription, plan) {
             break;
         }
 
-        if (requestId !== activeRequestId) { finishAgentTrace(trace, 'aborted', null); return; } // aborted while awaiting
+        if (requestId !== activeRequestId) { await closeBrowserIfOpen(); finishAgentTrace(trace, 'aborted', null); return; } // aborted while awaiting
 
         console.log(`[multistep] step ${i + 1}:`, JSON.stringify(step));
 
@@ -1106,7 +1172,7 @@ async function runMultiStepLoop(taskDescription, plan) {
         // repeat" instruction. It doesn't, reliably (confirmed for real,
         // repeatedly). Now it gets exactly one forceful, targeted nudge at
         // the moment it's detected stuck, then stops if that doesn't help.
-        if (step.action_type !== 'done' && step.action_type !== 'error' && sameAction(step, lastAction)) {
+        if (!EXEMPT_FROM_REPEAT_CHECK.has(step.action_type) && sameAction(step, lastAction)) {
             progressText.textContent = 'Correcting course…';
             let corrected = null;
             try {
@@ -1119,6 +1185,7 @@ async function runMultiStepLoop(taskDescription, plan) {
                         completed_steps: completedSteps,
                         screenshot_base64: screenshotBase64,
                         gemini_api_key: geminiApiKey,
+                        browser_snapshot: browserSnapshot,
                         stuck_on_repeat: true,
                     })
                 });
@@ -1127,7 +1194,7 @@ async function runMultiStepLoop(taskDescription, plan) {
                 console.error('Corrective re-ask failed:', e);
             }
 
-            if (requestId !== activeRequestId) { finishAgentTrace(trace, 'aborted', null); return; }
+            if (requestId !== activeRequestId) { await closeBrowserIfOpen(); finishAgentTrace(trace, 'aborted', null); return; }
 
             if (corrected && corrected.action_type) {
                 if (corrected.action_type === 'done' || corrected.action_type === 'error' || !sameAction(corrected, step)) {
@@ -1184,7 +1251,7 @@ async function runMultiStepLoop(taskDescription, plan) {
             break;
         }
 
-        if (sameAction(step, lastAction)) {
+        if (!EXEMPT_FROM_REPEAT_CHECK.has(step.action_type) && sameAction(step, lastAction)) {
             // Either the guard above didn't apply (shouldn't happen given
             // the check that gates it) or the corrective re-ask still came
             // back identical (or, for click, still within the same
@@ -1206,6 +1273,8 @@ async function runMultiStepLoop(taskDescription, plan) {
                 direction: step.direction || null,
                 amount: step.amount || null,
                 wait_ms: step.wait_ms || null,
+                url: step.url || null,
+                ref: step.ref || null,
                 screenshot_base64: screenshotBase64,
                 executed: false,
                 executionError: 'Skipped — identical to the previous action even after a corrective retry.',
@@ -1230,6 +1299,9 @@ async function runMultiStepLoop(taskDescription, plan) {
             direction: step.direction || null,
             amount: step.amount || null,
             wait_ms: step.wait_ms || null,
+            url: step.url || null,
+            ref: step.ref || null,
+            browserSnapshotError,
             screenshot_base64: screenshotBase64,
             executed: false,
             executionError: null,
@@ -1257,6 +1329,18 @@ async function runMultiStepLoop(taskDescription, plan) {
                 await invoke('execute_scroll', { direction: step.direction, amount: step.amount || null });
             } else if (step.action_type === 'wait') {
                 // No Rust call — the pause itself happens below via settleMs.
+            } else if (step.action_type === 'browser_open') {
+                await invoke('start_browser_session');
+                browserSessionActive = true;
+            } else if (step.action_type === 'browser_navigate' && step.url) {
+                await invoke('browser_navigate', { url: step.url });
+            } else if (step.action_type === 'browser_click' && step.ref) {
+                await invoke('browser_click', { reference: step.ref });
+            } else if (step.action_type === 'browser_type' && step.ref) {
+                await invoke('browser_type', { reference: step.ref, text: step.text || '' });
+            } else if (step.action_type === 'browser_close') {
+                await invoke('close_browser_session');
+                browserSessionActive = false;
             }
             stepRecord.executed = true;
         } catch (e) {
@@ -1282,8 +1366,18 @@ async function runMultiStepLoop(taskDescription, plan) {
         await new Promise((r) => setTimeout(r, settleMs));
     }
 
-    if (requestId !== activeRequestId) { finishAgentTrace(trace, 'aborted', null); return; } // aborted during the final delay
+    if (requestId !== activeRequestId) { await closeBrowserIfOpen(); finishAgentTrace(trace, 'aborted', null); return; } // aborted during the final delay
 
+    // Deliberately NOT closing the browser here for done/max_steps/
+    // stuck_repeating/error — confirmed for real: a task whose whole point
+    // was "open a browser and show me Wikipedia" had its browser closed
+    // out from under it the instant "done" fired, destroying the actual
+    // deliverable. Only a genuine mid-run abort (the four spots above,
+    // where the user cancelled the automation itself) should force-close;
+    // every other ending leaves the window open for the user to see or
+    // keep using. A stray leftover session from a PAST run is instead
+    // cleaned up at the START of the next one (see the top of this
+    // function), so nothing leaks across unrelated tasks either.
     progressPill.classList.add('hidden');
 
     if (!finalAnswer) {

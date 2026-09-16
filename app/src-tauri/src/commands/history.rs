@@ -24,6 +24,16 @@ pub struct AgentTraceStep {
     pub direction: Option<String>,
     pub amount: Option<i32>,
     pub wait_ms: Option<i32>,
+    pub url: Option<String>,
+    // "ref" is a Rust keyword, can't be a plain field name — renamed on
+    // the wire back to "ref" so it still matches the backend's
+    // AgentStepResponse.ref / the JS trace's step.ref exactly.
+    #[serde(rename = "ref")]
+    pub reference: Option<String>,
+    /// Set when the local Playwright snapshot failed for this step, so a
+    /// browser run that silently fell back to pixel-guessing is visible in
+    /// the persisted trace instead of looking like a normal run.
+    pub browser_snapshot_error: Option<String>,
     pub answer_text: Option<String>,
     pub executed: bool,
     pub execution_error: Option<String>,

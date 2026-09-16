@@ -79,7 +79,14 @@ fn ensure_driver_ready(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     }
 
     if !dir.join("node_modules").exists() {
-        let status = Command::new("npm")
+        // npm/npx on Windows are .cmd batch files, not .exe binaries.
+        // Command::new goes straight to CreateProcess, which (unlike a
+        // real shell) only auto-resolves a bare name to .exe — never
+        // .cmd/.bat. Confirmed for real: this failed with "program not
+        // found" on a machine where `where npm` finds it fine. node.exe
+        // itself is a real .exe (used elsewhere in this file unqualified),
+        // so only npm/npx need the explicit extension.
+        let status = Command::new("npm.cmd")
             .args(["install", "--no-audit", "--no-fund"])
             .current_dir(&dir)
             .status()
@@ -93,7 +100,7 @@ fn ensure_driver_ready(app: &AppHandle) -> Result<std::path::PathBuf, String> {
         // Only needed right after a fresh install — `npx playwright
         // install chromium` downloads the actual browser binary
         // (~150-300MB), a one-time cost.
-        let status = Command::new("npx")
+        let status = Command::new("npx.cmd")
             .args(["--yes", "playwright", "install", "chromium"])
             .current_dir(&dir)
             .status()
