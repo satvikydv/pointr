@@ -401,6 +401,14 @@ mod dpi_tests {
     use super::*;
     use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
 
+    // The OS cursor is global state, so any two tests that move it will
+    // fight if cargo runs them in parallel — which is exactly what
+    // happened: this test's (0.25, 0.6) target showed up as a bogus
+    // "landed" reading inside the click-coordinate test. Both lock this
+    // before touching the cursor. Poisoning is ignored deliberately: a
+    // panic in one cursor test shouldn't cascade into failing the other.
+    pub(crate) static CURSOR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     /// Regression test for the DPI-awareness bug: moves the real system
     /// cursor to known fractional positions on the current monitor (whatever
     /// DPI scaling this machine actually has) and asserts our own
@@ -411,6 +419,7 @@ mod dpi_tests {
     /// scale-factor ratio (e.g. ~0.8x at 125%) — well outside the tolerance.
     #[test]
     fn cursor_normalization_matches_at_current_dpi_scaling() {
+        let _guard = CURSOR_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_dpi_awareness();
 
         let (_, monitor) = capture::cursor::get_cursor_and_monitor()

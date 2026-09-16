@@ -1,11 +1,11 @@
 use crate::CaptureState;
-use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
+use enigo::{Axis, Button, Direction, Enigo, Key, Keyboard, Mouse, Settings};
 use std::sync::Mutex;
 use std::thread::sleep;
 use std::time::Duration;
 use tauri::State;
 use windows::Win32::Foundation::HWND;
-use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SetForegroundWindow};
+use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SetCursorPos, SetForegroundWindow};
 
 /// Types text into whatever currently has OS input focus — no coordinates,
 /// no click, so none of the "wrong pixel" risk a grounded click would carry.
@@ -113,6 +113,17 @@ pub fn execute_open_app(app_name: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Maps a 0.0-1.0 position within a monitor to an absolute virtual-desktop
+/// screen coordinate. Split out of `execute_click` purely so the mapping
+/// can be tested directly (see `click_coordinate_tests`) — "the model said
+/// [y, x] but the mouse went somewhere else" is otherwise only diagnosable
+/// by watching the physical cursor.
+pub fn normalized_to_screen(x_norm: f32, y_norm: f32, monitor: &crate::capture::cursor::MonitorInfo) -> (i32, i32) {
+    let x = monitor.origin_x + (x_norm.clamp(0.0, 1.0) * monitor.width_px as f32) as i32;
+    let y = monitor.origin_y + (y_norm.clamp(0.0, 1.0) * monitor.height_px as f32) as i32;
+    (x, y)
+}
+
 /// Clicks at a normalized position within the monitor the current multi-step
 /// automation is running on. `x_norm`/`y_norm` are 0.0-1.0, same convention
 /// as `pointer_target`/storyboard coordinates elsewhere in the app (the
@@ -148,15 +159,28 @@ pub fn execute_click(
         .clone()
         .ok_or_else(|| "No monitor recorded for this session".to_string())?;
 
-    let target_x = monitor.origin_x + (x_norm.clamp(0.0, 1.0) * monitor.width_px as f32) as i32;
-    let target_y = monitor.origin_y + (y_norm.clamp(0.0, 1.0) * monitor.height_px as f32) as i32;
+    let (target_x, target_y) = normalized_to_screen(x_norm, y_norm, &monitor);
+
+    // SetCursorPos, not an enigo mouse move. Both of enigo's options are
+    // wrong here:
+    //   - Coordinate::Abs normalizes against GetSystemMetrics(SM_CXSCREEN),
+    //     i.e. the PRIMARY monitor only, so it lands nowhere near the mark
+    //     on a secondary display.
+    //   - Coordinate::Rel emits MOUSEEVENTF_MOVE deltas, which Windows
+    //     scales by the user's pointer-speed / Enhanced Pointer Precision
+    //     settings. Measured on this machine: a delta meant to reach
+    //     (760, 157) actually landed at (1528, 312) — almost exactly 2x —
+    //     which is precisely the "coordinates look right but the mouse
+    //     goes somewhere else" symptom.
+    // SetCursorPos takes absolute virtual-desktop coordinates (what
+    // normalized_to_screen already produces, monitor origin included) and
+    // is unaffected by pointer speed or acceleration.
+    unsafe {
+        SetCursorPos(target_x, target_y)
+            .map_err(|e| format!("Failed to move cursor to ({}, {}): {}", target_x, target_y, e))?;
+    }
 
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| format!("Failed to init input simulation: {}", e))?;
-    let (current_x, current_y) = enigo.location().map_err(|e| format!("Failed to read cursor position: {}", e))?;
-
-    enigo
-        .move_mouse(target_x - current_x, target_y - current_y, Coordinate::Rel)
-        .map_err(|e| format!("Failed to move mouse: {}", e))?;
     sleep(Duration::from_millis(60)); // let the OS/app register the pointer at the new position before clicking
 
     let btn = match button.as_deref() {
@@ -294,6 +318,127 @@ pub fn execute_key_press(key: String) -> Result<(), String> {
         let _ = enigo.key(*m, Direction::Release);
     }
     result
+}
+
+#[cfg(test)]
+mod click_coordinate_tests {
+    use super::*;
+    use crate::capture::cursor::MonitorInfo;
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, SetCursorPos};
+
+    fn monitor(width_px: u32, height_px: u32, origin_x: i32, origin_y: i32) -> MonitorInfo {
+        MonitorInfo { origin_x, origin_y, width_px, height_px, dpi: 96 }
+    }
+
+    /// The exact conversion the multi-step loop performs: Gemini returns
+    /// [y, x] in 0-1000 space, main.js divides both by 1000, and the result
+    /// lands here as x_norm/y_norm.
+    fn gemini_point_to_screen(point_y: f32, point_x: f32, m: &MonitorInfo) -> (i32, i32) {
+        normalized_to_screen(point_x / 1000.0, point_y / 1000.0, m)
+    }
+
+    #[test]
+    fn maps_normalized_position_to_monitor_pixels() {
+        let m = monitor(1536, 864, 0, 0);
+        assert_eq!(normalized_to_screen(0.0, 0.0, &m), (0, 0));
+        assert_eq!(normalized_to_screen(0.5, 0.5, &m), (768, 432));
+        assert_eq!(normalized_to_screen(1.0, 1.0, &m), (1536, 864));
+    }
+
+    #[test]
+    fn respects_monitor_origin_for_a_secondary_display() {
+        // A monitor placed to the right of a 1920-wide primary: the same
+        // normalized centre must land 1920px further right, not at 768.
+        let m = monitor(1536, 864, 1920, 0);
+        assert_eq!(normalized_to_screen(0.5, 0.5, &m), (1920 + 768, 432));
+    }
+
+    #[test]
+    fn clamps_out_of_range_values_instead_of_flying_off_screen() {
+        let m = monitor(1536, 864, 0, 0);
+        assert_eq!(normalized_to_screen(-3.0, -3.0, &m), (0, 0));
+        assert_eq!(normalized_to_screen(9.0, 9.0, &m), (1536, 864));
+    }
+
+    /// Regression guard for the y/x ordering, which is the single easiest
+    /// thing to get backwards: Gemini's point is [y, x], NOT [x, y]. The
+    /// real observed value from a failing YouTube run was [146, 396], which
+    /// must mean "near the top, left of centre" — swapping the two would
+    /// put it far down the right-hand side instead.
+    #[test]
+    fn gemini_point_is_y_then_x_not_x_then_y() {
+        let m = monitor(1536, 864, 0, 0);
+        let (x, y) = gemini_point_to_screen(146.0, 396.0, &m);
+        assert_eq!((x, y), (608, 126));
+        assert!(y < m.height_px as i32 / 4, "y should be in the top quarter, got {}", y);
+        assert!(x < m.width_px as i32 / 2, "x should be left of centre, got {}", x);
+    }
+
+    /// The test that actually answers "where does the mouse land": performs
+    /// the SAME cursor move execute_click uses, then reads the real OS
+    /// cursor back via GetCursorPos and compares. Catches any mismatch
+    /// between our coordinate space and what the OS actually does (DPI
+    /// virtualization, monitor origin errors, and pointer-speed scaling of
+    /// injected relative moves) — none of which a pure-math test can see.
+    ///
+    /// This test earned its keep immediately: against the previous
+    /// enigo relative-move implementation it failed with target (760, 157)
+    /// vs landed (1528, 312), exposing that Windows scales injected
+    /// MOUSEEVENTF_MOVE deltas by the user's pointer-speed setting.
+    #[test]
+    fn relative_move_lands_the_real_cursor_where_intended() {
+        // Serialized against dpi_tests, which also moves the real cursor.
+        let _guard = crate::dpi_tests::CURSOR_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        crate::set_dpi_awareness();
+
+        let (_, m) = crate::capture::cursor::get_cursor_and_monitor()
+            .expect("failed to read cursor/monitor");
+        println!(
+            "monitor {}x{}@{} dpi, origin ({}, {})",
+            m.width_px, m.height_px, m.dpi, m.origin_x, m.origin_y
+        );
+
+        // Includes the real [146, 396] from the failing YouTube run.
+        let points: [(f32, f32); 5] = [
+            (146.0, 396.0),
+            (500.0, 500.0),
+            (100.0, 100.0),
+            (900.0, 800.0),
+            (250.0, 750.0),
+        ];
+        let tolerance = 2; // px, for f32 truncation
+
+        for (py, px) in points {
+            let (target_x, target_y) = gemini_point_to_screen(py, px, &m);
+
+            // Park the cursor somewhere unrelated first, so a passing
+            // assertion can't be an artifact of it already being there.
+            unsafe { SetCursorPos(m.origin_x + 5, m.origin_y + 5).expect("SetCursorPos failed") };
+
+            // Same call execute_click makes.
+            unsafe { SetCursorPos(target_x, target_y).expect("SetCursorPos failed") };
+            sleep(Duration::from_millis(40));
+
+            let mut landed = POINT::default();
+            unsafe { GetCursorPos(&mut landed).expect("GetCursorPos failed") };
+
+            println!(
+                "gemini [y={}, x={}] -> target ({}, {}) -> landed ({}, {})  delta ({}, {})",
+                py, px, target_x, target_y, landed.x, landed.y,
+                landed.x - target_x, landed.y - target_y
+            );
+
+            assert!(
+                (landed.x - target_x).abs() <= tolerance,
+                "x off by {}: target {}, landed {}", (landed.x - target_x).abs(), target_x, landed.x
+            );
+            assert!(
+                (landed.y - target_y).abs() <= tolerance,
+                "y off by {}: target {}, landed {}", (landed.y - target_y).abs(), target_y, landed.y
+            );
+        }
+    }
 }
 
 #[cfg(test)]
