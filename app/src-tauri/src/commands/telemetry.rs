@@ -90,6 +90,19 @@ pub fn capture_event(app: &AppHandle, name: &str, properties: Value) {
     props.insert("os".into(), json!(std::env::consts::OS));
     props.insert("os_build".into(), json!(os_build()));
 
+    // PostHog enriches events server-side from the request's source IP,
+    // attaching IP, city, postal code and lat/long — none of which we send
+    // and all of which break the "anonymous" promise made in the opt-in
+    // prompt (an IP plus a postal code is personal data under GDPR).
+    // Caught on the very first real event: it arrived tagged with a city
+    // and postal code. These two properties opt out per event; the
+    // project-level "discard client IP data" setting is the authoritative
+    // switch, but relying on a dashboard toggle alone would mean a new
+    // project, or someone flipping it back, silently starts collecting
+    // location again.
+    props.insert("$geoip_disable".into(), json!(true));
+    props.insert("$ip".into(), json!("0.0.0.0"));
+
     let payload = json!({
         "api_key": POSTHOG_API_KEY,
         "event": name,

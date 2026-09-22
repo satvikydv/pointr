@@ -676,6 +676,29 @@ function capabilityUsed(response) {
     return 'none';
 }
 
+/// The backend swallows Gemini/tool failures into a plain string answer
+/// instead of raising (GeminiService.*_sync, tasks.py's needs_* fallbacks),
+/// so Celery reports the task as SUCCESS even when the "answer" is really
+/// an error. Caught for real: two runs that had actually failed (a 503
+/// from Gemini) showed up in telemetry as agent_task_completed, with no
+/// agent_task_failed anywhere — the exact case this list exists to catch.
+/// Matches ONLY these exact backend-authored fallback strings, never
+/// free-text guessing against a real answer, which the model could
+/// legitimately produce and must never get misclassified as a failure.
+const BACKEND_ERROR_ANSWERS = [
+    "Gemini API key not configured.",
+    "File access isn't set up yet — set POINTR_FS_ROOT_HOST in the project's .env to a real folder and restart the worker (docker compose up -d --build worker).",
+    "Something went wrong reading files for this task.",
+    "GitHub isn't connected yet — add a token in Settings.",
+    "Something went wrong checking GitHub for this task.",
+    "Web search isn't set up yet — add a Tavily API key in Settings.",
+    "Something went wrong searching the web for this task.",
+];
+function isBackendErrorAnswer(answerText) {
+    if (typeof answerText !== 'string') return false;
+    return answerText.startsWith('Error communicating with Gemini:') || BACKEND_ERROR_ANSWERS.includes(answerText);
+}
+
 /// One-time opt-in prompt, shown before the first query box ever appears.
 /// Enter enables, Escape skips; either answer is remembered so this never
 /// asks twice. Fails closed and silently: if the setting can't be read or
@@ -809,7 +832,11 @@ async function runAgentTask(taskDescription) {
                 proposed_action: statusData.result.proposed_action || null,
                 multi_step_plan: statusData.result.multi_step_plan || null
             };
-            captureTelemetry('agent_task_completed', { capability: capabilityUsed(result) });
+            if (isBackendErrorAnswer(result.answer_text)) {
+                captureTelemetry('agent_task_failed', { reason: 'backend_error_answer' });
+            } else {
+                captureTelemetry('agent_task_completed', { capability: capabilityUsed(result) });
+            }
             return result;
         } else if (statusData.status === "FAILURE") {
             captureTelemetry('agent_task_failed', { reason: 'backend_failure' });
