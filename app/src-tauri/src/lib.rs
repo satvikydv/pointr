@@ -132,6 +132,8 @@ fn trigger_capture(
         state_lock.target_hwnd = ctx.hwnd;
     }
 
+    commands::telemetry::capture_event(&app, "region_select_used", serde_json::json!({}));
+
     overlay::window::show_overlay(&app, &monitor, &image_bytes)
         .map_err(|e| format!("Failed to show overlay: {}", e))?;
 
@@ -185,6 +187,8 @@ fn trigger_capture_direct(
         state_lock.session_duration_secs = session_duration_secs;
         state_lock.target_hwnd = ctx.hwnd;
     }
+
+    commands::telemetry::capture_event(app, "direct_query_sent", serde_json::json!({}));
 
     overlay::window::show_overlay_direct(app, &monitor)
         .map_err(|e| format!("Failed to show overlay: {}", e))?;
@@ -306,6 +310,12 @@ pub fn run() {
             commands::history::save_agent_trace,
             commands::history::get_agent_history,
             commands::history::clear_agent_history,
+            commands::history::save_run_debug_screenshots,
+            commands::settings::get_telemetry_enabled,
+            commands::settings::set_telemetry_enabled,
+            commands::settings::get_telemetry_prompt_shown,
+            commands::settings::set_telemetry_prompt_shown,
+            commands::telemetry::capture_telemetry_event,
             commands::browser::start_browser_session,
             commands::browser::browser_navigate,
             commands::browser::browser_snapshot,

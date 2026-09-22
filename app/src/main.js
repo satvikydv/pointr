@@ -246,6 +246,11 @@ listen('show-overlay-direct', async () => {
     await appWindow.show();
     await appWindow.setFocus();
 
+    // First run only: ask about telemetry before the query box appears, so
+    // the very first event a user could generate is already governed by
+    // their answer. Returns immediately on every later run.
+    await askTelemetryConsentIfNeeded();
+
     directQueryInput.value = '';
     directQueryBox.classList.remove('hidden');
     btnHistory.classList.remove('hidden');
@@ -650,6 +655,69 @@ btnCancel.addEventListener('click', async () => {
 // the worker logs) but the UI had already shown a timeout error by then.
 // 60s still catches a truly stuck/dead worker, just doesn't fire early on
 // a slower-but-healthy multi-phase task.
+// ---------------------------------------------------------------------
+// Telemetry (opt-in, anonymous) — every call routes through Rust's
+// capture_telemetry_event, which owns the enabled-check and the anonymous
+// install id. Never pass query text, task descriptions, clipboard/file
+// contents, answers, or tokens: categorical values and counts only.
+// ---------------------------------------------------------------------
+function captureTelemetry(name, properties) {
+    // Fire-and-forget on this side too — a rejected promise here must not
+    // surface in a user-facing flow.
+    invoke('capture_telemetry_event', { name, properties: properties || {} })
+        .catch((e) => console.debug('[telemetry] capture failed:', e));
+}
+
+/// Which capability a finished agent task actually exercised — enum-like,
+/// derived from the response shape rather than from any of its content.
+function capabilityUsed(response) {
+    if (response.multi_step_plan) return 'multistep';
+    if (response.proposed_action) return 'os_action';
+    return 'none';
+}
+
+/// One-time opt-in prompt, shown before the first query box ever appears.
+/// Enter enables, Escape skips; either answer is remembered so this never
+/// asks twice. Fails closed and silently: if the setting can't be read or
+/// written, telemetry simply stays off.
+async function askTelemetryConsentIfNeeded() {
+    let alreadyAsked = true;
+    try {
+        alreadyAsked = await invoke('get_telemetry_prompt_shown');
+    } catch (e) {
+        console.error('[telemetry] Failed to read prompt state:', e);
+        return; // fail closed — don't prompt, don't enable
+    }
+    if (alreadyAsked) return;
+
+    const box = document.getElementById('telemetry-consent-box');
+    box.classList.remove('hidden');
+    // Same Escape-race handling as every other keypress gate in this file:
+    // disable the global Escape shortcut so only this listener can resolve.
+    await disableEscapeDismiss();
+
+    const enabled = await new Promise((resolve) => {
+        const onKey = (e) => {
+            if (e.key === 'Enter' || e.key === 'Escape') {
+                e.preventDefault();
+                document.removeEventListener('keydown', onKey);
+                resolve(e.key === 'Enter');
+            }
+        };
+        document.addEventListener('keydown', onKey);
+    });
+
+    box.classList.add('hidden');
+    await enableEscapeDismiss();
+
+    try {
+        await invoke('set_telemetry_enabled', { enabled });
+        await invoke('set_telemetry_prompt_shown', { shown: true });
+    } catch (e) {
+        console.error('[telemetry] Failed to persist consent choice:', e);
+    }
+}
+
 const AGENT_POLL_MAX_ATTEMPTS = 60;
 const AGENT_POLL_INTERVAL_MS = 1000;
 
@@ -700,6 +768,9 @@ async function runAgentTask(taskDescription) {
         console.error("[agent] Failed to read Tavily key:", e);
     }
 
+    // Categorical only — never the task text itself. See telemetry.rs.
+    captureTelemetry('agent_task_started', {});
+
     const postRes = await fetch(`${API_BASE_URL}/api/agent/task`, {
         method: "POST",
         headers: API_HEADERS,
@@ -732,17 +803,21 @@ async function runAgentTask(taskDescription) {
                     console.error("Failed to write clipboard:", e);
                 }
             }
-            return {
+            const result = {
                 answer_text: statusData.result.result,
                 pointer_target: statusData.result.pointer_target,
                 proposed_action: statusData.result.proposed_action || null,
                 multi_step_plan: statusData.result.multi_step_plan || null
             };
+            captureTelemetry('agent_task_completed', { capability: capabilityUsed(result) });
+            return result;
         } else if (statusData.status === "FAILURE") {
+            captureTelemetry('agent_task_failed', { reason: 'backend_failure' });
             throw new Error("Task failed: " + statusData.result);
         }
     }
 
+    captureTelemetry('agent_task_failed', { reason: 'timeout' });
     throw new Error(`Agent task timed out after ${AGENT_POLL_MAX_ATTEMPTS * AGENT_POLL_INTERVAL_MS / 1000}s`);
 }
 
@@ -932,6 +1007,21 @@ function finishAgentTrace(trace, stopReason, finalAnswer) {
     console.log(`[agent-trace] run finished (${stopReason}, ${trace.steps.length} steps):`, trace);
     invoke('save_agent_trace', { record: traceToHistoryRecord(trace) }).catch((e) => {
         console.error('[agent-trace] failed to persist history:', e);
+    });
+    // Counts and an enum only — no step descriptions, text, or targets.
+    const failedSteps = trace.steps.filter((s) => s.executed === false || s.executionError).length;
+    captureTelemetry('multistep_run_completed', {
+        step_count: trace.steps.length,
+        aborted: stopReason === 'aborted',
+        ended_reason: stopReason === 'done' && failedSteps > 0 ? 'done_with_errors' : stopReason,
+        browser_used: trace.steps.some((s) => String(s.action_type || '').startsWith('browser_')),
+    });
+
+    // No-op in release builds (Rust side checks debug_assertions).
+    invoke('save_run_debug_screenshots', {
+        screenshots: trace.steps.map((s) => s.screenshot_base64 || null),
+    }).catch((e) => {
+        console.error('[agent-trace] failed to save debug screenshots:', e);
     });
 }
 

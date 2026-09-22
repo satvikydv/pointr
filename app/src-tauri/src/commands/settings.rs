@@ -37,6 +37,22 @@ struct PersistedSettings {
     gemini_api_key_encrypted: Option<String>,
     #[serde(default)]
     tavily_api_key_encrypted: Option<String>,
+    /// Opt-in, default OFF — see commands/telemetry.rs. Anything that
+    /// can't read this setting treats it as disabled (fail closed), so a
+    /// corrupt/unreadable settings file never silently starts sending.
+    #[serde(default)]
+    telemetry_enabled: bool,
+    /// Whether the one-time "share anonymous usage data?" prompt has been
+    /// answered. Separate from the setting itself so that answering "Skip"
+    /// is remembered and never asked again.
+    #[serde(default)]
+    telemetry_prompt_shown: bool,
+    /// Random UUID generated on first use, persisted here. Deliberately
+    /// NOT derived from machine id, username, MAC, or anything else
+    /// identifying — it exists only so repeat events from one install can
+    /// be grouped, and clearing settings.json resets it entirely.
+    #[serde(default)]
+    install_id: Option<String>,
 }
 
 fn default_speech_enabled() -> bool {
@@ -56,6 +72,9 @@ impl Default for PersistedSettings {
             github_token_encrypted: None,
             gemini_api_key_encrypted: None,
             tavily_api_key_encrypted: None,
+            telemetry_enabled: false,
+            telemetry_prompt_shown: false,
+            install_id: None,
         }
     }
 }
@@ -301,4 +320,58 @@ mod dpapi_tests {
         encrypted[last] ^= 0xFF;
         assert!(dpapi_unprotect(&encrypted).is_err());
     }
+}
+
+// ---------------------------------------------------------------------
+// Telemetry settings (see commands/telemetry.rs)
+//
+// Every read here fails CLOSED: any error reading settings.json is
+// reported as "telemetry disabled", never as enabled.
+// ---------------------------------------------------------------------
+
+/// Internal, non-command read used by the capture path itself — a Tauri
+/// command can only be called from the frontend, but telemetry fires from
+/// Rust too.
+pub(crate) fn telemetry_enabled(app: &AppHandle) -> bool {
+    load_settings(app).telemetry_enabled
+}
+
+/// Returns the persisted anonymous install id, generating and saving one
+/// on first call. `None` if it couldn't be persisted — the caller treats
+/// that as "don't send", rather than inventing a throwaway id per event
+/// (which would inflate user counts and still identify nothing useful).
+pub(crate) fn install_id(app: &AppHandle) -> Option<String> {
+    let mut settings = load_settings(app);
+    if let Some(existing) = &settings.install_id {
+        return Some(existing.clone());
+    }
+    let fresh = uuid::Uuid::new_v4().to_string();
+    settings.install_id = Some(fresh.clone());
+    save_settings(app, &settings).ok()?;
+    Some(fresh)
+}
+
+#[tauri::command]
+pub fn get_telemetry_enabled(app: AppHandle) -> Result<bool, String> {
+    Ok(load_settings(&app).telemetry_enabled)
+}
+
+#[tauri::command]
+pub fn set_telemetry_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = load_settings(&app);
+    settings.telemetry_enabled = enabled;
+    save_settings(&app, &settings)
+}
+
+/// True once the one-time opt-in prompt has been answered either way.
+#[tauri::command]
+pub fn get_telemetry_prompt_shown(app: AppHandle) -> Result<bool, String> {
+    Ok(load_settings(&app).telemetry_prompt_shown)
+}
+
+#[tauri::command]
+pub fn set_telemetry_prompt_shown(app: AppHandle, shown: bool) -> Result<(), String> {
+    let mut settings = load_settings(&app);
+    settings.telemetry_prompt_shown = shown;
+    save_settings(&app, &settings)
 }

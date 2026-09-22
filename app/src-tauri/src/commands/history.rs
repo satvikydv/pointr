@@ -107,3 +107,35 @@ pub fn get_agent_history(app: AppHandle) -> Result<Vec<AgentTraceRecord>, String
 pub fn clear_agent_history(app: AppHandle) -> Result<(), String> {
     save_history(&app, &[])
 }
+
+/// Dev builds only: writes the last multi-step run's per-step screenshots
+/// to `<app config>/debug-last-run/step-NN.png`, replacing the previous
+/// run's. The persisted trace deliberately drops images, and the in-memory
+/// copy only lives in devtools, so without this nobody but the person at
+/// the screen could see what the model was actually looking at when it
+/// made a bad decision. No-op in release builds.
+#[tauri::command]
+pub fn save_run_debug_screenshots(app: AppHandle, screenshots: Vec<Option<String>>) -> Result<(), String> {
+    if !cfg!(debug_assertions) {
+        return Ok(());
+    }
+    use base64::Engine;
+
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("Failed to resolve config dir: {}", e))?
+        .join("debug-last-run");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create debug dir: {}", e))?;
+
+    for (i, shot) in screenshots.iter().enumerate() {
+        let Some(b64) = shot else { continue };
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(b64)
+            .map_err(|e| format!("Bad screenshot {}: {}", i + 1, e))?;
+        fs::write(dir.join(format!("step-{:02}.png", i + 1)), bytes)
+            .map_err(|e| format!("Failed to write screenshot {}: {}", i + 1, e))?;
+    }
+    Ok(())
+}

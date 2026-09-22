@@ -65,19 +65,21 @@ pub fn execute_open_app(app_name: String) -> Result<(), String> {
 
     enigo.key(Key::Return, Direction::Click).map_err(|e| format!("Failed to press Enter: {}", e))?;
 
-    // Round 3 on this same problem — rounds 1 (foreground re-assert alone)
-    // and 2 (+ a click at a single fixed-delay-later read of
-    // GetForegroundWindow) both turned out to still fail on a live run,
-    // audibly: Windows played its own "can't route this keystroke" beep,
-    // which happens when input focus is on the bare desktop rather than a
-    // real control. That points at the actual root cause — a single read
-    // of GetForegroundWindow() 700ms after Enter can still be the Search UI
-    // or the desktop, not the launched app, if that app is cold-starting
-    // slowly (first launch in a session especially). Poll instead of
-    // trusting one fixed delay: wait for the foreground window to actually
-    // change away from hwnd_before AND hold steady for one more poll
-    // (not just caught mid-transition), up to 3s.
-    let fg: HWND;
+    // Wait for the launched app to actually become the foreground window
+    // (changed away from hwnd_before, and steady for one more poll so it
+    // isn't caught mid-transition), up to 3s. A single read at a fixed
+    // delay could still see the Search UI or the desktop when an app
+    // cold-starts slowly, and typing then went nowhere.
+    //
+    // Deliberately NO foreground re-assert after this (no SetForegroundWindow,
+    // no "harmless" Alt tap to satisfy the foreground-lock rule). The poll
+    // already guarantees the new app is foreground, so a re-assert is a
+    // no-op — and the Alt tap was actively harmful: it landed on the new
+    // window and switched its menu bar into keyboard mode. Seen in a real
+    // debug screenshot: Notepad open with File focused and F/E/V key-tips
+    // showing, every typed character swallowed by menu navigation, the
+    // document left empty. cmd was unaffected (no Alt menu), which is why
+    // the same run typed into cmd fine and then failed in Notepad.
     let mut prev = hwnd_before;
     let mut waited_ms = 0u32;
     loop {
@@ -85,32 +87,59 @@ pub fn execute_open_app(app_name: String) -> Result<(), String> {
         waited_ms += 150;
         let current = unsafe { GetForegroundWindow() };
         if current != hwnd_before && !current.is_invalid() && current == prev {
-            fg = current;
             break;
         }
         prev = current;
         if waited_ms >= 3000 {
-            fg = current; // best available guess if it never settled in time
             break;
         }
     }
     sleep(Duration::from_millis(250)); // let it finish laying out before anything looks at it
 
-    // Window-level foreground only — no blind click into a guessed window
-    // center here. Accelerators (Ctrl+S) dispatch at the window level, so
-    // this alone is enough for those; the model itself is given an explicit
-    // instruction (agent.py's step prompt) to click into the actual content
-    // area as its own visible next step before typing, since it can see the
-    // screenshot and land somewhere real, instead of Rust guessing blind.
-    unsafe {
-        if !fg.is_invalid() {
-            let _ = enigo.key(Key::Alt, Direction::Press);
-            let _ = enigo.key(Key::Alt, Direction::Release);
-            let _ = SetForegroundWindow(fg);
+    Ok(())
+}
+
+/// After an input that may have popped up a new window (Ctrl+S opening
+/// Save As, a click on a button that opens a dialog or menu), waits for
+/// that window to settle before returning, so the multi-step loop's next
+/// screenshot shows it. Seen in a real debug screenshot: Ctrl+S had
+/// already moved activation to the Save As dialog (Notepad's caption
+/// buttons went grey) but the dialog wasn't painted yet, so the model saw
+/// no dialog, pressed Ctrl+S again, and the run stopped as stuck.
+///
+/// Cheap when nothing pops up: returns after ~400ms if the foreground
+/// window never changes.
+fn wait_for_foreground_settle(before: HWND) {
+    const POLL_MS: u64 = 100;
+    const NOTHING_CHANGED_MS: u64 = 400;
+    const MAX_MS: u64 = 2500;
+
+    let mut waited = 0;
+    let mut changed = false;
+    let mut prev = before;
+    loop {
+        sleep(Duration::from_millis(POLL_MS));
+        waited += POLL_MS;
+        let current = unsafe { GetForegroundWindow() };
+        if current != before {
+            changed = true;
+        }
+        if !changed && waited >= NOTHING_CHANGED_MS {
+            return;
+        }
+        // Changed, and the same window two polls in a row — it's the one
+        // that's staying, not a transient mid-switch reading.
+        if changed && current == prev && !current.is_invalid() {
+            break;
+        }
+        prev = current;
+        if waited >= MAX_MS {
+            break;
         }
     }
-
-    Ok(())
+    // Activation happens before first paint, so a settled HWND can still
+    // be an empty frame for a moment.
+    sleep(Duration::from_millis(400));
 }
 
 /// Maps a 0.0-1.0 position within a monitor to an absolute virtual-desktop
@@ -188,11 +217,13 @@ pub fn execute_click(
         _ => Button::Left,
     };
 
+    let before = unsafe { GetForegroundWindow() };
     enigo.button(btn, Direction::Click).map_err(|e| format!("Failed to click: {}", e))?;
     if double.unwrap_or(false) {
         sleep(Duration::from_millis(60)); // real double-clicks aren't instant either — too fast and some apps read it as two singles
         enigo.button(btn, Direction::Click).map_err(|e| format!("Failed to click: {}", e))?;
     }
+    wait_for_foreground_settle(before);
     Ok(())
 }
 
@@ -304,6 +335,7 @@ fn parse_key_combo(key: &str) -> Result<(Key, Vec<Key>), String> {
 #[tauri::command]
 pub fn execute_key_press(key: String) -> Result<(), String> {
     let (main_key, modifiers) = parse_key_combo(&key)?;
+    let before = unsafe { GetForegroundWindow() };
 
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| format!("Failed to init input simulation: {}", e))?;
 
@@ -317,7 +349,9 @@ pub fn execute_key_press(key: String) -> Result<(), String> {
         // subsequent keystroke for the rest of the session.
         let _ = enigo.key(*m, Direction::Release);
     }
-    result
+    result?;
+    wait_for_foreground_settle(before);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -412,16 +446,37 @@ mod click_coordinate_tests {
         for (py, px) in points {
             let (target_x, target_y) = gemini_point_to_screen(py, px, &m);
 
-            // Park the cursor somewhere unrelated first, so a passing
-            // assertion can't be an artifact of it already being there.
-            unsafe { SetCursorPos(m.origin_x + 5, m.origin_y + 5).expect("SetCursorPos failed") };
-
-            // Same call execute_click makes.
-            unsafe { SetCursorPos(target_x, target_y).expect("SetCursorPos failed") };
-            sleep(Duration::from_millis(40));
-
+            // Retried, because this reads the one real system cursor: if a
+            // human happens to move the physical mouse during the window
+            // between setting and reading, the position legitimately
+            // differs by a few px. A systematic bug (the pointer-speed
+            // scaling this test was written to catch) misses by hundreds
+            // and fails every attempt, so retrying can't mask one.
             let mut landed = POINT::default();
-            unsafe { GetCursorPos(&mut landed).expect("GetCursorPos failed") };
+            const ATTEMPTS: i32 = 6;
+            for attempt in 0..ATTEMPTS {
+                // Park the cursor somewhere unrelated first, so a passing
+                // assertion can't be an artifact of it already being there.
+                unsafe { SetCursorPos(m.origin_x + 5, m.origin_y + 5).expect("SetCursorPos failed") };
+
+                // Same call execute_click makes.
+                unsafe { SetCursorPos(target_x, target_y).expect("SetCursorPos failed") };
+                sleep(Duration::from_millis(40));
+
+                unsafe { GetCursorPos(&mut landed).expect("GetCursorPos failed") };
+                let close_enough = (landed.x - target_x).abs() <= tolerance
+                    && (landed.y - target_y).abs() <= tolerance;
+                if close_enough {
+                    break;
+                }
+                if attempt < ATTEMPTS - 1 {
+                    println!(
+                        "  retry {}: landed ({}, {}) — likely live mouse movement",
+                        attempt + 1, landed.x, landed.y
+                    );
+                    sleep(Duration::from_millis(120));
+                }
+            }
 
             println!(
                 "gemini [y={}, x={}] -> target ({}, {}) -> landed ({}, {})  delta ({}, {})",

@@ -5,6 +5,8 @@ const toggleTrack = document.getElementById('toggle-track');
 const toggleKnob = document.getElementById('toggle-knob');
 const osToggleTrack = document.getElementById('os-toggle-track');
 const osToggleKnob = document.getElementById('os-toggle-knob');
+const telemetryToggleTrack = document.getElementById('telemetry-toggle-track');
+const telemetryToggleKnob = document.getElementById('telemetry-toggle-knob');
 const voiceSection = document.getElementById('voice-section');
 const voiceTrigger = document.getElementById('voice-trigger');
 const voiceTriggerLabel = document.getElementById('voice-trigger-label');
@@ -26,6 +28,9 @@ const btnGithubDisconnect = document.getElementById('btn-github-disconnect');
 const state = {
     audioOn: true,
     osActionsOn: true,
+    // Opt-in: mirrors the Rust default, and stays false if the real value
+    // can't be read (fail closed, same as the capture path itself).
+    telemetryOn: false,
     voices: [], // {id, display_name, language}
     selectedId: null,
     savedId: null,
@@ -122,6 +127,9 @@ function render() {
     osToggleTrack.style.background = state.osActionsOn ? '#5b8cff' : 'rgba(255,255,255,0.12)';
     osToggleTrack.style.border = `1px solid ${state.osActionsOn ? '#5b8cff' : 'rgba(255,255,255,0.16)'}`;
     osToggleKnob.style.left = (state.osActionsOn ? 18 : 1) + 'px';
+    telemetryToggleTrack.style.background = state.telemetryOn ? '#5b8cff' : 'rgba(255,255,255,0.12)';
+    telemetryToggleTrack.style.border = `1px solid ${state.telemetryOn ? '#5b8cff' : 'rgba(255,255,255,0.16)'}`;
+    telemetryToggleKnob.style.left = (state.telemetryOn ? 18 : 1) + 'px';
 
     // Voice section disabled look when audio is off
     voiceSection.style.opacity = state.audioOn ? '1' : '0.45';
@@ -222,6 +230,19 @@ osToggleTrack.addEventListener('click', async () => {
     }
 });
 
+telemetryToggleTrack.addEventListener('click', async () => {
+    state.telemetryOn = !state.telemetryOn;
+    render();
+    try {
+        await invoke('set_telemetry_enabled', { enabled: state.telemetryOn });
+        // Flipping this in Settings also counts as answering the one-time
+        // prompt, so it doesn't ask again afterwards.
+        await invoke('set_telemetry_prompt_shown', { shown: true });
+    } catch (e) {
+        console.error('Failed to save telemetry-enabled setting:', e);
+    }
+});
+
 btnTest.addEventListener('click', async () => {
     if (!state.audioOn || state.isPlaying || !state.selectedId) return;
     state.isPlaying = true;
@@ -317,6 +338,13 @@ async function init() {
         state.osActionsOn = await invoke('get_os_actions_enabled');
     } catch (e) {
         console.error('Failed to load os-actions-enabled setting:', e);
+    }
+
+    try {
+        state.telemetryOn = await invoke('get_telemetry_enabled');
+    } catch (e) {
+        console.error('Failed to load telemetry-enabled setting:', e);
+        state.telemetryOn = false; // fail closed
     }
 
     try {

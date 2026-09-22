@@ -136,7 +136,8 @@
         color: rgba(255, 255, 255, 0.45);
       }
       #toggle-track,
-      #os-toggle-track {
+      #os-toggle-track,
+      #telemetry-toggle-track {
         width: 38px;
         height: 22px;
         border-radius: 11px;
@@ -146,7 +147,8 @@
         flex-shrink: 0;
       }
       #toggle-knob,
-      #os-toggle-knob {
+      #os-toggle-knob,
+      #telemetry-toggle-knob {
         position: absolute;
         top: 1px;
         width: 18px;
@@ -398,6 +400,16 @@
           </div>
         </div>
         <div class="toggle-hint">Lets the agent type into a focused field or open an app on your behalf — always asks for confirmation first. Off skips proposed actions entirely.</div>
+
+        <div class="divider"></div>
+
+        <div class="toggle-row">
+          <div class="toggle-title">Share anonymous usage data</div>
+          <div id="telemetry-toggle-track">
+            <div id="telemetry-toggle-knob"></div>
+          </div>
+        </div>
+        <div class="toggle-hint">Sends which features get used and when something errors, nothing else. No screenshots, queries, file contents, or tokens ever leave your machine. Off by default.</div>
 
         <div class="divider"></div>
 
