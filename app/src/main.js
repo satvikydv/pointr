@@ -284,7 +284,9 @@ async function runDirectAnalysis(queryText) {
     try {
         if (explainMatch) {
             const topic = explainMatch[1] || queryText;
+            captureTelemetry('direct_query_sent', { mode: 'explain' });
             const storyboard = await invoke('process_explain', { topic });
+            trackQueryOutcome('explain', 'ok');
             console.log('[explain] storyboard steps:', JSON.stringify(storyboard.steps, null, 2));
 
             if (requestId !== activeRequestId) return; // superseded by a later press
@@ -299,12 +301,18 @@ async function runDirectAnalysis(queryText) {
         }
 
         const agentTaskDescription = agentMatch ? (agentMatch[1] || "Analyze this for agent actions") : null;
+        // Fired here, when a question is actually sent — not on the hotkey
+        // press, which only opens the overlay (it used to fire from Rust at
+        // capture time, so it counted overlay opens, including cancelled
+        // ones). agent: tasks report through their own agent_task_* events.
+        if (!agentMatch) captureTelemetry('direct_query_sent', { mode: 'direct' });
         const response = agentMatch
             ? await runAgentTask(agentTaskDescription)
             : await invoke('process_direct', {
                 query: queryText || null,
                 requestId: String(requestId)
             });
+        if (!agentMatch) trackQueryOutcome('direct', response.answer_text);
 
         if (requestId !== activeRequestId) return; // superseded by a later press
 
@@ -331,6 +339,7 @@ async function runDirectAnalysis(queryText) {
         renderResponse(response, rect);
     } catch (error) {
         if (requestId !== activeRequestId) return;
+        if (!agentMatch) trackQueryOutcome(explainMatch ? 'explain' : 'direct', 'exception');
 
         console.error("Error in direct analysis:", error);
         loadingIndicator.classList.add('hidden');
@@ -687,6 +696,7 @@ function capabilityUsed(response) {
 /// legitimately produce and must never get misclassified as a failure.
 const BACKEND_ERROR_ANSWERS = [
     "Gemini API key not configured.",
+    "OpenAI API key not configured.",
     "File access isn't set up yet — set POINTR_FS_ROOT_HOST in the project's .env to a real folder and restart the worker (docker compose up -d --build worker).",
     "Something went wrong reading files for this task.",
     "GitHub isn't connected yet — add a token in Settings.",
@@ -696,7 +706,46 @@ const BACKEND_ERROR_ANSWERS = [
 ];
 function isBackendErrorAnswer(answerText) {
     if (typeof answerText !== 'string') return false;
-    return answerText.startsWith('Error communicating with Gemini:') || BACKEND_ERROR_ANSWERS.includes(answerText);
+    return /^Error communicating with (Gemini|OpenAI):/.test(answerText) || BACKEND_ERROR_ANSWERS.includes(answerText);
+}
+
+/// Provider + model chosen in Settings, plus the OpenAI key only when OpenAI
+/// is the provider — spread into every agent request body. On failure the
+/// fields are simply left out and the backend uses Gemini defaults.
+async function llmRequestFields() {
+    try {
+        return await invoke('get_llm_request_fields');
+    } catch (e) {
+        console.error('Failed to read model settings:', e);
+        return {};
+    }
+}
+
+/// Outcome of a plain question (not an agent: task, which reports its own
+/// events). `mode` is one of 'direct' | 'region' | 'explain' — an enum, never
+/// any text. Covers both ways a plain ask can fail: the backend swallowing a
+/// Gemini error into the answer string (a 503 shows up as the answer itself,
+/// streamed into the tooltip), and a thrown exception (network down, etc.).
+/// The HTTP status inside "Error communicating with Gemini: 503 UNAVAILABLE..."
+/// (or the same shape from OpenAI),
+/// as a number (503, 429, 403...). Just the code, never the message text: it
+/// separates "Google is overloaded" from "quota hit" from "bad API key" —
+/// i.e. whether a failure is ours to fix — without sending anything free-form.
+function upstreamStatus(answerText) {
+    const m = typeof answerText === 'string'
+        ? /^Error communicating with (?:Gemini|OpenAI): (\d{3})\b/.exec(answerText)
+        : null;
+    return m ? Number(m[1]) : null;
+}
+
+function trackQueryOutcome(mode, outcome) {
+    if (outcome === 'exception') {
+        captureTelemetry('query_failed', { mode, reason: 'exception' });
+    } else if (isBackendErrorAnswer(outcome)) {
+        captureTelemetry('query_failed', { mode, reason: 'backend_error_answer', upstream_status: upstreamStatus(outcome) });
+    } else {
+        captureTelemetry('query_completed', { mode });
+    }
 }
 
 /// One-time opt-in prompt, shown before the first query box ever appears.
@@ -790,6 +839,7 @@ async function runAgentTask(taskDescription) {
     } catch (e) {
         console.error("[agent] Failed to read Tavily key:", e);
     }
+    const llmFields = await llmRequestFields();
 
     // Categorical only — never the task text itself. See telemetry.rs.
     captureTelemetry('agent_task_started', {});
@@ -804,7 +854,8 @@ async function runAgentTask(taskDescription) {
             screenshot_base64: screenshotBase64,
             github_token: githubToken,
             gemini_api_key: geminiApiKey,
-            tavily_api_key: tavilyApiKey
+            tavily_api_key: tavilyApiKey,
+            ...llmFields,
         })
     });
     const { task_id } = await postRes.json();
@@ -833,7 +884,7 @@ async function runAgentTask(taskDescription) {
                 multi_step_plan: statusData.result.multi_step_plan || null
             };
             if (isBackendErrorAnswer(result.answer_text)) {
-                captureTelemetry('agent_task_failed', { reason: 'backend_error_answer' });
+                captureTelemetry('agent_task_failed', { reason: 'backend_error_answer', upstream_status: upstreamStatus(result.answer_text) });
             } else {
                 captureTelemetry('agent_task_completed', { capability: capabilityUsed(result) });
             }
@@ -1149,6 +1200,7 @@ async function runMultiStepLoop(taskDescription, plan) {
     } catch (e) {
         console.error('[multistep] Failed to read Gemini key:', e);
     }
+    const llmFields = await llmRequestFields();
 
     // Detects the SAME action proposed back to back, by actual parameters —
     // not by the model's own free-text description, which gets reworded
@@ -1264,6 +1316,7 @@ async function runMultiStepLoop(taskDescription, plan) {
                     completed_steps: completedSteps,
                     screenshot_base64: screenshotBase64,
                     gemini_api_key: geminiApiKey,
+                    ...llmFields,
                     browser_snapshot: browserSnapshot,
                 })
             });
@@ -1302,6 +1355,7 @@ async function runMultiStepLoop(taskDescription, plan) {
                         completed_steps: completedSteps,
                         screenshot_base64: screenshotBase64,
                         gemini_api_key: geminiApiKey,
+                        ...llmFields,
                         browser_snapshot: browserSnapshot,
                         stuck_on_repeat: true,
                     })
@@ -1544,11 +1598,13 @@ btnSubmit.addEventListener('click', async () => {
             agentTaskDescription = agentMatch[1] || "Analyze this UI area for agent actions";
             response = await runAgentTask(agentTaskDescription);
         } else {
+            captureTelemetry('region_select_used', {});
             response = await invoke('process_crop', {
                 rect,
                 query: rawQuery || null,
                 requestId: String(requestId)
             });
+            trackQueryOutcome('region', response.answer_text);
         }
 
         if (requestId !== activeRequestId) return; // superseded while we were waiting

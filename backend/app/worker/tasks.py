@@ -2,7 +2,7 @@ import base64
 import json
 import re
 from app.worker.celery_app import celery_app
-from app.services.gemini import GeminiService
+from app.services.llm import api_key_for, get_llm
 from app.services.mcp_filesystem import run_agent_turn_with_filesystem_sync
 from app.services.github_mcp import run_agent_turn_with_github_sync
 from app.services.tavily_mcp import run_agent_turn_with_web_search_sync
@@ -52,6 +52,7 @@ def run_agent_task(
     self, task_description: str, session_id: str, clipboard_text: str = "",
     screenshot_base64: str = "", github_token: str = "",
     gemini_api_key: str = "", tavily_api_key: str = "",
+    provider: str = "gemini", model: str = "", openai_api_key: str = "",
 ):
     """Runs an agent turn: task description, whatever's on the user's
     clipboard, and — since M6 — the current screenshot, so tasks like "draft
@@ -69,13 +70,19 @@ def run_agent_task(
     needs to read/list something on the user's Desktop that isn't already
     visible on screen — does a second call happen, this time through
     services.mcp_filesystem with real (read-only) tools attached."""
-    print(f"[agent_task] clipboard_text len={len(clipboard_text)} preview={clipboard_text[:40]!r} has_screenshot={bool(screenshot_base64)}")
+    # Length only, never a preview of the clipboard itself — this line lands
+    # in the container logs, and the privacy page promises user content
+    # isn't retained there. (It used to log the first 40 characters.)
+    print(f"[agent_task] clipboard_text len={len(clipboard_text)} has_screenshot={bool(screenshot_base64)}")
     # BYOK: prefer the key sent with this request (the user's own, from
     # Settings) and fall back to the server's own .env key — keeps local dev
     # and a future centralized deployment working without this being set.
-    resolved_gemini_key = gemini_api_key or settings.gemini_api_key
     resolved_tavily_key = tavily_api_key or settings.tavily_api_key
-    gemini = GeminiService(resolved_gemini_key)
+    # Provider + model chosen in Settings. The same service handles phase 1
+    # and every tool phase, so a task never silently switches model midway.
+    gemini = get_llm(provider, model, gemini_api_key, openai_api_key)
+    llm_provider, llm_model = gemini.provider, gemini.model
+    llm_key = api_key_for(llm_provider, gemini_api_key, openai_api_key)
 
     clipboard_block = (
         f'The user\'s clipboard currently contains:\n"""\n{clipboard_text}\n"""\n'
@@ -251,8 +258,8 @@ def run_agent_task(
             )
             try:
                 raw2 = run_agent_turn_with_filesystem_sync(
-                    fs_prompt, settings.gemini_model, resolved_gemini_key, settings.pointr_fs_root,
-                    image_bytes,
+                    fs_prompt, llm_model, llm_key, settings.pointr_fs_root,
+                    image_bytes, provider=llm_provider,
                 )
                 try:
                     parsed2 = _extract_json(raw2)
@@ -295,7 +302,7 @@ def run_agent_task(
             )
             try:
                 raw3 = run_agent_turn_with_github_sync(
-                    gh_prompt, settings.gemini_model, resolved_gemini_key, github_token, image_bytes,
+                    gh_prompt, llm_model, llm_key, github_token, image_bytes, provider=llm_provider,
                 )
                 try:
                     parsed3 = _extract_json(raw3)
@@ -338,8 +345,8 @@ def run_agent_task(
             )
             try:
                 raw4 = run_agent_turn_with_web_search_sync(
-                    ws_prompt, settings.gemini_model, resolved_gemini_key, resolved_tavily_key,
-                    image_bytes,
+                    ws_prompt, llm_model, llm_key, resolved_tavily_key,
+                    image_bytes, provider=llm_provider,
                 )
                 try:
                     parsed4 = _extract_json(raw4)

@@ -89,6 +89,9 @@ pub fn capture_event(app: &AppHandle, name: &str, properties: Value) {
     props.insert("app_version".into(), json!(env!("CARGO_PKG_VERSION")));
     props.insert("os".into(), json!(std::env::consts::OS));
     props.insert("os_build".into(), json!(os_build()));
+    let (provider, model) = crate::commands::settings::telemetry_model_info(app);
+    props.insert("provider".into(), json!(provider));
+    props.insert("model".into(), json!(model));
 
     // PostHog enriches events server-side from the request's source IP,
     // attaching IP, city, postal code and lat/long — none of which we send

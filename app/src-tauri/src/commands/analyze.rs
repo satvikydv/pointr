@@ -85,6 +85,17 @@ pub fn get_active_window_title(state: State<'_, Mutex<CaptureState>>) -> Result<
     Ok(state.lock().unwrap().active_window_title.clone())
 }
 
+/// Adds the provider/model chosen in Settings (and the OpenAI key, only
+/// when OpenAI is the provider) to a request payload.
+fn add_llm_fields(app: &AppHandle, payload: &mut serde_json::Value) {
+    if let (Some(target), serde_json::Value::Object(fields)) = (
+        payload.as_object_mut(),
+        crate::commands::settings::llm_request_fields(app),
+    ) {
+        target.extend(fields);
+    }
+}
+
 /// POSTs to the backend's streaming endpoint and forwards each answer chunk
 /// to the frontend as it arrives (event `analyze-stream-chunk`, tagged with
 /// `request_id` so a stale/superseded request's chunks can be told apart
@@ -211,7 +222,7 @@ pub async fn process_crop(
     let timestamp = chrono::Utc::now().to_rfc3339();
     let gemini_api_key = crate::commands::settings::get_gemini_key_for_request(app.clone()).unwrap_or_default();
 
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "screenshot_base64": image_base64,
         "cursor_position": {
             "x_norm": coords.x_norm,
@@ -229,6 +240,7 @@ pub async fn process_crop(
         "timestamp": timestamp,
         "gemini_api_key": gemini_api_key
     });
+    add_llm_fields(&app, &mut payload);
 
     post_and_stream(&app, &request_id, payload).await
 }
@@ -268,7 +280,7 @@ pub async fn process_explain(
 
     let timestamp = chrono::Utc::now().to_rfc3339();
     let gemini_api_key = crate::commands::settings::get_gemini_key_for_request(app.clone()).unwrap_or_default();
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "screenshot_base64": image_base64,
         "cursor_position": {
             "x_norm": cursor_norm.0,
@@ -286,6 +298,7 @@ pub async fn process_explain(
         "timestamp": timestamp,
         "gemini_api_key": gemini_api_key
     });
+    add_llm_fields(&app, &mut payload);
 
     let client = reqwest::Client::new();
     let res = client
@@ -343,7 +356,7 @@ pub async fn process_direct(
     let timestamp = chrono::Utc::now().to_rfc3339();
     let gemini_api_key = crate::commands::settings::get_gemini_key_for_request(app.clone()).unwrap_or_default();
 
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "screenshot_base64": image_base64,
         "cursor_position": {
             "x_norm": cursor_norm.0,
@@ -361,6 +374,7 @@ pub async fn process_direct(
         "timestamp": timestamp,
         "gemini_api_key": gemini_api_key
     });
+    add_llm_fields(&app, &mut payload);
 
     post_and_stream(&app, &request_id, payload).await
 }

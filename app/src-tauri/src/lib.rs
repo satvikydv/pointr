@@ -132,8 +132,6 @@ fn trigger_capture(
         state_lock.target_hwnd = ctx.hwnd;
     }
 
-    commands::telemetry::capture_event(&app, "region_select_used", serde_json::json!({}));
-
     overlay::window::show_overlay(&app, &monitor, &image_bytes)
         .map_err(|e| format!("Failed to show overlay: {}", e))?;
 
@@ -187,8 +185,6 @@ fn trigger_capture_direct(
         state_lock.session_duration_secs = session_duration_secs;
         state_lock.target_hwnd = ctx.hwnd;
     }
-
-    commands::telemetry::capture_event(app, "direct_query_sent", serde_json::json!({}));
 
     overlay::window::show_overlay_direct(app, &monitor)
         .map_err(|e| format!("Failed to show overlay: {}", e))?;
@@ -300,6 +296,14 @@ pub fn run() {
             commands::settings::get_tavily_key_status,
             commands::settings::clear_tavily_key,
             commands::settings::get_tavily_key_for_request,
+            commands::settings::save_openai_key,
+            commands::settings::get_openai_key_status,
+            commands::settings::clear_openai_key,
+            commands::settings::get_model_settings,
+            commands::settings::set_llm_provider,
+            commands::settings::set_llm_model,
+            commands::settings::get_llm_request_fields,
+            commands::settings::list_models,
             commands::actions::execute_type_text,
             commands::actions::execute_open_app,
             commands::actions::execute_click,

@@ -9,6 +9,12 @@ class AgentTaskRequest(BaseModel):
     github_token: str = ""
     # BYOK — see AnalyzeRequest.gemini_api_key for the fallback rule.
     gemini_api_key: str = ""
+    # Provider + model chosen in Settings, and the user's OpenAI key when
+    # provider is "openai" (BYOK, no server-side fallback). Missing provider
+    # means gemini, so older desktop builds keep working unchanged.
+    provider: str = "gemini"
+    model: str = ""
+    openai_api_key: str = ""
     tavily_api_key: str = ""
 
 class AgentTaskResponse(BaseModel):
@@ -25,6 +31,12 @@ class AgentStepRequest(BaseModel):
     completed_steps: List[str] = []
     screenshot_base64: str
     gemini_api_key: str = ""
+    # Provider + model chosen in Settings, and the user's OpenAI key when
+    # provider is "openai" (BYOK, no server-side fallback). Missing provider
+    # means gemini, so older desktop builds keep working unchanged.
+    provider: str = "gemini"
+    model: str = ""
+    openai_api_key: str = ""
     # Set by the client when it detected the model about to propose the
     # exact same action (by real parameters, not the free-text description)
     # it just proposed last call — a targeted, forceful correction for this

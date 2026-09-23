@@ -30,6 +30,12 @@ class AnalyzeRequest(BaseModel):
     # back to the server's own key (settings.gemini_api_key), if any — kept
     # so local dev / a future centralized deployment don't need this set.
     gemini_api_key: str = ""
+    # Provider + model chosen in Settings, and the user's OpenAI key when
+    # provider is "openai" (BYOK, no server-side fallback). Missing provider
+    # means gemini, so older desktop builds keep working unchanged.
+    provider: str = "gemini"
+    model: str = ""
+    openai_api_key: str = ""
 
 class PointerTarget(BaseModel):
     x_norm: float = Field(ge=0.0, le=1.0)

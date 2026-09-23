@@ -8,8 +8,7 @@ from app.models.agent import (
     AgentStepRequest, AgentStepResponse,
 )
 from app.worker.tasks import run_agent_task
-from app.services.gemini import GeminiService
-from app.config import settings
+from app.services.llm import get_llm
 from app.rate_limit import rate_limit
 
 router = APIRouter()
@@ -80,8 +79,9 @@ def _build_step_prompt(
         f"{browser_snapshot_block}"
         "Look at the attached screenshot and decide ONE next action, formatted as one of:\n"
         '  {"action_type": "click", "point": [y, x], "button": "left", "double": false, "description": "..."} '
-        "— click a screen location. point is [y, x] normalized 0-1000 (Gemini's native grounding format — NOT "
-        "0-1 fractions, NOT pixels, y BEFORE x). Aim for the center of the actual clickable element. button is "
+        "— click a screen location. point is [y, x] on a 0-1000 scale across the whole screenshot (0 = top/left "
+        "edge, 1000 = bottom/right edge) — NOT 0-1 fractions, NOT pixels, and y BEFORE x: the vertical position "
+        "comes first. Aim for the center of the actual clickable element. button is "
         "\"left\" (default — omit it for a normal click) or \"right\" for a context menu. double is true only "
         "for double-click-to-open (e.g. a file/folder icon); omit or false otherwise.\n"
         '  {"action_type": "type_text", "text": "...", "description": "..."} — types into whatever is '
@@ -159,6 +159,7 @@ async def create_agent_task(request: AgentTaskRequest):
         request.task_description, request.session_id, request.clipboard_text,
         request.screenshot_base64, request.github_token,
         request.gemini_api_key, request.tavily_api_key,
+        request.provider, request.model, request.openai_api_key,
     )
     return AgentTaskResponse(task_id=task.id)
 
@@ -185,7 +186,7 @@ async def get_agent_task_status(task_id: str):
 # time), unlike the normal agent task which is fine polled over ~1-2s.
 @router.post("/step", response_model=AgentStepResponse, dependencies=[Depends(rate_limit)])
 async def agent_step(request: AgentStepRequest):
-    gemini = GeminiService(request.gemini_api_key or settings.gemini_api_key)
+    gemini = get_llm(request.provider, request.model, request.gemini_api_key, request.openai_api_key)
     prompt = _build_step_prompt(
         request.task_description, request.plan, request.completed_steps, stuck=request.stuck_on_repeat,
         browser_snapshot=request.browser_snapshot,

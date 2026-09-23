@@ -4,7 +4,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from app.models.analyze import AnalyzeRequest, AnalyzeResponse, PointerTarget, StoryboardResponse, StoryboardStep
-from app.services.gemini import GeminiService
+from app.services.llm import get_llm
 from app.services.session_memory import build_session_context_block, record_exchange
 from app.config import settings
 from app.rate_limit import rate_limit
@@ -18,7 +18,7 @@ POINTER_SENTINEL = "POINTER:"
 
 @router.post("/analyze-screen", response_model=AnalyzeResponse, dependencies=[Depends(rate_limit)])
 async def analyze_screen(request: AnalyzeRequest):
-    gemini = GeminiService(request.gemini_api_key or settings.gemini_api_key)
+    gemini = get_llm(request.provider, request.model, request.gemini_api_key, request.openai_api_key)
     try:
         # Decode image
         image_bytes = base64.b64decode(request.screenshot_base64)
@@ -118,7 +118,7 @@ def _clamp_unit(value) -> float:
     return max(0.0, min(1.0, value))
 
 
-async def _stream_analyze_events(request: AnalyzeRequest, gemini: GeminiService):
+async def _stream_analyze_events(request: AnalyzeRequest, gemini):
     prompt = _build_stream_prompt(request)
     image_bytes = base64.b64decode(request.screenshot_base64)
 
@@ -181,7 +181,7 @@ async def _stream_analyze_events(request: AnalyzeRequest, gemini: GeminiService)
 
 @router.post("/analyze-screen-stream", dependencies=[Depends(rate_limit)])
 async def analyze_screen_stream(request: AnalyzeRequest):
-    gemini = GeminiService(request.gemini_api_key or settings.gemini_api_key)
+    gemini = get_llm(request.provider, request.model, request.gemini_api_key, request.openai_api_key)
     try:
         base64.b64decode(request.screenshot_base64)
     except Exception:
@@ -199,7 +199,7 @@ async def analyze_explain(request: AnalyzeRequest):
     optional point-at-marker per step) instead of one answer, played back
     sequentially by the client with TTS between steps. Non-streaming: the
     client needs the whole step list up front to play it back in order."""
-    gemini = GeminiService(request.gemini_api_key or settings.gemini_api_key)
+    gemini = get_llm(request.provider, request.model, request.gemini_api_key, request.openai_api_key)
     try:
         image_bytes = base64.b64decode(request.screenshot_base64)
     except Exception:
@@ -223,7 +223,8 @@ async def analyze_explain(request: AnalyzeRequest):
         '  - "box_2d": [ymin, xmin, ymax, xmax] — a region/area, e.g. a whole shape, a group, a UI panel\n'
         '  - "line": [[y1, x1], [y2, x2]] — connects/indicates a relationship between two spots, e.g. a side '
         "of a triangle, an edge, drawn as an arrow from the first point to the second\n"
-        "All coordinates normalized to 0-1000, y before x, using your normal grounding format. Omit all three "
+        "All coordinates are normalized to 0-1000 across the whole image (0 = top/left edge, 1000 = bottom/right edge), and every pair is written y first, then x — the vertical position comes first. "
+        "Omit all three "
         "for a step that's genuinely about a general concept with nothing on screen to annotate.\n"
         "Respond with ONLY this JSON, no markdown fences, no extra commentary:\n"
         "{\n"
