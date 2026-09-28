@@ -376,6 +376,94 @@ toggleTrack.addEventListener('click', async () => {
     }
 });
 
+// ---------------------------------------------------------------------
+// Voice: on/off, plus the one-time model download (Rust: src/voice).
+// ---------------------------------------------------------------------
+const { listen } = window.__TAURI__.event;
+const voiceToggleTrack = document.getElementById('voice-toggle-track');
+const voiceToggleKnob = document.getElementById('voice-toggle-knob');
+const voiceModelStatus = document.getElementById('voice-model-status');
+const btnVoiceDownload = document.getElementById('btn-voice-download');
+const voiceProgress = document.getElementById('voice-progress');
+const voiceProgressBar = document.getElementById('voice-progress-bar');
+
+const voiceState = {
+    enabled: true,
+    installed: false,
+    downloading: false,
+    sizeMb: 670,
+    downloadedMb: 0,
+    error: '',
+};
+
+function renderVoice() {
+    voiceToggleTrack.style.background = voiceState.enabled ? '#5b8cff' : 'rgba(255,255,255,0.12)';
+    voiceToggleTrack.style.border = `1px solid ${voiceState.enabled ? '#5b8cff' : 'rgba(255,255,255,0.16)'}`;
+    voiceToggleKnob.style.left = (voiceState.enabled ? 18 : 1) + 'px';
+
+    btnVoiceDownload.classList.toggle('hidden', voiceState.installed || voiceState.downloading);
+    voiceProgress.classList.toggle('hidden', !voiceState.downloading);
+    if (voiceState.downloading) {
+        const pct = voiceState.sizeMb ? Math.round((voiceState.downloadedMb / voiceState.sizeMb) * 100) : 0;
+        voiceProgressBar.style.width = `${pct}%`;
+        voiceModelStatus.textContent = `Downloading speech model: ${voiceState.downloadedMb} / ${voiceState.sizeMb} MB`;
+    } else if (voiceState.installed) {
+        voiceModelStatus.textContent = 'Speech model installed. Ready to use.';
+    } else if (voiceState.error) {
+        voiceModelStatus.textContent = voiceState.error;
+    } else {
+        voiceModelStatus.textContent = `Needs a one-time ${voiceState.sizeMb} MB download.`;
+    }
+}
+
+async function loadVoiceStatus() {
+    try {
+        const s = await invoke('get_voice_status');
+        voiceState.enabled = s.enabled;
+        voiceState.installed = s.model_installed;
+        voiceState.downloading = s.downloading;
+        voiceState.sizeMb = s.model_size_mb;
+    } catch (e) {
+        console.error('Failed to load voice status:', e);
+    }
+    renderVoice();
+}
+
+listen('voice-model-progress', (event) => {
+    voiceState.downloading = true;
+    voiceState.downloadedMb = Math.round(event.payload.downloaded / 1e6);
+    voiceState.sizeMb = Math.round(event.payload.total / 1e6);
+    renderVoice();
+});
+
+btnVoiceDownload.addEventListener('click', async () => {
+    if (voiceState.downloading) return;
+    voiceState.downloading = true;
+    voiceState.error = '';
+    renderVoice();
+    try {
+        await invoke('download_voice_model');
+        voiceState.installed = true;
+    } catch (e) {
+        console.error('Voice model download failed:', e);
+        voiceState.error = `Download failed: ${e}`;
+    }
+    voiceState.downloading = false;
+    renderVoice();
+});
+
+voiceToggleTrack.addEventListener('click', async () => {
+    const enabled = !voiceState.enabled;
+    try {
+        await invoke('set_voice_enabled', { enabled });
+        voiceState.enabled = enabled;
+        flashSaved();
+    } catch (e) {
+        console.error('Failed to save voice setting:', e);
+    }
+    renderVoice();
+});
+
 for (const b of permissionButtons) {
     b.addEventListener('click', async () => {
         const permission = b.dataset.permission;
@@ -530,6 +618,7 @@ async function init() {
     // Not awaited: a slow provider must not hold up the rest of Settings.
     loadModelList('gemini');
     loadModelList('openai');
+    await loadVoiceStatus();
 
     try {
         const saved = await invoke('get_selected_voice');

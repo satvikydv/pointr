@@ -57,6 +57,10 @@ struct PersistedSettings {
     gemini_model: Option<String>,
     #[serde(default)]
     openai_model: Option<String>,
+    /// Push-to-talk (hold Ctrl+Win). On by default; it does nothing until
+    /// the voice model is downloaded, and says so when first tried.
+    #[serde(default = "default_voice_enabled")]
+    voice_enabled: bool,
     /// Opt-in, default OFF — see commands/telemetry.rs. Anything that
     /// can't read this setting treats it as disabled (fail closed), so a
     /// corrupt/unreadable settings file never silently starts sending.
@@ -83,6 +87,10 @@ fn default_os_actions_enabled() -> bool {
     true
 }
 
+fn default_voice_enabled() -> bool {
+    true
+}
+
 impl Default for PersistedSettings {
     fn default() -> Self {
         Self {
@@ -97,6 +105,7 @@ impl Default for PersistedSettings {
             llm_provider: None,
             gemini_model: None,
             openai_model: None,
+            voice_enabled: true,
             telemetry_enabled: false,
             telemetry_prompt_shown: false,
             install_id: None,
@@ -216,6 +225,18 @@ fn resolve_action_permission(s: &PersistedSettings) -> &'static str {
         _ if !s.os_actions_enabled => "off",
         _ => "ask",
     }
+}
+
+pub(crate) fn voice_enabled(app: &AppHandle) -> bool {
+    load_settings(app).voice_enabled
+}
+
+/// Persists the toggle only; the command (voice::set_voice_enabled) also
+/// loads or frees the model.
+pub(crate) fn persist_voice_enabled(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = load_settings(app);
+    settings.voice_enabled = enabled;
+    save_settings(app, &settings)
 }
 
 pub(crate) fn action_permission(app: &AppHandle) -> &'static str {

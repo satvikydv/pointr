@@ -38,6 +38,8 @@ windows = { version = "0.58", features = [
     "Foundation_Collections",
     "Win32_Security_Cryptography",
     "Win32_System_Registry",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_System_LibraryLoader",
 ] }
 windows-capture = "1"
 
@@ -67,6 +69,12 @@ chrono = "0.4.45"
 futures-util = "0.3"
 arboard = "3"
 enigo = "0.2"
+
+# Voice (push-to-talk): mic capture, on-device speech-to-text (Parakeet via
+# ONNX Runtime), and integrity checks on the downloaded model files.
+cpal = "0.18"
+transcribe-rs = { version = "0.3.11", features = ["onnx"] }
+sha2 = "0.11"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

@@ -2,6 +2,7 @@ pub mod api_config;
 pub mod capture;
 pub mod overlay;
 pub mod commands;
+pub mod voice;
 
 use std::sync::Mutex;
 use crate::capture::cursor::MonitorInfo;
@@ -150,10 +151,16 @@ fn trigger_capture(
 /// Primary hotkey path: capture, burn a marker into the image at the actual
 /// cursor position, and hand off to the frontend to send it straight to the
 /// backend — no region selection in the loop.
+///
+/// `event` is what the frontend is told once the overlay is in place:
+/// "show-overlay-direct" opens the typed question box, "voice-listening"
+/// shows the push-to-talk listening state instead. The capture itself is
+/// identical either way.
 fn trigger_capture_direct(
     app: &tauri::AppHandle,
     state: &tauri::State<'_, Mutex<CaptureState>>,
     session: &tauri::State<'_, Mutex<SessionState>>,
+    event: &str,
 ) -> Result<String, String> {
     let (mut img, monitor, cursor_norm, method_str) = capture_now()
         .map_err(|e| format!("Capture failed: {}", e))?;
@@ -186,7 +193,11 @@ fn trigger_capture_direct(
         state_lock.target_hwnd = ctx.hwnd;
     }
 
-    overlay::window::show_overlay_direct(app, &monitor)
+    // Upload now, while the user types or speaks, so the question only has
+    // to carry a reference (commands/stage.rs).
+    commands::stage::begin(app, marked_bytes.clone());
+
+    overlay::window::show_overlay_direct(app, &monitor, event)
         .map_err(|e| format!("Failed to show overlay: {}", e))?;
 
     Ok(format!(
@@ -197,6 +208,14 @@ fn trigger_capture_direct(
         monitor.height_px,
         monitor.dpi,
     ))
+}
+
+/// Push-to-talk's capture: the same screenshot, marker and app context as
+/// the typed hotkey, taken the moment voice engages.
+pub(crate) fn capture_for_voice(app: &tauri::AppHandle) -> Result<(), String> {
+    let state = app.state::<Mutex<CaptureState>>();
+    let session = app.state::<Mutex<SessionState>>();
+    trigger_capture_direct(app, &state, &session, "voice-listening").map(|_| ())
 }
 
 use tauri::{Emitter, Manager};
@@ -262,6 +281,7 @@ pub fn run() {
             target_hwnd: 0,
         }))
         .manage(Mutex::new(SessionState::new()))
+        .manage(Mutex::new(commands::stage::StageState::new()))
         .manage(commands::tts::TtsState::new())
         .manage(Mutex::new(None::<commands::browser::BrowserSession>))
         .invoke_handler(tauri::generate_handler![
@@ -326,6 +346,10 @@ pub fn run() {
             commands::browser::browser_click,
             commands::browser::browser_type,
             commands::browser::close_browser_session,
+            commands::stage::get_screenshot_for_request,
+            voice::get_voice_status,
+            voice::download_voice_model,
+            voice::set_voice_enabled,
             enable_escape_dismiss,
             disable_escape_dismiss
         ])
@@ -347,7 +371,7 @@ pub fn run() {
                             println!("Primary hotkey pressed — direct capture + analyze...");
                             let state = _app.state::<Mutex<CaptureState>>();
                             let session = _app.state::<Mutex<SessionState>>();
-                            match trigger_capture_direct(_app, &state, &session) {
+                            match trigger_capture_direct(_app, &state, &session, "show-overlay-direct") {
                                 Ok(res) => println!("{}", res),
                                 Err(e) => eprintln!("Direct capture error: {}", e),
                             }
@@ -371,6 +395,10 @@ pub fn run() {
 
             app.global_shortcut().register(primary)?;
             app.global_shortcut().register(region_select)?;
+
+            // Push-to-talk (hold Ctrl+Win): its own keyboard hook, since
+            // the shortcut plugin can't register a modifiers-only hold.
+            voice::start(app.handle());
 
             // Tray icon: the only way to reach Settings or quit cleanly,
             // since the overlay window itself is borderless/hidden-by-default

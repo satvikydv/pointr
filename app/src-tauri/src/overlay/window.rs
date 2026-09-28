@@ -59,7 +59,7 @@ pub fn show_overlay(app: &AppHandle, monitor: &MonitorInfo, image_bytes: &[u8]) 
 /// overlay over the target monitor and tells the frontend to run the direct
 /// capture -> analyze flow. The frontend keeps the window hidden until the
 /// backend responds, so no image payload is needed here.
-pub fn show_overlay_direct(app: &AppHandle, monitor: &MonitorInfo) -> anyhow::Result<()> {
+pub fn show_overlay_direct(app: &AppHandle, monitor: &MonitorInfo, event: &str) -> anyhow::Result<()> {
     let window = app.get_webview_window("main")
         .ok_or_else(|| anyhow::anyhow!("Main window not found"))?;
 
@@ -79,7 +79,7 @@ pub fn show_overlay_direct(app: &AppHandle, monitor: &MonitorInfo) -> anyhow::Re
         );
     }
 
-    window.emit("show-overlay-direct", ())?;
+    window.emit(event, ())?;
 
     Ok(())
 }

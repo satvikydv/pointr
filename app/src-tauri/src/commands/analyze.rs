@@ -101,21 +101,31 @@ fn add_llm_fields(app: &AppHandle, payload: &mut serde_json::Value) {
 /// `request_id` so a stale/superseded request's chunks can be told apart
 /// from the current one). Resolves once the stream's final "done" event
 /// arrives, with the full answer + optional pointer target.
+///
+/// `staged`: the payload's screenshot is the current full capture, so the
+/// copy already uploaded in the background (commands/stage.rs) can be
+/// referenced instead of re-sent. False for a region crop, which is a
+/// different image.
 async fn post_and_stream(
     app: &AppHandle,
     request_id: &str,
     payload: serde_json::Value,
+    staged: bool,
 ) -> Result<AnalyzeResponse, String> {
     println!("[{}] POST /api/analyze-screen-stream", request_id);
-    let client = reqwest::Client::new();
+    let url = format!("{}/api/analyze-screen-stream", API_BASE_URL);
 
-    let res = client
-        .post(format!("{}/api/analyze-screen-stream", API_BASE_URL))
-        .header("X-Pointr-Client-Key", CLIENT_KEY)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| format!("HTTP request failed: {}", e))?;
+    let res = if staged {
+        crate::commands::stage::post_with_staged_screenshot(app, &url, payload).await?
+    } else {
+        reqwest::Client::new()
+            .post(&url)
+            .header("X-Pointr-Client-Key", CLIENT_KEY)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| format!("HTTP request failed: {}", e))?
+    };
 
     if !res.status().is_success() {
         let err_text = res.text().await.unwrap_or_default();
@@ -242,7 +252,7 @@ pub async fn process_crop(
     });
     add_llm_fields(&app, &mut payload);
 
-    post_and_stream(&app, &request_id, payload).await
+    post_and_stream(&app, &request_id, payload, false).await
 }
 
 /// "explain: <topic>" mode — non-streaming, since the client needs the whole
@@ -300,14 +310,8 @@ pub async fn process_explain(
     });
     add_llm_fields(&app, &mut payload);
 
-    let client = reqwest::Client::new();
-    let res = client
-        .post(format!("{}/api/analyze-explain", API_BASE_URL))
-        .header("X-Pointr-Client-Key", CLIENT_KEY)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| format!("HTTP request failed: {}", e))?;
+    let url = format!("{}/api/analyze-explain", API_BASE_URL);
+    let res = crate::commands::stage::post_with_staged_screenshot(&app, &url, payload).await?;
 
     if !res.status().is_success() {
         let err_text = res.text().await.unwrap_or_default();
@@ -376,5 +380,5 @@ pub async fn process_direct(
     });
     add_llm_fields(&app, &mut payload);
 
-    post_and_stream(&app, &request_id, payload).await
+    post_and_stream(&app, &request_id, payload, true).await
 }

@@ -257,6 +257,113 @@ listen('show-overlay-direct', async () => {
     directQueryInput.focus();
 });
 
+// ---------------------------------------------------------------------
+// Push-to-talk (hold Ctrl+Win). Rust owns the hotkey, mic and on-device
+// transcription (src-tauri/src/voice); this side only shows the listening
+// state and, on release, sends the transcript down the exact same path as
+// a typed question.
+// ---------------------------------------------------------------------
+const voicePill = document.getElementById('voice-pill');
+const voiceText = document.getElementById('voice-text');
+const voiceMeter = document.getElementById('voice-meter');
+
+/// Spoken commands can't type a colon, so a leading "agent" / "explain"
+/// word maps to the typed prefix. Parakeet adds punctuation and capitals
+/// ("Agent, open Notepad."), hence the loose separator match.
+function spokenToQuery(text) {
+    const m = text.match(/^\s*(agent|explain)\b[\s,.:;!-]*(.*)$/i);
+    return m ? `${m[1].toLowerCase()}: ${m[2]}` : text.trim();
+}
+
+/// Coarse buckets only; the transcript itself is never sent.
+function voiceBucket(ms) {
+    if (ms < 500) return '<0.5s';
+    if (ms < 1000) return '0.5-1s';
+    if (ms < 3000) return '1-3s';
+    if (ms < 10000) return '3-10s';
+    return '10s+';
+}
+
+async function showVoiceError(message) {
+    const appWindow = Window.getCurrent();
+    voicePill.classList.add('hidden');
+    loadingIndicator.classList.add('hidden');
+    await appWindow.setIgnoreCursorEvents(false);
+    await appWindow.show();
+    showError(message, () => dismissOverlay());
+}
+
+listen('voice-listening', async () => {
+    if (closeTimer) clearTimeout(closeTimer);
+    mode = 'direct';
+    activeRequestId++; // aborts anything in flight, same as the typed hotkey
+
+    img.style.display = 'none';
+    selectionBox.style.display = 'none';
+    selectionLabel.classList.add('hidden');
+    toolbar.classList.add('hidden');
+    currentRect = null;
+    loadingIndicator.classList.add('hidden');
+    directQueryBox.classList.add('hidden');
+    btnHistory.classList.add('hidden');
+    errorToast.classList.add('hidden');
+    for (const id of ['action-confirm-box', 'action-running-pill', 'multistep-confirm-box', 'multistep-progress-pill']) {
+        document.getElementById(id).classList.add('hidden');
+    }
+    const oldTooltip = document.getElementById('answer-tooltip');
+    if (oldTooltip) oldTooltip.remove();
+    const oldMarker = document.getElementById('pointer-marker');
+    if (oldMarker) oldMarker.remove();
+
+    voiceText.textContent = 'Listening…';
+    voiceMeter.style.setProperty('--level', '0');
+    voicePill.classList.remove('hidden');
+
+    // Click-through and never focused: the user is holding Ctrl+Win over
+    // whatever app they're in, and that app has to stay the foreground
+    // window (an agent action types into it afterwards).
+    const appWindow = Window.getCurrent();
+    await appWindow.setIgnoreCursorEvents(true);
+    await appWindow.show();
+});
+
+listen('voice-level', (event) => {
+    // Speech RMS sits around 0.02-0.2; scale so normal talking fills the bars.
+    const level = Math.min(1, (event.payload.level || 0) * 8);
+    voiceMeter.style.setProperty('--level', level.toFixed(3));
+});
+
+listen('voice-partial', (event) => {
+    if (event.payload.text) voiceText.textContent = event.payload.text;
+});
+
+listen('voice-final', (event) => {
+    const { text, duration_ms, latency_ms } = event.payload;
+    voicePill.classList.add('hidden');
+    const outcome = text && text.trim() ? 'ok' : 'empty';
+    captureTelemetry('voice_query_used', {
+        engine: 'local',
+        outcome,
+        duration: voiceBucket(duration_ms),
+        latency: voiceBucket(latency_ms),
+    });
+    if (outcome === 'empty') {
+        showVoiceError("Didn't catch that. Hold Ctrl+Win, speak, then let go.");
+        return;
+    }
+    runDirectAnalysis(spokenToQuery(text));
+});
+
+listen('voice-cancelled', () => {
+    voicePill.classList.add('hidden');
+    dismissOverlay();
+});
+
+listen('voice-error', (event) => {
+    captureTelemetry('voice_query_used', { engine: 'local', outcome: 'error' });
+    showVoiceError(event.payload.message);
+});
+
 directQueryInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
         e.preventDefault();
@@ -807,9 +914,11 @@ async function runAgentTask(taskDescription) {
     // Without this, agent tasks were text-only and had nothing to look at —
     // "reply to the message on screen" fell back to clipboard content as the
     // only available context, since it was the only thing there was.
-    let screenshotBase64 = "";
+    // Usually a ref to the copy uploaded in the background at capture time
+    // (commands/stage.rs), otherwise the screenshot inline.
+    let screenshotFields = { screenshot_base64: "", screenshot_ref: "" };
     try {
-        screenshotBase64 = await invoke('get_current_screenshot_base64');
+        screenshotFields = await invoke('get_screenshot_for_request');
     } catch (e) {
         console.error("[agent] Failed to read current screenshot:", e);
     }
@@ -844,20 +953,26 @@ async function runAgentTask(taskDescription) {
     // Categorical only — never the task text itself. See telemetry.rs.
     captureTelemetry('agent_task_started', {});
 
-    const postRes = await fetch(`${API_BASE_URL}/api/agent/task`, {
+    const postTask = (fields) => fetch(`${API_BASE_URL}/api/agent/task`, {
         method: "POST",
         headers: API_HEADERS,
         body: JSON.stringify({
             task_description: taskDescription,
             session_id: sessionId,
             clipboard_text: clipboardText,
-            screenshot_base64: screenshotBase64,
+            ...fields,
             github_token: githubToken,
             gemini_api_key: geminiApiKey,
             tavily_api_key: tavilyApiKey,
             ...llmFields,
         })
     });
+    let postRes = await postTask(screenshotFields);
+    if (postRes.status === 409 && screenshotFields.screenshot_ref) {
+        // The server no longer has the staged copy: resend inline, once.
+        const inline = await invoke('get_current_screenshot_base64').catch(() => "");
+        postRes = await postTask({ screenshot_base64: inline, screenshot_ref: "" });
+    }
     const { task_id } = await postRes.json();
 
     for (let attempt = 0; attempt < AGENT_POLL_MAX_ATTEMPTS; attempt++) {
@@ -1666,6 +1781,7 @@ async function dismissOverlay() {
     document.getElementById('action-running-pill').classList.add('hidden');
     document.getElementById('multistep-confirm-box').classList.add('hidden');
     document.getElementById('multistep-progress-pill').classList.add('hidden');
+    voicePill.classList.add('hidden');
     loadingIndicator.classList.add('hidden');
     if (errorTimer) { clearTimeout(errorTimer); errorTimer = null; }
     errorToast.classList.add('hidden');

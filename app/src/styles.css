@@ -343,6 +343,81 @@ body, html {
   margin-left: 2px;
 }
 
+/* ---------- Push-to-talk listening pill ---------- */
+
+.voice-pill {
+  position: absolute;
+  left: 50%;
+  top: 18%;
+  transform: translateX(-50%);
+  max-width: 520px;
+  background: rgba(14, 18, 30, 0.78);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  border: 1px solid rgba(91, 140, 255, 0.35);
+  border-radius: 999px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  padding: 11px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  animation: pointr-fade-in 0.12s ease;
+  z-index: 1006;
+  pointer-events: none;
+}
+
+.voice-pill.hidden {
+  display: none;
+}
+
+/* Five bars driven by --level (0..1), set from the mic level in main.js;
+   each bar scales by a different factor so it reads as a live waveform. */
+.voice-meter {
+  --level: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.voice-meter span {
+  width: 3px;
+  height: 18px;
+  border-radius: 2px;
+  background: #5B8CFF;
+  transform-origin: center;
+  transform: scaleY(calc(0.18 + var(--level) * var(--k)));
+  transition: transform 0.09s ease-out;
+}
+
+.voice-meter span:nth-child(1) { --k: 0.45; }
+.voice-meter span:nth-child(2) { --k: 0.75; }
+.voice-meter span:nth-child(3) { --k: 0.82; }
+.voice-meter span:nth-child(4) { --k: 0.7; }
+.voice-meter span:nth-child(5) { --k: 0.4; }
+
+.voice-text {
+  font-size: 13.5px;
+  color: rgba(255, 255, 255, 0.88);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Keep the newest words visible as the transcript grows. */
+  direction: rtl;
+  text-align: left;
+  unicode-bidi: plaintext;
+  min-width: 0;
+}
+
+.voice-hint {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.35);
+  border-left: 1px solid rgba(255, 255, 255, 0.15);
+  padding-left: 9px;
+  flex-shrink: 0;
+}
+
 /* ---------- Loading / thinking indicator ---------- */
 
 .loading-indicator {
