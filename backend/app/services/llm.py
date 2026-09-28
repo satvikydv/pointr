@@ -5,7 +5,6 @@ Settings), plus the user's own key for that provider (BYOK). Everything
 downstream takes the returned service and calls the same four methods
 regardless of which provider it is.
 """
-from app.config import settings
 from app.services.gemini import GeminiService
 from app.services.openai_service import OpenAIService
 
@@ -35,15 +34,16 @@ def get_llm(
 ):
     provider = normalize_provider(provider)
     model = (model or "").strip() or DEFAULT_MODELS[provider]
+    # BYOK only for both providers — no server-side key backs either one.
+    # Gemini used to fall back to settings.gemini_api_key; dropped
+    # 2026-09-28 so cost/quota is never carried on the operator's own key.
     if provider == "openai":
-        # No server-side OpenAI key exists: OpenAI is BYOK only.
         return OpenAIService(openai_api_key, model)
-    # Gemini keeps its existing fallback to the server's own .env key.
-    return GeminiService(gemini_api_key or settings.gemini_api_key, model)
+    return GeminiService(gemini_api_key, model)
 
 
 def api_key_for(provider: str, gemini_api_key: str = "", openai_api_key: str = "") -> str:
     """The key the tool loops should use for this provider."""
     if normalize_provider(provider) == "openai":
         return openai_api_key
-    return gemini_api_key or settings.gemini_api_key
+    return gemini_api_key
