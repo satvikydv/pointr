@@ -123,7 +123,7 @@ const keySections = [
     }),
     wireKeySection('openai', {
         saveCmd: 'save_openai_key', statusCmd: 'get_openai_key_status', clearCmd: 'clear_openai_key',
-        onChange: () => loadModelList('openai'),
+        onChange: () => { loadModelList('openai'); loadVoiceStatus(); },
     }),
     wireKeySection('tavily', { saveCmd: 'save_tavily_key', statusCmd: 'get_tavily_key_status', clearCmd: 'clear_tavily_key' }),
 ];
@@ -386,9 +386,18 @@ const voiceModelStatus = document.getElementById('voice-model-status');
 const btnVoiceDownload = document.getElementById('btn-voice-download');
 const voiceProgress = document.getElementById('voice-progress');
 const voiceProgressBar = document.getElementById('voice-progress-bar');
+const sttButtons = document.querySelectorAll('#stt-picker button');
+const voiceModelRow = document.getElementById('voice-model-row');
+const voiceHint = document.getElementById('voice-hint');
+const VOICE_HINTS = {
+    local: 'Hold Ctrl + Win and speak, then let go to send. Speech is turned into text on this computer: your voice is never uploaded. Say "agent" or "explain" first to use those modes.',
+    openai: 'Hold Ctrl + Win and speak, then let go to send. Your voice is sent to OpenAI under your own key to be turned into text (billed to your OpenAI account). No download needed. Say "agent" or "explain" first to use those modes.',
+};
 
 const voiceState = {
     enabled: true,
+    engine: 'local',
+    openaiConnected: false,
     installed: false,
     downloading: false,
     sizeMb: 670,
@@ -400,6 +409,21 @@ function renderVoice() {
     voiceToggleTrack.style.background = voiceState.enabled ? '#5b8cff' : 'rgba(255,255,255,0.12)';
     voiceToggleTrack.style.border = `1px solid ${voiceState.enabled ? '#5b8cff' : 'rgba(255,255,255,0.16)'}`;
     voiceToggleKnob.style.left = (voiceState.enabled ? 18 : 1) + 'px';
+
+    for (const b of sttButtons) {
+        b.classList.toggle('active', b.dataset.engine === voiceState.engine);
+    }
+    voiceHint.textContent = VOICE_HINTS[voiceState.engine];
+    if (voiceState.engine === 'openai') {
+        // A download already in progress keeps showing, so it isn't lost.
+        voiceModelRow.classList.toggle('hidden', false);
+        btnVoiceDownload.classList.add('hidden');
+        voiceProgress.classList.toggle('hidden', !voiceState.downloading);
+        voiceModelStatus.textContent = voiceState.openaiConnected
+            ? 'Using your OpenAI key.'
+            : 'Connect an OpenAI key below to use this.';
+        return;
+    }
 
     btnVoiceDownload.classList.toggle('hidden', voiceState.installed || voiceState.downloading);
     voiceProgress.classList.toggle('hidden', !voiceState.downloading);
@@ -420,6 +444,8 @@ async function loadVoiceStatus() {
     try {
         const s = await invoke('get_voice_status');
         voiceState.enabled = s.enabled;
+        voiceState.engine = s.engine;
+        voiceState.openaiConnected = s.openai_key_connected;
         voiceState.installed = s.model_installed;
         voiceState.downloading = s.downloading;
         voiceState.sizeMb = s.model_size_mb;
@@ -451,6 +477,21 @@ btnVoiceDownload.addEventListener('click', async () => {
     voiceState.downloading = false;
     renderVoice();
 });
+
+for (const b of sttButtons) {
+    b.addEventListener('click', async () => {
+        const engine = b.dataset.engine;
+        if (engine === voiceState.engine) return;
+        try {
+            await invoke('set_stt_engine', { engine });
+            voiceState.engine = engine;
+            flashSaved();
+        } catch (e) {
+            console.error('Failed to save speech engine:', e);
+        }
+        renderVoice();
+    });
+}
 
 voiceToggleTrack.addEventListener('click', async () => {
     const enabled = !voiceState.enabled;

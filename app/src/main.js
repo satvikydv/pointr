@@ -338,11 +338,11 @@ listen('voice-partial', (event) => {
 });
 
 listen('voice-final', (event) => {
-    const { text, duration_ms, latency_ms } = event.payload;
+    const { text, engine, duration_ms, latency_ms } = event.payload;
     voicePill.classList.add('hidden');
     const outcome = text && text.trim() ? 'ok' : 'empty';
     captureTelemetry('voice_query_used', {
-        engine: 'local',
+        engine,
         outcome,
         duration: voiceBucket(duration_ms),
         latency: voiceBucket(latency_ms),
@@ -360,7 +360,7 @@ listen('voice-cancelled', () => {
 });
 
 listen('voice-error', (event) => {
-    captureTelemetry('voice_query_used', { engine: 'local', outcome: 'error' });
+    captureTelemetry('voice_query_used', { outcome: 'error' });
     showVoiceError(event.payload.message);
 });
 

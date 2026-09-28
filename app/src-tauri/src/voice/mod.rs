@@ -14,12 +14,15 @@
 //!    final text goes to the frontend, which sends it through the exact
 //!    same path as a typed question.
 //!
-//! Speech-to-text runs on this machine (Parakeet via ONNX Runtime); audio
-//! never leaves it.
+//! Speech-to-text runs on this machine by default (Parakeet via ONNX
+//! Runtime), so audio never leaves it. Settings can instead send it to
+//! OpenAI under the user's own key (voice/remote.rs), phrase by phrase in
+//! the same way.
 
 pub mod audio;
 pub mod hotkey;
 pub mod model;
+pub mod remote;
 pub mod segment;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -70,10 +73,29 @@ fn with_engine<T>(app: &AppHandle, f: impl FnOnce(&mut ParakeetModel) -> T) -> R
     Ok(f(guard.as_mut().unwrap()))
 }
 
-fn transcribe(app: &AppHandle, samples: &[f32]) -> Result<String, String> {
-    with_engine(app, |m| m.transcribe_with(samples, &ParakeetParams::default()))?
-        .map(|r| r.text.trim().to_string())
-        .map_err(|e| format!("Transcription failed: {}", e))
+/// Which speech-to-text engine a press uses, fixed when the press starts.
+#[derive(Clone)]
+enum Engine {
+    Local,
+    OpenAi { api_key: String },
+}
+
+impl Engine {
+    fn name(&self) -> &'static str {
+        match self {
+            Engine::Local => "local",
+            Engine::OpenAi { .. } => "openai",
+        }
+    }
+}
+
+fn transcribe(app: &AppHandle, engine: &Engine, samples: &[f32]) -> Result<String, String> {
+    match engine {
+        Engine::Local => with_engine(app, |m| m.transcribe_with(samples, &ParakeetParams::default()))?
+            .map(|r| r.text.trim().to_string())
+            .map_err(|e| format!("Transcription failed: {}", e)),
+        Engine::OpenAi { api_key } => remote::transcribe(api_key, samples),
+    }
 }
 
 /// Loads the model in the background if it's installed and voice is on,
@@ -81,7 +103,9 @@ fn transcribe(app: &AppHandle, samples: &[f32]) -> Result<String, String> {
 pub fn preload(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
-        if !crate::commands::settings::voice_enabled(&app) {
+        if !crate::commands::settings::voice_enabled(&app)
+            || crate::commands::settings::stt_engine(&app) != "local"
+        {
             return;
         }
         let installed = model::model_dir(&app).map(|d| model::is_installed(&d)).unwrap_or(false);
@@ -118,20 +142,28 @@ fn emit_error(app: &AppHandle, message: impl Into<String>) {
     let _ = app.emit("voice-error", Message { message: message.into() });
 }
 
-/// Why a press can't record right now, if it can't. Checked before the mic
-/// opens, so an unusable press never flashes the Windows mic indicator.
-fn readiness_problem(app: &AppHandle) -> Option<String> {
+/// The engine for a new press, or why a press can't record right now.
+/// Checked before the mic opens, so an unusable press never flashes the
+/// Windows mic indicator.
+fn resolve_engine(app: &AppHandle) -> Result<Engine, String> {
+    if crate::commands::settings::stt_engine(app) == "openai" {
+        let api_key = crate::commands::settings::get_openai_key_for_request(app).unwrap_or_default();
+        if api_key.is_empty() {
+            return Err("Voice is set to transcribe with your OpenAI key, but no OpenAI key is connected. Add one in Settings, or switch Voice to on this computer.".into());
+        }
+        return Ok(Engine::OpenAi { api_key });
+    }
     if model::is_downloading() {
-        return Some("The voice model is still downloading. Voice will work as soon as it finishes.".into());
+        return Err("The voice model is still downloading. Voice will work as soon as it finishes.".into());
     }
     let installed = model::model_dir(app).map(|d| model::is_installed(&d)).unwrap_or(false);
     if !installed {
-        return Some(format!(
+        return Err(format!(
             "Voice needs a one-time {} MB download. Open Settings from the tray icon and choose Download under Voice.",
             model::total_size() / 1_000_000
         ));
     }
-    None
+    Ok(Engine::Local)
 }
 
 fn controller(app: AppHandle, rx: Receiver<HookEvent>) {
@@ -141,11 +173,11 @@ fn controller(app: AppHandle, rx: Receiver<HookEvent>) {
             continue;
         }
 
-        let problem = readiness_problem(&app);
+        let engine = resolve_engine(&app);
         // Open the mic now, before the engage delay, so the first word
         // isn't clipped. Closed again below if this turns out to be a
         // Windows shortcut rather than push-to-talk.
-        let recorder = if problem.is_none() { Some(audio::Recorder::start()) } else { None };
+        let recorder = if engine.is_ok() { Some(audio::Recorder::start()) } else { None };
 
         let deadline = Instant::now() + ENGAGE_DELAY;
         let engaged = loop {
@@ -164,10 +196,13 @@ fn controller(app: AppHandle, rx: Receiver<HookEvent>) {
         // opening the Start menu.
         hotkey::mask_start_menu();
 
-        if let Some(message) = problem {
-            emit_error(&app, message);
-            continue;
-        }
+        let engine = match engine {
+            Ok(e) => e,
+            Err(message) => {
+                emit_error(&app, message);
+                continue;
+            }
+        };
         let recorder = match recorder {
             Some(Ok(r)) => r,
             Some(Err(e)) => {
@@ -177,7 +212,7 @@ fn controller(app: AppHandle, rx: Receiver<HookEvent>) {
             None => continue,
         };
 
-        let session = match Session::begin(&app, recorder) {
+        let session = match Session::begin(&app, recorder, engine) {
             Ok(s) => s,
             Err(e) => {
                 emit_error(&app, e);
@@ -214,6 +249,8 @@ struct Partial {
 #[derive(Clone, serde::Serialize)]
 struct Final {
     text: String,
+    /// "local" | "openai", for telemetry.
+    engine: &'static str,
     /// How long the user spoke.
     duration_ms: u64,
     /// Release to transcript ready: the part of the wait voice adds.
@@ -225,25 +262,27 @@ struct Session {
     recorder: audio::Recorder,
     stopping: Arc<AtomicBool>,
     cancelled: Arc<AtomicBool>,
+    engine_name: &'static str,
     worker: std::thread::JoinHandle<Result<String, String>>,
 }
 
 impl Session {
-    fn begin(app: &AppHandle, recorder: audio::Recorder) -> Result<Self, String> {
+    fn begin(app: &AppHandle, recorder: audio::Recorder, engine: Engine) -> Result<Self, String> {
         // Talking over the previous answer's narration means "new question".
         let _ = crate::commands::tts::stop_speech(app.state());
         crate::capture_for_voice(app)?;
 
         let stopping = Arc::new(AtomicBool::new(false));
         let cancelled = Arc::new(AtomicBool::new(false));
+        let engine_name = engine.name();
         let worker = {
             let app = app.clone();
             let audio = recorder.audio.clone();
             let stopping = stopping.clone();
             let cancelled = cancelled.clone();
-            std::thread::spawn(move || transcribe_while_recording(&app, &audio, &stopping, &cancelled))
+            std::thread::spawn(move || transcribe_while_recording(&app, &engine, &audio, &stopping, &cancelled))
         };
-        Ok(Self { app: app.clone(), recorder, stopping, cancelled, worker })
+        Ok(Self { app: app.clone(), recorder, stopping, cancelled, engine_name, worker })
     }
 
     fn finish(self, released: bool) {
@@ -269,7 +308,7 @@ impl Session {
                 if cfg!(debug_assertions) {
                     eprintln!("[voice] {} ms of speech, transcript ready {} ms after release", duration_ms, latency_ms);
                 }
-                let _ = self.app.emit("voice-final", Final { text, duration_ms, latency_ms });
+                let _ = self.app.emit("voice-final", Final { text, engine: self.engine_name, duration_ms, latency_ms });
             }
             Ok(Err(e)) => emit_error(&self.app, e),
             Err(_) => emit_error(&self.app, "Voice stopped unexpectedly."),
@@ -281,20 +320,38 @@ fn joined(parts: &[String]) -> String {
     parts.iter().filter(|p| !p.is_empty()).cloned().collect::<Vec<_>>().join(" ")
 }
 
-/// Runs for the length of one press. Transcribes each finished phrase as
-/// soon as the speaker pauses, then the remainder once `stopping` is set.
+type Pending = std::thread::JoinHandle<Result<String, String>>;
+
+fn spawn_transcription(app: &AppHandle, engine: &Engine, piece: Vec<f32>) -> Pending {
+    let app = app.clone();
+    let engine = engine.clone();
+    std::thread::spawn(move || transcribe(&app, &engine, &piece))
+}
+
+/// Runs for the length of one press. Each finished phrase is handed off
+/// for transcription as soon as the speaker pauses, without waiting for
+/// the previous one: over the network (OpenAI) a phrase can take a couple
+/// of seconds, and doing them one at a time would let a backlog build up
+/// that release then has to wait through. Results are still assembled in
+/// spoken order. (On-device, the model mutex serialises the work anyway.)
 fn transcribe_while_recording(
     app: &AppHandle,
+    engine: &Engine,
     audio: &audio::SharedAudio,
     stopping: &AtomicBool,
     cancelled: &AtomicBool,
 ) -> Result<String, String> {
     let mut cut = 0;
     let mut parts: Vec<String> = Vec::new();
+    let mut pending: std::collections::VecDeque<Pending> = std::collections::VecDeque::new();
+
+    let collect = |handle: Pending| -> Result<String, String> {
+        handle.join().map_err(|_| "Transcription stopped unexpectedly.".to_string())?
+    };
 
     loop {
         if cancelled.load(Ordering::SeqCst) {
-            return Ok(String::new());
+            return Ok(String::new()); // pending threads finish and are discarded
         }
         // Read the flag before the snapshot: once it's set the mic is
         // already closed, so this snapshot is the complete recording.
@@ -304,7 +361,10 @@ fn transcribe_while_recording(
         if finishing {
             let tail = &snapshot[cut.min(snapshot.len())..];
             if !tail.is_empty() && !segment::is_silent(tail, &snapshot) {
-                parts.push(transcribe(app, tail)?);
+                pending.push_back(spawn_transcription(app, engine, tail.to_vec()));
+            }
+            while let Some(handle) = pending.pop_front() {
+                parts.push(collect(handle)?);
             }
             return Ok(joined(&parts));
         }
@@ -315,14 +375,21 @@ fn transcribe_while_recording(
         while let Some(next) = segment::find_cut(&snapshot, cut) {
             let piece = &snapshot[cut..next];
             if !segment::is_silent(piece, &snapshot) {
-                parts.push(transcribe(app, piece)?);
-                let _ = app.emit("voice-partial", Partial { text: joined(&parts) });
+                pending.push_back(spawn_transcription(app, engine, piece.to_vec()));
             }
             cut = next;
-            if cancelled.load(Ordering::SeqCst) || stopping.load(Ordering::SeqCst) {
-                break;
-            }
         }
+
+        // Surface finished phrases in order as the live partial transcript.
+        let mut progressed = false;
+        while pending.front().is_some_and(|h| h.is_finished()) {
+            parts.push(collect(pending.pop_front().unwrap())?);
+            progressed = true;
+        }
+        if progressed {
+            let _ = app.emit("voice-partial", Partial { text: joined(&parts) });
+        }
+
         std::thread::sleep(TICK);
     }
 }
@@ -334,6 +401,9 @@ fn transcribe_while_recording(
 #[derive(serde::Serialize)]
 pub struct VoiceStatus {
     enabled: bool,
+    /// "local" | "openai"
+    engine: &'static str,
+    openai_key_connected: bool,
     model_installed: bool,
     downloading: bool,
     model_size_mb: u64,
@@ -344,6 +414,8 @@ pub fn get_voice_status(app: AppHandle) -> Result<VoiceStatus, String> {
     let dir = model::model_dir(&app)?;
     Ok(VoiceStatus {
         enabled: crate::commands::settings::voice_enabled(&app),
+        engine: crate::commands::settings::stt_engine(&app),
+        openai_key_connected: crate::commands::settings::get_openai_key_status(app.clone()).unwrap_or(false),
         model_installed: model::is_installed(&dir),
         downloading: model::is_downloading(),
         model_size_mb: model::total_size() / 1_000_000,
@@ -364,6 +436,18 @@ pub fn set_voice_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
         preload(&app);
     } else {
         // Frees the ~1 GB the loaded model holds.
+        *ENGINE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_stt_engine(app: AppHandle, engine: String) -> Result<(), String> {
+    crate::commands::settings::set_stt_engine(app.clone(), engine.clone())?;
+    if engine == "local" {
+        preload(&app);
+    } else {
+        // Not needed while transcribing with OpenAI; frees ~1 GB.
         *ENGINE.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
     Ok(())

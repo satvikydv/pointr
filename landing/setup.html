@@ -280,7 +280,7 @@
           <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:24px;">
             <div class="guide-step-card">
               <div style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);color:rgba(255,255,255,0.7);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">1</div>
-              <div style="font-size:14.5px;line-height:1.55;color:rgba(255,255,255,0.75);">Open <strong style="color:#ffffff;">Settings → Voice</strong> and click <strong style="color:#ffffff;">Download</strong>. This fetches the speech model (about 670 MB) once, and checks every file before using it.</div>
+              <div style="font-size:14.5px;line-height:1.55;color:rgba(255,255,255,0.75);">Open <strong style="color:#ffffff;">Settings → Voice</strong> and click <strong style="color:#ffffff;">Download</strong>. This fetches the speech model (about 670 MB) once, and checks every file before using it. (Or skip the download and use your OpenAI key, see below.)</div>
             </div>
             <div class="guide-step-card">
               <div style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);color:rgba(255,255,255,0.7);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">2</div>
@@ -292,6 +292,10 @@
             <div>
               <div style="font-size:16px;font-weight:600;color:rgba(255,255,255,0.95);margin-bottom:6px;">Your voice stays on your computer</div>
               <div style="font-size:14.5px;line-height:1.6;color:var(--text-secondary);">Speech is turned into text on your own machine by NVIDIA's Parakeet model. Audio is never uploaded or saved; only the resulting text is sent, the same as a typed question. The microphone is on only while you hold the keys.</div>
+            </div>
+            <div>
+              <div style="font-size:16px;font-weight:600;color:rgba(255,255,255,0.95);margin-bottom:6px;">Rather not download it?</div>
+              <div style="font-size:14.5px;line-height:1.6;color:var(--text-secondary);">Choose <strong style="color:#ffffff;">My OpenAI key</strong> under Settings → Voice instead. Your speech is then sent to OpenAI under your own <a href="#models">OpenAI key</a> to be turned into text (billed to your OpenAI account), so no download is needed and it works on slower computers. Each pause-separated phrase is sent while you're still talking, but it's usually a little slower than on-device, and your voice does leave your computer.</div>
             </div>
             <div>
               <div style="font-size:16px;font-weight:600;color:rgba(255,255,255,0.95);margin-bottom:6px;">Good to know</div>

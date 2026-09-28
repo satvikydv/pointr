@@ -350,6 +350,7 @@ pub fn run() {
             voice::get_voice_status,
             voice::download_voice_model,
             voice::set_voice_enabled,
+            voice::set_stt_engine,
             enable_escape_dismiss,
             disable_escape_dismiss
         ])

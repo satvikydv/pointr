@@ -61,6 +61,10 @@ struct PersistedSettings {
     /// the voice model is downloaded, and says so when first tried.
     #[serde(default = "default_voice_enabled")]
     voice_enabled: bool,
+    /// Where speech becomes text: "local" (on-device model, the default)
+    /// or "openai" (the user's own OpenAI key, no download needed).
+    #[serde(default)]
+    stt_engine: Option<String>,
     /// Opt-in, default OFF — see commands/telemetry.rs. Anything that
     /// can't read this setting treats it as disabled (fail closed), so a
     /// corrupt/unreadable settings file never silently starts sending.
@@ -106,6 +110,7 @@ impl Default for PersistedSettings {
             gemini_model: None,
             openai_model: None,
             voice_enabled: true,
+            stt_engine: None,
             telemetry_enabled: false,
             telemetry_prompt_shown: false,
             install_id: None,
@@ -237,6 +242,26 @@ pub(crate) fn persist_voice_enabled(app: &AppHandle, enabled: bool) -> Result<()
     let mut settings = load_settings(app);
     settings.voice_enabled = enabled;
     save_settings(app, &settings)
+}
+
+pub const STT_ENGINES: [&str; 2] = ["local", "openai"];
+
+pub(crate) fn stt_engine(app: &AppHandle) -> &'static str {
+    match load_settings(app).stt_engine.as_deref() {
+        Some("openai") => "openai",
+        _ => "local",
+    }
+}
+
+/// Persists the choice only; the command (voice::set_stt_engine) also
+/// loads or frees the on-device model.
+pub(crate) fn set_stt_engine(app: AppHandle, engine: String) -> Result<(), String> {
+    if !STT_ENGINES.contains(&engine.as_str()) {
+        return Err(format!("Unknown speech engine: {}", engine));
+    }
+    let mut settings = load_settings(&app);
+    settings.stt_engine = Some(engine);
+    save_settings(&app, &settings)
 }
 
 pub(crate) fn action_permission(app: &AppHandle) -> &'static str {
@@ -417,7 +442,7 @@ pub fn clear_openai_key(app: AppHandle) -> Result<(), String> {
     save_settings(&app, &settings)
 }
 
-fn get_openai_key_for_request(app: &AppHandle) -> Result<String, String> {
+pub(crate) fn get_openai_key_for_request(app: &AppHandle) -> Result<String, String> {
     let settings = load_settings(app);
     let Some(encoded) = settings.openai_api_key_encrypted else {
         return Ok(String::new());

@@ -483,12 +483,16 @@
             <div id="voice-toggle-knob"></div>
           </div>
         </div>
+        <div class="segmented" id="stt-picker" style="margin-top:10px;">
+          <button data-engine="local">On this computer</button>
+          <button data-engine="openai">My OpenAI key</button>
+        </div>
         <div id="voice-model-row" class="voice-model-row">
           <div id="voice-model-status" class="voice-model-status"></div>
           <button id="btn-voice-download" class="btn-key-connect hidden">Download</button>
         </div>
         <div id="voice-progress" class="voice-progress hidden"><div id="voice-progress-bar"></div></div>
-        <div class="toggle-hint">Hold Ctrl + Win and speak, then let go to send. Speech is turned into text on this computer: your voice is never uploaded. Say "agent" or "explain" first to use those modes.</div>
+        <div class="toggle-hint" id="voice-hint"></div>
 
         <div class="divider"></div>
 
