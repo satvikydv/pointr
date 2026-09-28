@@ -49,6 +49,29 @@ function showError(message, onDismissed) {
     errorTimer = setTimeout(dismiss, 6000);
 }
 
+/// Error toast over the transparent overlay, without changing the window:
+/// no focus taken, stays click-through, no screenshot re-shown. Reported:
+/// the whole overlay turned white behind a connection-error toast; the old
+/// error paths were the only ones that took focus, turned click-through
+/// off and (region flow) re-showed the full-screen frozen capture, so all
+/// of that is gone. Esc (global shortcut) or the 6 s timeout closes it; the
+/// close button is hidden since a click-through window can't receive the
+/// click anyway.
+async function showOverlayError(message) {
+    const appWindow = Window.getCurrent();
+    loadingIndicator.classList.add('hidden');
+    voicePill.classList.add('hidden');
+    img.style.display = 'none';
+    errorClose.classList.add('hidden');
+    await appWindow.setIgnoreCursorEvents(true);
+    await appWindow.show();
+    await enableEscapeDismiss();
+    showError(message, () => {
+        errorClose.classList.remove('hidden');
+        dismissOverlay();
+    });
+}
+
 // Builds (or returns the existing) answer bubble: a small "POINTR" header
 // plus a body span the streaming listener appends into. Kept as one helper
 // so the stream-chunk listener and renderResponse never disagree on shape.
@@ -291,12 +314,7 @@ function voiceBucket(ms) {
 }
 
 async function showVoiceError(message) {
-    const appWindow = Window.getCurrent();
-    voicePill.classList.add('hidden');
-    loadingIndicator.classList.add('hidden');
-    await appWindow.setIgnoreCursorEvents(false);
-    await appWindow.show();
-    showError(message, () => dismissOverlay());
+    await showOverlayError(message);
 }
 
 listen('voice-listening', async () => {
@@ -459,17 +477,7 @@ async function runDirectAnalysis(queryText) {
         if (!agentMatch) trackQueryOutcome(explainMatch ? 'explain' : 'direct', 'exception');
 
         console.error("Error in direct analysis:", error);
-        loadingIndicator.classList.add('hidden');
-        // Window may still be click-through from the setIgnoreCursorEvents(true)
-        // above — flip it off *before* showing the toast so it's dismissable.
-        await appWindow.show();
-        await appWindow.setFocus();
-        await appWindow.setIgnoreCursorEvents(false);
-        await disableEscapeDismiss();
-        showError(`${error}`, async () => {
-            await appWindow.hide();
-            await appWindow.setIgnoreCursorEvents(false);
-        });
+        await showOverlayError(`${error}`);
     }
 }
 
@@ -1748,18 +1756,9 @@ btnSubmit.addEventListener('click', async () => {
         if (requestId !== activeRequestId) return;
 
         console.error("Error processing request:", error);
-        // Window may be hidden (error before the show() above) or already
-        // click-through (error from renderResponse, after it) — cover both
-        // so the alert's OK button is always reachable.
-        await appWindow.show();
-        await appWindow.setFocus();
-        await appWindow.setIgnoreCursorEvents(false);
-        await disableEscapeDismiss();
-        resetSelection();
-        showError(`${error}`, async () => {
-            await appWindow.hide();
-            await appWindow.setIgnoreCursorEvents(false);
-        });
+        // Not resetSelection() here: that re-shows the frozen full-screen
+        // screenshot behind the toast. The next region capture resets it.
+        await showOverlayError(`${error}`);
     } finally {
         btnSubmit.disabled = false;
         btnSubmit.innerText = "Process";

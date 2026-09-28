@@ -928,6 +928,10 @@ body, html {
   margin-left: 4px;
 }
 
+.error-close.hidden {
+  display: none;
+}
+
 .error-close:hover {
   color: rgba(255, 255, 255, 0.7);
 }
