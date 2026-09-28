@@ -31,6 +31,28 @@ check('Age and open notepad', 'agent', 'open notepad');
 check('Uh, age and, type hello', 'agent', 'type hello');
 check('Age and gender of this person?', null, 'Age and gender of this person?');
 check('Age and height please', null);
+
+// "Pointr"/"Pointer" as an address (wake word) — agent mode, but only
+// when no real "agent"/"explain" keyword is found (that still wins).
+check('Pointr, open notepad', 'agent', 'open notepad');
+check('Pointer, open notepad', 'agent', 'open notepad');
+check('Hey Pointr, open notepad', 'agent', 'open notepad');
+check('Hey Pointer, open notepad.', 'agent', 'open notepad.');
+check("Pointer's open notepad", 'agent', 'open notepad');
+check('Pointr, what is this error', 'agent', 'what is this error');
+// Real keyword downstream still wins, with a clean rest (not swallowed
+// into the task text)
+check('Hey Pointer, Agent, Open Settings.', 'agent', 'Open Settings.');
+check('Pointr, explain this chart', 'explain', 'this chart');
+// Bare address alone is not a task
+check('Pointr', null, 'Pointr');
+check('Pointr.', null, 'Pointr.');
+check('Pointer', null, 'Pointer');
+// Not leading -> stays a plain question (the real hazard: "pointer" is an
+// ordinary word)
+check('What is a null pointer in C?', null, 'What is a null pointer in C?');
+check('Explain what a pointer is', 'explain', 'what a pointer is');
+check('This function takes a pointer as an argument', null);
 check('Explained this graph', 'explain', 'this graph');
 check('Ex plain this graph', 'explain', 'this graph');
 // Must stay plain questions

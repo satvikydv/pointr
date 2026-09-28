@@ -60,6 +60,16 @@ const FUSED = /^(?:um|uh|ah|arm|erm|im|hm+)(agent|explain)$/;
 // keyword deep in an ordinary sentence never changes its mode.
 const MAX_LEAD_WORDS = 6;
 
+// The product's own name, as an address ("Pointr, open Notepad") — a
+// fallback wake word for agent mode, tried only once "agent"/"explain"
+// themselves aren't found (see pointerWakeWord below). Not in KEYWORDS:
+// unlike "agent", it's an ordinary word ("a null pointer"), so it must
+// stay leading-only and lose to a real keyword found afterward, e.g. "hey
+// pointer, agent, open settings" still resolves via the agent keyword
+// there with a clean rest, not "pointer" swallowing "agent, open settings"
+// into the task text.
+const POINTER_FORMS = new Set(['pointr', 'pointer', 'pointers', "pointer's", "pointr's", 'point-r']);
+
 function norm(word) {
     return word.toLowerCase().replace(/[’`]/g, "'").replace(/^[^a-z0-9']+|[^a-z0-9']+$/g, '');
 }
@@ -87,6 +97,23 @@ function fillerLength(words, i) {
     return FILLERS.has(words[i]) ? 1 : 0;
 }
 
+/// "Pointr"/"Pointer" as a leading address, e.g. "Hey Pointr, open
+/// Notepad" -> "open Notepad". Only reached when the main loop found no
+/// "agent"/"explain" keyword, so it never preempts one that follows.
+function pointerWakeWord(original, words) {
+    let i = 0;
+    while (i < words.length && i < MAX_LEAD_WORDS) {
+        if (POINTER_FORMS.has(words[i])) {
+            const rest = original.slice(i + 1).join(' ').replace(/^[\s,.:;!?-]+/, '');
+            return rest || null; // "Pointr" alone isn't a task
+        }
+        const skip = fillerLength(words, i);
+        if (!skip) return null;
+        i += skip;
+    }
+    return null;
+}
+
 /// { mode: 'agent' | 'explain' | null, rest } — `rest` is what follows the
 /// keyword (original casing, leading punctuation trimmed), or the whole
 /// transcript unchanged when there's no keyword.
@@ -107,6 +134,10 @@ export function parseVoiceCommand(text) {
         if (!skip) break;
         i += skip;
     }
+
+    const addressed = pointerWakeWord(original, words);
+    if (addressed) return { mode: 'agent', rest: addressed };
+
     return { mode: null, rest: (text || '').trim() };
 }
 
