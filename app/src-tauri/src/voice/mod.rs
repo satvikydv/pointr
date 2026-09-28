@@ -468,3 +468,83 @@ pub fn set_stt_engine(app: AppHandle, engine: String) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod keyword_probe {
+    /// Not a pass/fail test: prints how Parakeet actually transcribes
+    /// "agent"/"explain" with fillers, across voices and accents, to ground
+    /// the frontend's mishear list in real output instead of guesses.
+    /// Reads WAVs from POINTR_KW_DIR and also synthesizes the same phrases
+    /// with the installed Indian-English OneCore voices.
+    ///   cargo test --release keyword_probe -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn keyword_probe() {
+        use super::{model, segment};
+        use std::path::PathBuf;
+        use transcribe_rs::onnx::parakeet::{ParakeetModel, ParakeetParams};
+        use transcribe_rs::onnx::Quantization;
+        use windows::core::HSTRING;
+        use windows::Media::SpeechSynthesis::SpeechSynthesizer;
+        use windows::Storage::Streams::DataReader;
+
+        let dir = PathBuf::from(std::env::var("LOCALAPPDATA").unwrap())
+            .join("dev.pointr.app").join("models").join(model::MODEL_DIR_NAME);
+        let mut m = ParakeetModel::load(&dir, &Quantization::Int8).unwrap();
+        let mut run = |label: &str, audio: &[f32]| {
+            let t = m.transcribe_with(audio, &ParakeetParams::default()).unwrap().text;
+            println!("{:<22} {}", label, t.trim());
+        };
+
+        if let Ok(d) = std::env::var("POINTR_KW_DIR") {
+            let mut files: Vec<_> = std::fs::read_dir(d).unwrap().filter_map(|e| e.ok()).map(|e| e.path()).collect();
+            files.sort();
+            for f in files {
+                let audio = transcribe_rs::audio::read_wav_samples(&f).unwrap();
+                run(&f.file_stem().unwrap().to_string_lossy(), &audio);
+            }
+        }
+
+        let phrases = [
+            "Agent, open Notepad and type hello.",
+            "Uh, agent, open Notepad.",
+            "Um agent open Chrome and search for weather.",
+            "Hey agent, save this file.",
+            "Okay so agent, close this window.",
+            "Agent open the calculator.",
+            "Explain how this chart works.",
+            "Uh, explain this diagram.",
+            "Um, can you explain what this code does?",
+            "Hey, explain this.",
+        ];
+        for voice in SpeechSynthesizer::AllVoices().unwrap() {
+            let name = voice.DisplayName().unwrap().to_string();
+            if !voice.Language().unwrap().to_string().starts_with("en-IN") {
+                continue;
+            }
+            let synth = SpeechSynthesizer::new().unwrap();
+            synth.SetVoice(&voice).unwrap();
+            for (i, p) in phrases.iter().enumerate() {
+                let stream = synth.SynthesizeTextToStreamAsync(&HSTRING::from(*p)).unwrap().get().unwrap();
+                let size = stream.Size().unwrap() as u32;
+                let reader = DataReader::CreateDataReader(&stream.GetInputStreamAt(0).unwrap()).unwrap();
+                reader.LoadAsync(size).unwrap().get().unwrap();
+                let mut bytes = vec![0u8; size as usize];
+                reader.ReadBytes(&mut bytes).unwrap();
+                // RIFF/WAVE, 16-bit PCM: find "fmt " for rate/channels, "data" for samples.
+                let find = |tag: &[u8]| bytes.windows(4).position(|w| w == tag).unwrap();
+                let fmt = find(b"fmt ");
+                let channels = u16::from_le_bytes([bytes[fmt + 10], bytes[fmt + 11]]) as usize;
+                let rate = u32::from_le_bytes(bytes[fmt + 12..fmt + 16].try_into().unwrap());
+                let data = find(b"data") + 8;
+                let pcm: Vec<f32> = bytes[data..]
+                    .chunks_exact(2)
+                    .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)
+                    .collect();
+                let mono = segment::to_mono(&pcm, channels);
+                let audio = segment::resample(&mono, rate, segment::TARGET_RATE);
+                run(&format!("{}_{:02}", name.split(' ').nth(1).unwrap_or(&name), i), &audio);
+            }
+        }
+    }
+}

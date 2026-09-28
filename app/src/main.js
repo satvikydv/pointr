@@ -1,3 +1,5 @@
+import { parseVoiceCommand, voiceToQuery } from './voice-command.js';
+
 const { listen } = window.__TAURI__.event;
 const { invoke } = window.__TAURI__.core;
 const { Window } = window.__TAURI__.window;
@@ -267,12 +269,16 @@ const voicePill = document.getElementById('voice-pill');
 const voiceText = document.getElementById('voice-text');
 const voiceMeter = document.getElementById('voice-meter');
 
-/// Spoken commands can't type a colon, so a leading "agent" / "explain"
-/// word maps to the typed prefix. Parakeet adds punctuation and capitals
-/// ("Agent, open Notepad."), hence the loose separator match.
-function spokenToQuery(text) {
-    const m = text.match(/^\s*(agent|explain)\b[\s,.:;!-]*(.*)$/i);
-    return m ? `${m[1].toLowerCase()}: ${m[2]}` : text.trim();
+const voiceMode = document.getElementById('voice-mode');
+
+/// Badge on the listening pill once "agent" / "explain" is recognised in
+/// the live transcript (see voice-command.js), so a missed keyword is
+/// visible before release rather than after.
+function showVoiceMode(text) {
+    const { mode } = parseVoiceCommand(text);
+    voiceMode.classList.toggle('hidden', !mode);
+    voiceMode.classList.toggle('explain', mode === 'explain');
+    if (mode) voiceMode.textContent = mode === 'agent' ? 'Agent' : 'Explain';
 }
 
 /// Coarse buckets only; the transcript itself is never sent.
@@ -316,6 +322,7 @@ listen('voice-listening', async () => {
     if (oldMarker) oldMarker.remove();
 
     voiceText.textContent = 'Listening…';
+    voiceMode.classList.add('hidden');
     voiceMeter.style.setProperty('--level', '0');
     voicePill.classList.remove('hidden');
 
@@ -334,7 +341,10 @@ listen('voice-level', (event) => {
 });
 
 listen('voice-partial', (event) => {
-    if (event.payload.text) voiceText.textContent = event.payload.text;
+    if (event.payload.text) {
+        voiceText.textContent = event.payload.text;
+        showVoiceMode(event.payload.text);
+    }
 });
 
 listen('voice-final', (event) => {
@@ -351,7 +361,7 @@ listen('voice-final', (event) => {
         showVoiceError("Didn't catch that. Hold Ctrl+Win, speak, then let go.");
         return;
     }
-    runDirectAnalysis(spokenToQuery(text));
+    runDirectAnalysis(voiceToQuery(text));
 });
 
 listen('voice-cancelled', () => {

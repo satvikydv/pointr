@@ -410,6 +410,31 @@ body, html {
   min-width: 0;
 }
 
+/* Detected mode ("Agent" amber, matching the action UI; "Explain" blue). */
+.voice-mode {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #f2b84b;
+  background: rgba(242, 184, 75, 0.12);
+  border: 1px solid rgba(242, 184, 75, 0.35);
+  border-radius: 5px;
+  padding: 2px 7px;
+  animation: pointr-fade-in 0.12s ease;
+}
+
+.voice-mode.explain {
+  color: #8fb4ff;
+  background: rgba(91, 140, 255, 0.12);
+  border-color: rgba(91, 140, 255, 0.35);
+}
+
+.voice-mode.hidden {
+  display: none;
+}
+
 .voice-hint {
   font-size: 10.5px;
   color: rgba(255, 255, 255, 0.35);
