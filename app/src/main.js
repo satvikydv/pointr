@@ -1146,7 +1146,11 @@ async function confirmProposedActionIfAny(action) {
         }
     } catch (e) {
         console.error('Action execution failed:', e);
-        showError(`Action failed: ${e}`);
+        // The window is already click-through here (set above, before
+        // execute_type_text/execute_open_app ran) — the close button would
+        // be dead, so hide it same as showOverlayError does.
+        errorClose.classList.add('hidden');
+        showError(`Action failed: ${e}`, () => errorClose.classList.remove('hidden'));
     } finally {
         runningPill.classList.add('hidden');
     }
