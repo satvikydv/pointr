@@ -19,6 +19,12 @@ check('Hey Pointer, Agent, Open Settings.', 'agent', 'Open Settings.');
 check('Um, can you explain what this code does?', 'explain', 'what this code does?');
 check('A gent, open notepad', 'agent', 'open notepad');
 check('Agents open notepad', 'agent', 'open notepad');
+// Reported from real use: "agent" transcribed as "A J", in its spellings
+check('A J open notepad', 'agent', 'open notepad');
+check('A. J., open notepad', 'agent', 'open notepad');
+check('AJ, open notepad', 'agent', 'open notepad');
+check('A.J. open notepad', 'agent', 'open notepad');
+check('Uh, A J, open notepad', 'agent', 'open notepad');
 check('Explained this graph', 'explain', 'this graph');
 check('Ex plain this graph', 'explain', 'this graph');
 // Must stay plain questions

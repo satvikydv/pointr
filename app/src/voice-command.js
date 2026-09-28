@@ -26,13 +26,15 @@ const FILLER_PHRASES = [
 ];
 
 const KEYWORDS = {
-    agent: new Set(['agent', 'agents', "agent's", 'agentic', 'ajent', 'eigent']),
+    // "aj" family: reported from real use ("agent" transcribed as "A J").
+    agent: new Set(['agent', 'agents', "agent's", 'agentic', 'ajent', 'eigent', 'aj', 'a.j', 'a-j']),
     explain: new Set(['explain', 'explains', 'explained', 'explaining', 'explane', 'xplain']),
 };
 
 // The keyword split in two by the transcriber.
 const SPLIT_KEYWORDS = {
     'a gent': 'agent',
+    'a j': 'agent',
     'ex plain': 'explain',
     'x plain': 'explain',
 };
