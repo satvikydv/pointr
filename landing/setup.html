@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pointr - Setup Guide</title>
-<meta name="description" content="How to set up Pointr: Gemini API key, optional OpenAI key and model choice, Tavily and GitHub connections, and keyboard shortcuts.">
+<meta name="description" content="How to set up Pointr: choose Gemini or OpenAI (or both) and any model your key supports, plus optional Tavily and GitHub connections, and keyboard shortcuts.">
 <style>
 body { margin: 0; background: #0a0e16; }
 a { color: #8fb4ff; text-decoration: none; }
@@ -36,7 +36,7 @@ a:hover { color: #b7cdff; }
       <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.35);margin-bottom:8px;padding-left:12px;">First-time setup</div>
       <a href="#getting-started" style="font-size:13.5px;color:rgba(255,255,255,0.65);padding:7px 12px;border-radius:7px;display:block;">Getting started</a>
       <a href="#gemini" style="font-size:13.5px;color:rgba(255,255,255,0.65);padding:7px 12px;border-radius:7px;display:flex;align-items:center;gap:8px;"><span style="width:5px;height:5px;border-radius:50%;background:#5B8CFF;flex-shrink:0;"></span>Gemini API key</a>
-      <a href="#models" style="font-size:13.5px;color:rgba(255,255,255,0.65);padding:7px 12px;border-radius:7px;display:flex;align-items:center;gap:8px;"><span style="width:5px;height:5px;border-radius:50%;background:#f2b84b;flex-shrink:0;"></span>OpenAI and models</a>
+      <a href="#models" style="font-size:13.5px;color:rgba(255,255,255,0.65);padding:7px 12px;border-radius:7px;display:flex;align-items:center;gap:8px;"><span style="width:5px;height:5px;border-radius:50%;background:#f2b84b;flex-shrink:0;"></span>OpenAI and model choice</a>
       <a href="#tavily" style="font-size:13.5px;color:rgba(255,255,255,0.65);padding:7px 12px;border-radius:7px;display:flex;align-items:center;gap:8px;"><span style="width:5px;height:5px;border-radius:50%;background:#f2b84b;flex-shrink:0;"></span>Tavily API key</a>
       <a href="#github" style="font-size:13.5px;color:rgba(255,255,255,0.65);padding:7px 12px;border-radius:7px;display:flex;align-items:center;gap:8px;"><span style="width:5px;height:5px;border-radius:50%;background:#f2b84b;flex-shrink:0;"></span>GitHub connection</a>
       <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.35);margin:18px 0 8px;padding-left:12px;">Options</div>
@@ -53,11 +53,11 @@ a:hover { color: #b7cdff; }
 
       <div id="getting-started">
         <div style="font-size:36px;font-weight:700;letter-spacing:-0.01em;margin-bottom:16px;">First-time setup</div>
-        <div style="font-size:16px;line-height:1.65;color:rgba(255,255,255,0.6);margin-bottom:32px;max-width:560px;">Pointr needs one thing to work at all, and offers two more that make it more capable. All three are configured from the tray icon → <span style="color:rgba(255,255,255,0.85);">Settings</span>.</div>
+        <div style="font-size:16px;line-height:1.65;color:rgba(255,255,255,0.6);margin-bottom:32px;max-width:560px;">Pointr needs an AI model to work at all, and offers more that make it more capable. All are configured from the tray icon → <span style="color:rgba(255,255,255,0.85);">Settings</span>.</div>
         <div style="display:flex;flex-direction:column;gap:10px;">
           <div style="display:flex;align-items:center;gap:14px;background:rgba(255,255,255,0.04);border:1px solid rgba(91,140,255,0.25);border-radius:10px;padding:14px 16px;">
             <div style="width:22px;height:22px;border-radius:50%;background:rgba(91,140,255,0.18);border:1px solid rgba(91,140,255,0.5);color:#8fb4ff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">1</div>
-            <div style="font-size:14.5px;color:rgba(255,255,255,0.85);">Connect a <a href="#gemini">Gemini API key</a> - required, free, takes under a minute.</div>
+            <div style="font-size:14.5px;color:rgba(255,255,255,0.85);">Connect a <a href="#gemini">Gemini API key</a> (free) or an <a href="#models">OpenAI API key</a>, whichever you'd rather use. One of the two is required - you can also connect both and switch anytime, and pick any model your key supports, not just the default.</div>
           </div>
           <div style="display:flex;align-items:center;gap:14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px 16px;">
             <div style="width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);color:rgba(255,255,255,0.7);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">2</div>
@@ -72,10 +72,10 @@ a:hover { color: #b7cdff; }
 
       <div id="gemini">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
-          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#8fb4ff;background:rgba(91,140,255,0.12);border:1px solid rgba(91,140,255,0.3);border-radius:5px;padding:3px 8px;">Required</div>
+          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#8fb4ff;background:rgba(91,140,255,0.12);border:1px solid rgba(91,140,255,0.3);border-radius:5px;padding:3px 8px;">Choose Gemini, OpenAI, or both</div>
         </div>
         <div style="font-size:26px;font-weight:600;margin-bottom:10px;">Gemini API key</div>
-        <div style="font-size:15px;line-height:1.65;color:rgba(255,255,255,0.6);margin-bottom:24px;max-width:560px;">Pointr uses Google's Gemini models to read your screen and answer questions. Every request runs on your own free API key, not a shared one. Pointr's backend relays each request to Google and keeps nothing afterwards (see <a href="privacy.html">Privacy</a>). Prefer OpenAI? See <a href="#models">OpenAI and model choice</a>.</div>
+        <div style="font-size:15px;line-height:1.65;color:rgba(255,255,255,0.6);margin-bottom:24px;max-width:560px;">Pointr uses Google's Gemini models to read your screen and answer questions - this is one of two supported providers, not the only option. Every request runs on your own free API key, never a shared one. Pointr's backend relays each request to Google and keeps nothing afterwards (see <a href="privacy.html">Privacy</a>). Prefer OpenAI, or want to use a different model than the default? See <a href="#models">OpenAI and model choice</a>.</div>
         <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:24px 26px;">
           <div style="font-size:12px;letter-spacing:0.05em;text-transform:uppercase;color:rgba(255,255,255,0.4);margin-bottom:16px;">How to get one</div>
           <div style="display:flex;flex-direction:column;gap:14px;">
@@ -89,18 +89,18 @@ a:hover { color: #b7cdff; }
 
       <div id="models">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
-          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#f2b84b;background:rgba(242,184,75,0.1);border:1px solid rgba(242,184,75,0.3);border-radius:5px;padding:3px 8px;">Optional</div>
+          <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#f2b84b;background:rgba(242,184,75,0.1);border:1px solid rgba(242,184,75,0.3);border-radius:5px;padding:3px 8px;">Choose Gemini, OpenAI, or both</div>
         </div>
         <div style="font-size:26px;font-weight:600;margin-bottom:10px;">OpenAI and model choice</div>
-        <div style="font-size:15px;line-height:1.65;color:rgba(255,255,255,0.6);margin-bottom:24px;max-width:560px;">Pointr runs on <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">gemini-3.1-flash-lite</span> out of the box. Under <span style="color:rgba(255,255,255,0.85);">Settings → AI model</span> you can pick any other Gemini model, or switch the provider to OpenAI (default <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">gpt-6-luna</span>). Every feature works with either provider: answers, explain mode, agent tasks, multi-step tasks, and the GitHub, web search and file tools.</div>
+        <div style="font-size:15px;line-height:1.65;color:rgba(255,255,255,0.6);margin-bottom:24px;max-width:560px;">Gemini and OpenAI are both fully supported, everywhere Pointr uses a model: answers, explain mode, agent tasks, multi-step tasks, and the GitHub, web search and file tools. Connect either key, or both and switch between them anytime, under <span style="color:rgba(255,255,255,0.85);">Settings → AI model</span>. Pointr defaults to <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">gemini-3.1-flash-lite</span> for Gemini and <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">gpt-6-luna</span> for OpenAI, but the model dropdown isn't limited to those - once a key is connected it lists every model that key can actually use, and a "Custom model ID" box takes any model name at all.</div>
         <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:24px 26px;">
           <div style="font-size:12px;letter-spacing:0.05em;text-transform:uppercase;color:rgba(255,255,255,0.4);margin-bottom:16px;">To use OpenAI</div>
           <div style="display:flex;flex-direction:column;gap:14px;">
             <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">1.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Create a key at <span style="font-family:'Consolas','Segoe UI Mono',monospace;color:#b7cdff;">platform.openai.com/api-keys</span>. OpenAI has no free tier for the API, so usage is billed to your own OpenAI account.</div></div>
             <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">2.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">In Pointr, open <span style="color:rgba(255,255,255,0.95);">Settings → OpenAI API key</span>, paste it in, and click <span style="color:rgba(255,255,255,0.95);">Connect</span>.</div></div>
-            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">3.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Under <span style="color:rgba(255,255,255,0.95);">AI model</span>, choose <span style="color:rgba(255,255,255,0.95);">OpenAI</span> and pick a model.</div></div>
+            <div style="display:flex;gap:12px;"><div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:13px;color:#f2b84b;flex-shrink:0;width:18px;">3.</div><div style="font-size:14.5px;line-height:1.6;color:rgba(255,255,255,0.75);">Under <span style="color:rgba(255,255,255,0.95);">AI model</span>, switch the provider to <span style="color:rgba(255,255,255,0.95);">OpenAI</span> and pick a model - this is also where you switch back to Gemini later, or change either one's model.</div></div>
           </div>
-          <div style="font-size:13.5px;line-height:1.6;color:rgba(255,255,255,0.5);margin-top:18px;">Once a key is connected, the model list shows every model that key can use with screenshots. Pick "Custom model ID" to type any model name yourself. Clicking on screen is tuned for Gemini, so if an OpenAI model keeps clicking in the wrong place, switching back to Gemini is the fix.</div>
+          <div style="font-size:13.5px;line-height:1.6;color:rgba(255,255,255,0.5);margin-top:18px;">The same steps work for picking a different Gemini model: no OpenAI key needed, just open <span style="color:rgba(255,255,255,0.85);">AI model</span> with Gemini already selected and choose from its own model list. Note: clicking on screen is tuned for Gemini's coordinate format, so if an OpenAI model keeps clicking in the wrong place, switching back to Gemini is the fix.</div>
         </div>
       </div>
 
