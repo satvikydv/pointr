@@ -41,6 +41,10 @@ use hotkey::HookEvent;
 /// Ctrl+Win+D / Ctrl+Win+Left (typed quickly) never trigger it.
 const ENGAGE_DELAY: Duration = Duration::from_millis(250);
 
+/// While listening, how often the real key state is checked in case the
+/// hook missed the release.
+const KEY_POLL: Duration = Duration::from_millis(50);
+
 /// How often the transcriber checks for a finished phrase and reports the
 /// mic level to the overlay.
 const TICK: Duration = Duration::from_millis(100);
@@ -221,11 +225,23 @@ fn controller(app: AppHandle, rx: Receiver<HookEvent>) {
         };
 
         let released = loop {
-            match rx.recv() {
+            match rx.recv_timeout(KEY_POLL) {
                 Ok(HookEvent::ChordUp) => break true,
                 Ok(HookEvent::Interrupt) => break false,
                 Ok(HookEvent::ChordDown) => continue,
-                Err(_) => return,
+                Err(RecvTimeoutError::Timeout) => {
+                    // Safety net: the hook's key-up can be lost (Windows
+                    // drops events for a hook that answers too slowly). The
+                    // real key state never is, so a release still ends it.
+                    if !hotkey::chord_physically_held() {
+                        if cfg!(debug_assertions) {
+                            eprintln!("[voice] release caught by key-state poll; the hook missed the key-up");
+                        }
+                        hotkey::resync();
+                        break true;
+                    }
+                }
+                Err(RecvTimeoutError::Disconnected) => return,
             }
         };
         session.finish(released);
