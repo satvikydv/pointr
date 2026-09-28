@@ -43,13 +43,15 @@ fn main() {
     println!("cargo:rustc-env=POSTHOG_API_KEY={}", posthog_key);
     println!("cargo:rustc-env=POSTHOG_HOST={}", posthog_host);
 
+    // Was hardcoded here directly until 2026-09-28 — that meant the real
+    // secret sat in plaintext in a tracked, public file. Now read from the
+    // same gitignored .env as everything else above, and rotated after the
+    // exposure (old value revoked; see EC2's own .env, which must carry the
+    // same new value for the client and server to agree).
     let (base_url, client_key) = if env_value == "prod" {
-        (
-            "https://pointr-api.duckdns.org",
-            "G1m1PJEVokCsMOchwHYzGKORc374rxeW9oLGuNhyQwk",
-        )
+        ("https://pointr-api.duckdns.org".to_string(), read_key("POINTR_CLIENT_KEY"))
     } else {
-        ("http://localhost:8000", "")
+        ("http://localhost:8000".to_string(), String::new())
     };
     println!("cargo:rustc-env=POINTR_API_BASE_URL={}", base_url);
     println!("cargo:rustc-env=POINTR_CLIENT_KEY={}", client_key);
