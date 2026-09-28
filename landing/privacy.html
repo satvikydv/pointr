@@ -96,7 +96,7 @@
           <div class="privacy-point"><div style="width:6px;height:6px;border-radius:50%;background:#5B8CFF;margin-top:8px;flex-shrink:0;"></div><div>Anonymous usage data is off unless you turn it on, and even then it never includes what you asked or what was on your screen.</div></div>
           <div class="privacy-point"><div style="width:6px;height:6px;border-radius:50%;background:#5B8CFF;margin-top:8px;flex-shrink:0;"></div><div>Your requests do pass through to Google (and Tavily or GitHub if you connect them), so their terms apply too. Details below.</div></div>
         </div>
-        <div style="font-size:12.5px;color:var(--text-muted);margin-top:16px;">Last updated 2026-09-23</div>
+        <div style="font-size:12.5px;color:var(--text-muted);margin-top:16px;">Last updated 2026-09-28</div>
       </div>
 
       <div id="on-your-computer">
@@ -107,8 +107,10 @@
           <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">API keys and tokens</strong><div>Gemini, OpenAI, Tavily and GitHub credentials, encrypted with Windows (DPAPI) so they only unlock under your Windows account. Copying the file to another machine or user gives you unreadable text.</div></div>
           <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Agent history</strong><div>Your last 50 multi-step runs: what you asked, the steps taken, any text it typed, and the final answer. No screenshots. Wipe it with "Clear history" in the History window.</div></div>
           <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Browser component</strong><div>The browser Pointr downloads the first time you run a browser task.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Your voice</strong><div>When you hold Ctrl + Win, speech is turned into text on your own computer by a speech model Pointr downloads once. The audio is never uploaded and never saved: it's discarded as soon as the text is ready. The microphone is only on while you hold the keys. Only the resulting text leaves your computer, exactly like a typed question.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Speech model</strong><div>NVIDIA's Parakeet model (about 670 MB, licensed CC-BY-4.0), downloaded from Hugging Face the first time you set up voice. Downloading it tells Hugging Face your IP address, like any download.</div></div>
         </div>
-        <p style="margin-top:16px;font-size:14px;color:var(--text-secondary);">To remove everything Pointr keeps locally, delete the folder <span style="font-family:var(--font-mono);font-size:12.5px;color:rgba(255,255,255,0.9);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 7px;">%APPDATA%\dev.pointr.app</span>.</p>
+        <p style="margin-top:16px;font-size:14px;color:var(--text-secondary);">To remove everything Pointr keeps locally, delete the folders <span style="font-family:var(--font-mono);font-size:12.5px;color:rgba(255,255,255,0.9);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 7px;">%APPDATA%\dev.pointr.app</span> and <span style="font-family:var(--font-mono);font-size:12.5px;color:rgba(255,255,255,0.9);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 7px;">%LOCALAPPDATA%\dev.pointr.app</span> (where the speech model lives).</p>
       </div>
 
       <div id="leaves-your-computer">

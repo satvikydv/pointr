@@ -99,6 +99,7 @@
         <a href="#audio">Audio &amp; voice</a>
         <a href="#actions">On-screen actions</a>
         <a href="#browser"><span style="width:6px;height:6px;border-radius:50%;background:#f2b84b;flex-shrink:0;"></span>Browser tasks</a>
+        <a href="#voice">Voice</a>
         <a href="#usage-data">Usage data</a>
         <a href="#hotkeys">Shortcuts</a>
       </aside>
@@ -268,6 +269,37 @@
           </div>
         </section>
 
+        <!-- Voice -->
+        <section id="voice">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
+            <h2 style="font-size:26px;font-weight:600;margin:0;">Voice</h2>
+            <span style="font-family:var(--font-mono);font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#f2b84b;background:rgba(242,184,75,0.12);border:1px solid rgba(242,184,75,0.3);border-radius:5px;padding:3px 8px;">One-time 670 MB download</span>
+          </div>
+          <p style="font-size:14.5px;line-height:1.6;color:var(--text-secondary);margin:0 0 20px;">Hold <strong style="color:#ffffff;">Ctrl + Win</strong>, say what you want, and let go. Pointr captures your screen the moment you start, shows your words as you speak, and sends them the instant you release, exactly as if you'd typed them. Start with "agent" or "explain" to use those modes, for example "agent, open Notepad and type hello".</p>
+
+          <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:24px;">
+            <div class="guide-step-card">
+              <div style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);color:rgba(255,255,255,0.7);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">1</div>
+              <div style="font-size:14.5px;line-height:1.55;color:rgba(255,255,255,0.75);">Open <strong style="color:#ffffff;">Settings → Voice</strong> and click <strong style="color:#ffffff;">Download</strong>. This fetches the speech model (about 670 MB) once, and checks every file before using it.</div>
+            </div>
+            <div class="guide-step-card">
+              <div style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);color:rgba(255,255,255,0.7);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">2</div>
+              <div style="font-size:14.5px;line-height:1.55;color:rgba(255,255,255,0.75);">Hold <strong style="color:#ffffff;">Ctrl + Win</strong> anywhere. If Windows asks, allow microphone access for desktop apps (Settings → Privacy &amp; security → Microphone).</div>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:20px;">
+            <div>
+              <div style="font-size:16px;font-weight:600;color:rgba(255,255,255,0.95);margin-bottom:6px;">Your voice stays on your computer</div>
+              <div style="font-size:14.5px;line-height:1.6;color:var(--text-secondary);">Speech is turned into text on your own machine by NVIDIA's Parakeet model. Audio is never uploaded or saved; only the resulting text is sent, the same as a typed question. The microphone is on only while you hold the keys.</div>
+            </div>
+            <div>
+              <div style="font-size:16px;font-weight:600;color:rgba(255,255,255,0.95);margin-bottom:6px;">Good to know</div>
+              <div style="font-size:14.5px;line-height:1.6;color:var(--text-secondary);">It understands English and 24 other European languages. It uses about 1 GB of memory while voice is on; turn voice off in Settings to free it. Pressing another key while holding Ctrl + Win (for example Ctrl + Win + D) cancels listening and does the normal Windows shortcut instead. Holding the keys while Pointr is reading an answer aloud stops it and starts a new question.</div>
+            </div>
+          </div>
+        </section>
+
         <!-- Usage Data -->
         <section id="usage-data">
           <h2 style="font-size:26px;font-weight:600;margin:0 0 16px;">Anonymous usage data</h2>
@@ -393,9 +425,13 @@
         <!-- Shortcuts -->
         <section id="hotkeys">
           <h2 style="font-size:26px;font-weight:600;margin:0 0 16px;">Keyboard shortcuts</h2>
-          <p style="font-size:14.5px;line-height:1.6;color:var(--text-secondary);margin:0 0 20px;">Pointr has two ways to ask a question, plus a couple of keys used while an answer or action is on screen.</p>
-          
+          <p style="font-size:14.5px;line-height:1.6;color:var(--text-secondary);margin:0 0 20px;">Pointr has three ways to ask a question, plus a couple of keys used while an answer or action is on screen.</p>
+
           <div style="display:flex;flex-direction:column;gap:1px;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">
+            <div class="shortcut-row" style="background:rgba(255,255,255,0.015);">
+              <div style="font-size:14px;color:rgba(255,255,255,0.85);">Ask by voice: hold, speak, let go (<a href="#voice">Voice</a>)</div>
+              <span style="font-family:var(--font-mono);font-size:12px;color:rgba(255,255,255,0.9);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:3px 8px;">Hold Ctrl + Win</span>
+            </div>
             <div class="shortcut-row" style="background:rgba(255,255,255,0.03);">
               <div style="font-size:14px;color:rgba(255,255,255,0.85);">Ask directly, no region select</div>
               <span style="font-family:var(--font-mono);font-size:12px;color:rgba(255,255,255,0.9);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:3px 8px;">Ctrl + Alt + Space</span>

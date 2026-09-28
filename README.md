@@ -20,9 +20,10 @@
 
 ## What it does
 
-Press `Ctrl+Alt+Space` anywhere on Windows. Pointr captures your screen, marks exactly where your cursor is, and answers whatever you type — in place, with a pointer to what it's talking about. Ask `agent: <task>` and it can act for you: type into a focused field, open an app, click through a multi-step task across windows and a real browser, always with a confirm step before anything irreversible happens.
+Press `Ctrl+Alt+Space` anywhere on Windows. Pointr captures your screen, marks exactly where your cursor is, and answers whatever you type — in place, with a pointer to what it's talking about. Ask `agent: <task>` and it can act for you: type into a focused field, open an app, click through a multi-step task across windows and a real browser. By default it shows what it's about to do and waits for Enter; Settings → On-screen actions can switch that to "Always allow" (no prompt, Esc still stops it) or "Off".
 
 - **Direct Q&A** — hotkey, ask, get an answer anchored to a point on screen. No region-select step required.
+- **Push-to-talk voice** — hold `Ctrl+Win`, speak, let go. Speech is transcribed on-device (NVIDIA Parakeet, one-time download) while you're still talking, so the question is sent the instant you release. Audio never leaves your machine.
 - **`explain: <topic>`** — a narrated, drawn-on-screen walkthrough instead of a wall of text.
 - **`agent: <task>`** — one confirmed action (type a reply, open an app) or a full autonomous multi-step run, with a live step trace and a History window to review past runs.
 - **Browser automation** — a local Playwright-driven browser for tasks that need one, clicking by accessibility role/name instead of guessed pixel coordinates.
