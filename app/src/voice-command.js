@@ -27,7 +27,7 @@ const FILLER_PHRASES = [
 
 const KEYWORDS = {
     // "aj" family: reported from real use ("agent" transcribed as "A J").
-    agent: new Set(['agent', 'agents', "agent's", 'agentic', 'ajent', 'eigent', 'aj', 'a.j', 'a-j']),
+    agent: new Set(['agent', 'agents', "agent's", 'agentic', 'ajent', 'eigent', 'agen', 'aj', 'a.j', 'a-j']),
     explain: new Set(['explain', 'explains', 'explained', 'explaining', 'explane', 'xplain']),
 };
 
@@ -38,6 +38,20 @@ const SPLIT_KEYWORDS = {
     'ex plain': 'explain',
     'x plain': 'explain',
 };
+
+// Mishears that are also ordinary sentence openers ("Age and gender of
+// this person?"), so they only count when a command verb follows.
+const GUARDED_SPLIT_KEYWORDS = {
+    'age and': 'agent',
+};
+const COMMAND_VERBS = new Set([
+    'open', 'close', 'type', 'write', 'save', 'search', 'find', 'go', 'click', 'press',
+    'create', 'send', 'copy', 'paste', 'delete', 'rename', 'move', 'start', 'run',
+    'launch', 'play', 'pause', 'stop', 'scroll', 'select', 'fill', 'reply', 'draft',
+    'read', 'check', 'show', 'take', 'set', 'turn', 'add', 'make', 'download',
+    'install', 'navigate', 'visit', 'sign', 'log', 'book', 'order', 'compose',
+    'summarize', 'summarise', 'look', 'switch', 'minimize', 'maximize', 'print',
+]);
 
 // A filler fused onto the front of the keyword ("Armagent").
 const FUSED = /^(?:um|uh|ah|arm|erm|im|hm+)(agent|explain)$/;
@@ -60,6 +74,8 @@ function keywordAt(words, i) {
     if (i + 1 < words.length) {
         const pair = SPLIT_KEYWORDS[`${w} ${words[i + 1]}`];
         if (pair) return { mode: pair, length: 2 };
+        const guarded = GUARDED_SPLIT_KEYWORDS[`${w} ${words[i + 1]}`];
+        if (guarded && COMMAND_VERBS.has(words[i + 2])) return { mode: guarded, length: 2 };
     }
     return null;
 }

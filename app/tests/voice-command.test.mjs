@@ -25,6 +25,12 @@ check('A. J., open notepad', 'agent', 'open notepad');
 check('AJ, open notepad', 'agent', 'open notepad');
 check('A.J. open notepad', 'agent', 'open notepad');
 check('Uh, A J, open notepad', 'agent', 'open notepad');
+// Earlier-proposed mishears
+check('Agen open notepad', 'agent', 'open notepad');
+check('Age and open notepad', 'agent', 'open notepad');
+check('Uh, age and, type hello', 'agent', 'type hello');
+check('Age and gender of this person?', null, 'Age and gender of this person?');
+check('Age and height please', null);
 check('Explained this graph', 'explain', 'this graph');
 check('Ex plain this graph', 'explain', 'this graph');
 // Must stay plain questions
