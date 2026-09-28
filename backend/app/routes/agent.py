@@ -10,6 +10,7 @@ from app.models.agent import (
 from app.worker.tasks import run_agent_task
 from app.services.llm import get_llm
 from app.rate_limit import rate_limit
+from app.routes.analyze import resolve_screenshot
 
 router = APIRouter()
 
@@ -154,6 +155,9 @@ def _build_step_prompt(
 
 @router.post("/task", response_model=AgentTaskResponse, dependencies=[Depends(rate_limit)])
 async def create_agent_task(request: AgentTaskRequest):
+    # Resolved here, in the API process that holds the stage, before the
+    # screenshot is handed to the Celery worker (a separate process).
+    resolve_screenshot(request)
     # Queue the Celery task
     task = run_agent_task.delay(
         request.task_description, request.session_id, request.clipboard_text,

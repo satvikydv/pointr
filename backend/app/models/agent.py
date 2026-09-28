@@ -6,6 +6,8 @@ class AgentTaskRequest(BaseModel):
     session_id: str
     clipboard_text: str = ""
     screenshot_base64: str = ""
+    # Staged upload ref, same as AnalyzeRequest.screenshot_ref.
+    screenshot_ref: str = ""
     github_token: str = ""
     # BYOK — see AnalyzeRequest.gemini_api_key for the fallback rule.
     gemini_api_key: str = ""

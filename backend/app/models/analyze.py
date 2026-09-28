@@ -11,7 +11,11 @@ class ScreenResolution(BaseModel):
     height: int
 
 class AnalyzeRequest(BaseModel):
-    screenshot_base64: str
+    # Either the screenshot inline, or a ref from /api/stage-screenshot
+    # uploaded while the user was still typing/speaking (see
+    # routes/analyze.resolve_screenshot). Inline wins when both are set.
+    screenshot_base64: str = ""
+    screenshot_ref: str = ""
     cursor_position: CursorPosition
     screen_resolution: ScreenResolution
     active_window_title: str

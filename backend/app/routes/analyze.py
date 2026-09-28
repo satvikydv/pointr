@@ -2,14 +2,49 @@ import base64
 import json
 import re
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from fastapi.responses import StreamingResponse
 from app.models.analyze import AnalyzeRequest, AnalyzeResponse, PointerTarget, StoryboardResponse, StoryboardStep
 from app.services.llm import get_llm
+from app.services import screenshot_stage
 from app.services.session_memory import build_session_context_block, record_exchange
 from app.config import settings
 from app.rate_limit import rate_limit
 
 router = APIRouter()
+
+# Base64 of a 1568px-wide PNG is ~1-3 MB; anything far past that isn't a
+# Pointr screenshot.
+MAX_STAGED_B64 = 12 * 1024 * 1024
+
+
+class StageScreenshotRequest(BaseModel):
+    screenshot_base64: str = Field(min_length=1, max_length=MAX_STAGED_B64)
+
+
+@router.post("/stage-screenshot")
+async def stage_screenshot(request: StageScreenshotRequest):
+    """Upload the screenshot while the user is still typing or speaking;
+    the question then sends only the returned ref. See screenshot_stage.
+    Not rate-limited like the model routes: it calls no model, and memory
+    use is bounded by the stage itself."""
+    try:
+        base64.b64decode(request.screenshot_base64, validate=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 image")
+    return {"ref": screenshot_stage.stage(request.screenshot_base64), "ttl_secs": screenshot_stage.TTL_SECONDS}
+
+
+def resolve_screenshot(request) -> None:
+    """Fills screenshot_base64 from a staged upload when the request sent
+    only screenshot_ref. 409 (not 400) when the ref has expired, which the
+    client treats as "resend with the screenshot inline"."""
+    if request.screenshot_base64 or not request.screenshot_ref:
+        return
+    staged = screenshot_stage.get(request.screenshot_ref)
+    if staged is None:
+        raise HTTPException(status_code=409, detail="screenshot_expired")
+    request.screenshot_base64 = staged
 
 # Sentinel line the model appends (per prompt instructions in _build_stream_prompt)
 # when it wants to point at a specific UI element. Kept off-screen during
@@ -18,6 +53,7 @@ POINTER_SENTINEL = "POINTER:"
 
 @router.post("/analyze-screen", response_model=AnalyzeResponse, dependencies=[Depends(rate_limit)])
 async def analyze_screen(request: AnalyzeRequest):
+    resolve_screenshot(request)
     gemini = get_llm(request.provider, request.model, request.gemini_api_key, request.openai_api_key)
     try:
         # Decode image
@@ -181,6 +217,7 @@ async def _stream_analyze_events(request: AnalyzeRequest, gemini):
 
 @router.post("/analyze-screen-stream", dependencies=[Depends(rate_limit)])
 async def analyze_screen_stream(request: AnalyzeRequest):
+    resolve_screenshot(request)
     gemini = get_llm(request.provider, request.model, request.gemini_api_key, request.openai_api_key)
     try:
         base64.b64decode(request.screenshot_base64)
@@ -199,6 +236,7 @@ async def analyze_explain(request: AnalyzeRequest):
     optional point-at-marker per step) instead of one answer, played back
     sequentially by the client with TTS between steps. Non-streaming: the
     client needs the whole step list up front to play it back in order."""
+    resolve_screenshot(request)
     gemini = get_llm(request.provider, request.model, request.gemini_api_key, request.openai_api_key)
     try:
         image_bytes = base64.b64decode(request.screenshot_base64)
