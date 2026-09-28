@@ -6,6 +6,12 @@
       "sourceType": "github",
       "skillPath": "skills/caveman/SKILL.md",
       "computedHash": "723fb2a8bec1156c0f0b5bf020cc739ed09702b7726ec6377480038871339f6e"
+    },
+    "improve-codebase-architecture": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/improve-codebase-architecture/SKILL.md",
+      "computedHash": "016f12709bff30a27419e8add978a9be70f5ca1fb6738b3be6793038e0aba631"
     }
   }
 }

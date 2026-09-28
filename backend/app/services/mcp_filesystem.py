@@ -17,7 +17,7 @@ import asyncio
 import os
 from typing import Any
 
-from google.genai import types
+from app.services.tool_loop import ToolSpec, mcp_result_text, mcp_tool_specs, run_tool_loop
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -40,13 +40,13 @@ READ_ONLY_TOOLS = {
 # local tool (not provided by the MCP server) declared alongside the MCP
 # ones and executed directly here via pypdf, not through session.call_tool.
 PDF_TOOL_NAME = "read_pdf_text"
-PDF_TOOL = types.FunctionDeclaration(
+PDF_TOOL = ToolSpec(
     name=PDF_TOOL_NAME,
     description=(
         "Extract and return the text content of a PDF file. Use this instead of "
         "read_text_file whenever the path ends in .pdf."
     ),
-    parameters_json_schema={
+    parameters={
         "type": "object",
         "properties": {
             "path": {"type": "string", "description": "Absolute path to the .pdf file, within the allowed folder."},
@@ -94,10 +94,10 @@ def _extract_pdf_text(path: str, fs_root: str) -> str:
     return text
 
 
-async def _run(prompt: str, model: str, api_key: str, fs_root: str, image_bytes: bytes | None = None) -> str:
-    from google import genai
-
-    client = genai.Client(api_key=api_key)
+async def _run(
+    prompt: str, model: str, api_key: str, fs_root: str,
+    image_bytes: bytes | None = None, provider: str = "gemini",
+) -> str:
     params = StdioServerParameters(
         command="npx",
         args=["-y", "@modelcontextprotocol/server-filesystem", fs_root],
@@ -109,62 +109,30 @@ async def _run(prompt: str, model: str, api_key: str, fs_root: str, image_bytes:
             tools_result = await session.list_tools()
             mcp_tools = [t for t in tools_result.tools if t.name in READ_ONLY_TOOLS]
 
-            gemini_tool = types.Tool(function_declarations=[
-                types.FunctionDeclaration(
-                    name=t.name,
-                    description=t.description,
-                    parameters_json_schema=t.input_schema,
-                )
-                for t in mcp_tools
-            ] + [PDF_TOOL])
-            config = types.GenerateContentConfig(tools=[gemini_tool])
+            async def execute(name: str, args: dict) -> str:
+                if name == PDF_TOOL_NAME:
+                    # Local tool, not an MCP one — runs in-process via pypdf
+                    # rather than session.call_tool. Blocking, so off the
+                    # event loop.
+                    return await asyncio.to_thread(_extract_pdf_text, args.get("path", ""), fs_root)
+                return mcp_result_text(await session.call_tool(name, args))
+
             # Screen context matters here too — e.g. "read my resume and
-            # answer this question on the form on screen" needs both the
-            # file tools AND to see what the form is actually asking, in the
-            # same call, or the model can only do one half of the task.
-            initial_parts = [types.Part(text=prompt)]
-            if image_bytes:
-                initial_parts.append(types.Part.from_bytes(data=image_bytes, mime_type="image/png"))
-            contents = [types.Content(role="user", parts=initial_parts)]
-
-            for _ in range(MAX_TOOL_CALL_STEPS):
-                response = await client.aio.models.generate_content(
-                    model=model, contents=contents, config=config,
-                )
-                fcs = response.function_calls
-                if not fcs:
-                    return response.text
-
-                contents.append(response.candidates[0].content)
-                response_parts = []
-                for fc in fcs:
-                    if fc.name == PDF_TOOL_NAME:
-                        # Local tool, not an MCP one — runs in-process via
-                        # pypdf rather than session.call_tool. Blocking, so
-                        # off the event loop.
-                        path = (fc.args or {}).get("path", "")
-                        text_out = await asyncio.to_thread(_extract_pdf_text, path, fs_root)
-                    else:
-                        result = await session.call_tool(fc.name, fc.args or {})
-                        text_out = "\n".join(
-                            c.text for c in result.content if hasattr(c, "text")
-                        )
-                    response_parts.append(
-                        types.Part.from_function_response(
-                            name=fc.name, response={"result": text_out}
-                        )
-                    )
-                contents.append(types.Content(role="user", parts=response_parts))
-
-            # Hit the step cap without a final answer — surface a plain-text
-            # (not JSON) result so the caller's fallback parsing kicks in
-            # rather than silently returning nothing.
-            return "I looked through the files but couldn't settle on an answer in time — try a more specific request."
+            # answer this question on the form on screen" needs both the file
+            # tools AND to see what the form is actually asking, in the same
+            # call, or the model can only do one half of the task.
+            return await run_tool_loop(
+                provider=provider, api_key=api_key, model=model, prompt=prompt,
+                image_bytes=image_bytes, tools=mcp_tool_specs(mcp_tools) + [PDF_TOOL],
+                execute=execute, max_steps=MAX_TOOL_CALL_STEPS,
+                exhausted_message="I looked through the files but couldn't settle on an answer in time — try a more specific request.",
+            )
 
 
 def run_agent_turn_with_filesystem_sync(
-    prompt: str, model: str, api_key: str, fs_root: str, image_bytes: bytes | None = None
+    prompt: str, model: str, api_key: str, fs_root: str,
+    image_bytes: bytes | None = None, provider: str = "gemini",
 ) -> str:
     """Blocking entry point for the Celery task (plain sync context, no
     running event loop) — mirrors GeminiService's *_sync methods."""
-    return asyncio.run(_run(prompt, model, api_key, fs_root, image_bytes))
+    return asyncio.run(_run(prompt, model, api_key, fs_root, image_bytes, provider))

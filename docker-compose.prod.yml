@@ -1,3 +1,19 @@
+# Retention posture (backs the claims on landing/privacy.html — keep them in
+# sync). Nothing user-derived is meant to outlive a request by long:
+#   - worker runs at --loglevel=warning: Celery's INFO "task succeeded"
+#     line prints the task's whole return value (answer + plan text), so
+#     INFO would write user-derived text into the container logs.
+#   - every service's json-file log is size-capped and rotated, so whatever
+#     does get logged is bounded instead of growing forever.
+#   - redis persists nothing to disk (no RDB snapshots, no AOF): task
+#     results and rate-limit counters are memory-only, and Celery expires
+#     results after 5 minutes (backend/app/worker/celery_app.py).
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   api:
     build: ./backend
@@ -11,10 +27,11 @@ services:
       - POINTR_CLIENT_KEY=${POINTR_CLIENT_KEY:-}
     depends_on: [redis]
     restart: unless-stopped
+    logging: *default-logging
 
   worker:
     build: ./backend
-    command: celery -A app.worker.celery_app worker --loglevel=info
+    command: celery -A app.worker.celery_app worker --loglevel=warning
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.1-flash-lite}
@@ -26,10 +43,13 @@ services:
       # a clear "not set up" message instead. See implementation-tracking.md.
     depends_on: [redis]
     restart: unless-stopped
+    logging: *default-logging
 
   redis:
     image: redis:7-alpine
+    command: redis-server --save "" --appendonly no
     restart: unless-stopped
+    logging: *default-logging
 
   caddy:
     image: caddy:2-alpine
@@ -44,6 +64,7 @@ services:
       - caddy_config:/config
     depends_on: [api]
     restart: unless-stopped
+    logging: *default-logging
 
 volumes:
   caddy_data:

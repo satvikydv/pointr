@@ -52,6 +52,9 @@
       <div id="direct-query-box" class="direct-query-box hidden">
         <input id="direct-query-input" class="query-input direct-query-input" type="text" placeholder="What do you want to know? (or &quot;agent: &lt;task&gt;&quot;, &quot;explain: &lt;topic&gt;&quot;)" autocomplete="off" />
         <div class="query-hint">Enter to send &middot; Esc to cancel</div>
+        <button id="btn-history" class="btn-history" title="Agent history">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.2" stroke="currentColor" stroke-width="1.3"></circle><path d="M8 4.6V8L10.2 9.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path></svg>
+        </button>
       </div>
 
       <div id="toolbar" class="toolbar hidden">
@@ -128,6 +131,31 @@
           <span class="action-confirm-dot-sep"></span>
           <span class="action-confirm-key">Esc</span>
           <span class="action-confirm-key-label">to cancel</span>
+        </div>
+      </div>
+
+      <!-- One-time, opt-in telemetry prompt. Default is OFF; this asks
+           once, remembers either answer, and can be changed any time in
+           Settings. Deliberately spells out what is NOT sent. -->
+      <div id="telemetry-consent-box" class="action-confirm-box hidden">
+        <div class="action-confirm-header">
+          <div class="action-confirm-dot-wrap">
+            <div class="action-confirm-dot"></div>
+            <div class="action-confirm-ring"></div>
+          </div>
+          <div class="action-confirm-eyebrow">Anonymous usage data</div>
+        </div>
+        <div class="action-confirm-title">Help improve Pointr by sharing anonymous usage data?</div>
+        <div class="action-confirm-subtitle">
+          No screenshots, queries, file contents, or tokens are ever sent. Just feature usage
+          and crash or error events. You can change this any time in Settings.
+        </div>
+        <div class="action-confirm-footer">
+          <span class="action-confirm-key">Enter</span>
+          <span class="action-confirm-key-label">to enable</span>
+          <span class="action-confirm-dot-sep"></span>
+          <span class="action-confirm-key">Esc</span>
+          <span class="action-confirm-key-label">to skip</span>
         </div>
       </div>
 

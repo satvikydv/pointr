@@ -21,6 +21,7 @@ const loadingIndicator = document.getElementById('loading-indicator');
 const loadingLabel = document.getElementById('loading-label');
 const directQueryBox = document.getElementById('direct-query-box');
 const directQueryInput = document.getElementById('direct-query-input');
+const btnHistory = document.getElementById('btn-history');
 const errorToast = document.getElementById('error-toast');
 const errorMessage = document.getElementById('error-message');
 const errorClose = document.getElementById('error-close');
@@ -245,8 +246,14 @@ listen('show-overlay-direct', async () => {
     await appWindow.show();
     await appWindow.setFocus();
 
+    // First run only: ask about telemetry before the query box appears, so
+    // the very first event a user could generate is already governed by
+    // their answer. Returns immediately on every later run.
+    await askTelemetryConsentIfNeeded();
+
     directQueryInput.value = '';
     directQueryBox.classList.remove('hidden');
+    btnHistory.classList.remove('hidden');
     directQueryInput.focus();
 });
 
@@ -255,6 +262,7 @@ directQueryInput.addEventListener('keydown', (e) => {
         e.preventDefault();
         const text = directQueryInput.value.trim();
         directQueryBox.classList.add('hidden');
+        btnHistory.classList.add('hidden');
         runDirectAnalysis(text);
     }
     // Escape falls through to the document-level keydown handler below —
@@ -276,7 +284,9 @@ async function runDirectAnalysis(queryText) {
     try {
         if (explainMatch) {
             const topic = explainMatch[1] || queryText;
+            captureTelemetry('direct_query_sent', { mode: 'explain' });
             const storyboard = await invoke('process_explain', { topic });
+            trackQueryOutcome('explain', 'ok');
             console.log('[explain] storyboard steps:', JSON.stringify(storyboard.steps, null, 2));
 
             if (requestId !== activeRequestId) return; // superseded by a later press
@@ -291,12 +301,18 @@ async function runDirectAnalysis(queryText) {
         }
 
         const agentTaskDescription = agentMatch ? (agentMatch[1] || "Analyze this for agent actions") : null;
+        // Fired here, when a question is actually sent — not on the hotkey
+        // press, which only opens the overlay (it used to fire from Rust at
+        // capture time, so it counted overlay opens, including cancelled
+        // ones). agent: tasks report through their own agent_task_* events.
+        if (!agentMatch) captureTelemetry('direct_query_sent', { mode: 'direct' });
         const response = agentMatch
             ? await runAgentTask(agentTaskDescription)
             : await invoke('process_direct', {
                 query: queryText || null,
                 requestId: String(requestId)
             });
+        if (!agentMatch) trackQueryOutcome('direct', response.answer_text);
 
         if (requestId !== activeRequestId) return; // superseded by a later press
 
@@ -323,6 +339,7 @@ async function runDirectAnalysis(queryText) {
         renderResponse(response, rect);
     } catch (error) {
         if (requestId !== activeRequestId) return;
+        if (!agentMatch) trackQueryOutcome(explainMatch ? 'explain' : 'direct', 'exception');
 
         console.error("Error in direct analysis:", error);
         loadingIndicator.classList.add('hidden');
@@ -529,7 +546,26 @@ function resetSelection() {
     queryInput.value = '';
     directQueryBox.classList.add('hidden');
     directQueryInput.value = '';
+    btnHistory.classList.add('hidden');
 }
+
+// Bottom-right shortcut into the persisted run log (history.rs/history.js) —
+// shown alongside the direct-query input, same lifecycle. Dismisses this
+// overlay first (same cleanup Escape does) rather than leaving it open
+// underneath the history window.
+btnHistory.addEventListener('click', async () => {
+    await dismissOverlay();
+    resetSelection();
+    try {
+        const historyWindow = await Window.getByLabel('history');
+        if (historyWindow) {
+            await historyWindow.show();
+            await historyWindow.setFocus();
+        }
+    } catch (e) {
+        console.error('Failed to open history window:', e);
+    }
+});
 
 container.addEventListener('mousedown', (e) => {
     // Region-select drag only applies in the secondary (manual crop) flow.
@@ -628,6 +664,132 @@ btnCancel.addEventListener('click', async () => {
 // the worker logs) but the UI had already shown a timeout error by then.
 // 60s still catches a truly stuck/dead worker, just doesn't fire early on
 // a slower-but-healthy multi-phase task.
+// ---------------------------------------------------------------------
+// Telemetry (opt-in, anonymous) — every call routes through Rust's
+// capture_telemetry_event, which owns the enabled-check and the anonymous
+// install id. Never pass query text, task descriptions, clipboard/file
+// contents, answers, or tokens: categorical values and counts only.
+// ---------------------------------------------------------------------
+function captureTelemetry(name, properties) {
+    // Fire-and-forget on this side too — a rejected promise here must not
+    // surface in a user-facing flow.
+    invoke('capture_telemetry_event', { name, properties: properties || {} })
+        .catch((e) => console.debug('[telemetry] capture failed:', e));
+}
+
+/// Which capability a finished agent task actually exercised — enum-like,
+/// derived from the response shape rather than from any of its content.
+function capabilityUsed(response) {
+    if (response.multi_step_plan) return 'multistep';
+    if (response.proposed_action) return 'os_action';
+    return 'none';
+}
+
+/// The backend swallows Gemini/tool failures into a plain string answer
+/// instead of raising (GeminiService.*_sync, tasks.py's needs_* fallbacks),
+/// so Celery reports the task as SUCCESS even when the "answer" is really
+/// an error. Caught for real: two runs that had actually failed (a 503
+/// from Gemini) showed up in telemetry as agent_task_completed, with no
+/// agent_task_failed anywhere — the exact case this list exists to catch.
+/// Matches ONLY these exact backend-authored fallback strings, never
+/// free-text guessing against a real answer, which the model could
+/// legitimately produce and must never get misclassified as a failure.
+const BACKEND_ERROR_ANSWERS = [
+    "Gemini API key not configured.",
+    "OpenAI API key not configured.",
+    "File access isn't set up yet — set POINTR_FS_ROOT_HOST in the project's .env to a real folder and restart the worker (docker compose up -d --build worker).",
+    "Something went wrong reading files for this task.",
+    "GitHub isn't connected yet — add a token in Settings.",
+    "Something went wrong checking GitHub for this task.",
+    "Web search isn't set up yet — add a Tavily API key in Settings.",
+    "Something went wrong searching the web for this task.",
+];
+function isBackendErrorAnswer(answerText) {
+    if (typeof answerText !== 'string') return false;
+    return /^Error communicating with (Gemini|OpenAI):/.test(answerText) || BACKEND_ERROR_ANSWERS.includes(answerText);
+}
+
+/// Provider + model chosen in Settings, plus the OpenAI key only when OpenAI
+/// is the provider — spread into every agent request body. On failure the
+/// fields are simply left out and the backend uses Gemini defaults.
+async function llmRequestFields() {
+    try {
+        return await invoke('get_llm_request_fields');
+    } catch (e) {
+        console.error('Failed to read model settings:', e);
+        return {};
+    }
+}
+
+/// Outcome of a plain question (not an agent: task, which reports its own
+/// events). `mode` is one of 'direct' | 'region' | 'explain' — an enum, never
+/// any text. Covers both ways a plain ask can fail: the backend swallowing a
+/// Gemini error into the answer string (a 503 shows up as the answer itself,
+/// streamed into the tooltip), and a thrown exception (network down, etc.).
+/// The HTTP status inside "Error communicating with Gemini: 503 UNAVAILABLE..."
+/// (or the same shape from OpenAI),
+/// as a number (503, 429, 403...). Just the code, never the message text: it
+/// separates "Google is overloaded" from "quota hit" from "bad API key" —
+/// i.e. whether a failure is ours to fix — without sending anything free-form.
+function upstreamStatus(answerText) {
+    const m = typeof answerText === 'string'
+        ? /^Error communicating with (?:Gemini|OpenAI): (\d{3})\b/.exec(answerText)
+        : null;
+    return m ? Number(m[1]) : null;
+}
+
+function trackQueryOutcome(mode, outcome) {
+    if (outcome === 'exception') {
+        captureTelemetry('query_failed', { mode, reason: 'exception' });
+    } else if (isBackendErrorAnswer(outcome)) {
+        captureTelemetry('query_failed', { mode, reason: 'backend_error_answer', upstream_status: upstreamStatus(outcome) });
+    } else {
+        captureTelemetry('query_completed', { mode });
+    }
+}
+
+/// One-time opt-in prompt, shown before the first query box ever appears.
+/// Enter enables, Escape skips; either answer is remembered so this never
+/// asks twice. Fails closed and silently: if the setting can't be read or
+/// written, telemetry simply stays off.
+async function askTelemetryConsentIfNeeded() {
+    let alreadyAsked = true;
+    try {
+        alreadyAsked = await invoke('get_telemetry_prompt_shown');
+    } catch (e) {
+        console.error('[telemetry] Failed to read prompt state:', e);
+        return; // fail closed — don't prompt, don't enable
+    }
+    if (alreadyAsked) return;
+
+    const box = document.getElementById('telemetry-consent-box');
+    box.classList.remove('hidden');
+    // Same Escape-race handling as every other keypress gate in this file:
+    // disable the global Escape shortcut so only this listener can resolve.
+    await disableEscapeDismiss();
+
+    const enabled = await new Promise((resolve) => {
+        const onKey = (e) => {
+            if (e.key === 'Enter' || e.key === 'Escape') {
+                e.preventDefault();
+                document.removeEventListener('keydown', onKey);
+                resolve(e.key === 'Enter');
+            }
+        };
+        document.addEventListener('keydown', onKey);
+    });
+
+    box.classList.add('hidden');
+    await enableEscapeDismiss();
+
+    try {
+        await invoke('set_telemetry_enabled', { enabled });
+        await invoke('set_telemetry_prompt_shown', { shown: true });
+    } catch (e) {
+        console.error('[telemetry] Failed to persist consent choice:', e);
+    }
+}
+
 const AGENT_POLL_MAX_ATTEMPTS = 60;
 const AGENT_POLL_INTERVAL_MS = 1000;
 
@@ -677,6 +839,10 @@ async function runAgentTask(taskDescription) {
     } catch (e) {
         console.error("[agent] Failed to read Tavily key:", e);
     }
+    const llmFields = await llmRequestFields();
+
+    // Categorical only — never the task text itself. See telemetry.rs.
+    captureTelemetry('agent_task_started', {});
 
     const postRes = await fetch(`${API_BASE_URL}/api/agent/task`, {
         method: "POST",
@@ -688,7 +854,8 @@ async function runAgentTask(taskDescription) {
             screenshot_base64: screenshotBase64,
             github_token: githubToken,
             gemini_api_key: geminiApiKey,
-            tavily_api_key: tavilyApiKey
+            tavily_api_key: tavilyApiKey,
+            ...llmFields,
         })
     });
     const { task_id } = await postRes.json();
@@ -710,17 +877,25 @@ async function runAgentTask(taskDescription) {
                     console.error("Failed to write clipboard:", e);
                 }
             }
-            return {
+            const result = {
                 answer_text: statusData.result.result,
                 pointer_target: statusData.result.pointer_target,
                 proposed_action: statusData.result.proposed_action || null,
                 multi_step_plan: statusData.result.multi_step_plan || null
             };
+            if (isBackendErrorAnswer(result.answer_text)) {
+                captureTelemetry('agent_task_failed', { reason: 'backend_error_answer', upstream_status: upstreamStatus(result.answer_text) });
+            } else {
+                captureTelemetry('agent_task_completed', { capability: capabilityUsed(result) });
+            }
+            return result;
         } else if (statusData.status === "FAILURE") {
+            captureTelemetry('agent_task_failed', { reason: 'backend_failure' });
             throw new Error("Task failed: " + statusData.result);
         }
     }
 
+    captureTelemetry('agent_task_failed', { reason: 'timeout' });
     throw new Error(`Agent task timed out after ${AGENT_POLL_MAX_ATTEMPTS * AGENT_POLL_INTERVAL_MS / 1000}s`);
 }
 
@@ -834,6 +1009,100 @@ async function confirmProposedActionIfAny(action) {
 const MULTI_STEP_MAX_STEPS = 12;
 const MULTI_STEP_STEP_DELAY_MS = 900; // let the UI settle after an action before the next screenshot
 
+// Per-run step trace — no UI for this yet, but every decision the model makes
+// during a multi-step run (what it saw, what it chose, whether execution
+// actually succeeded) gets recorded here so a future panel (or devtools, for
+// now: window.pointrAgentTraces) can show/debug a run after the fact.
+// Screenshots make each run non-trivial in memory, so only the most recent
+// AGENT_TRACE_MAX_RUNS are kept.
+const AGENT_TRACE_MAX_RUNS = 5;
+const agentTraceLog = [];
+window.pointrAgentTraces = agentTraceLog;
+window.pointrLastAgentTrace = () => agentTraceLog[agentTraceLog.length - 1] || null;
+// Persisted (image-free) history, most recent first — for console testing
+// until a real history panel exists: window.pointrGetAgentHistory().then(console.table)
+window.pointrGetAgentHistory = () => invoke('get_agent_history');
+window.pointrClearAgentHistory = () => invoke('clear_agent_history');
+
+function startAgentTrace(taskDescription, plan) {
+    const trace = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        taskDescription,
+        plan: [...plan],
+        startedAt: new Date().toISOString(),
+        finishedAt: null,
+        finalAnswer: null,
+        stopReason: null, // 'done' | 'max_steps' | 'aborted' | 'screenshot_error' | 'network_error'
+        steps: [],
+    };
+    agentTraceLog.push(trace);
+    if (agentTraceLog.length > AGENT_TRACE_MAX_RUNS) agentTraceLog.shift();
+    return trace;
+}
+
+// Strips screenshots and normalizes to camelCase for the Rust side — the
+// in-memory trace above keeps screenshot_base64 for live devtools debugging,
+// but persisted history doesn't need the pixels, only what was decided and
+// whether it actually ran. Keeping images out of agent_history.json is what
+// keeps that file small enough to just always persist every run.
+function traceToHistoryRecord(trace) {
+    return {
+        id: trace.id,
+        taskDescription: trace.taskDescription,
+        plan: trace.plan,
+        startedAt: trace.startedAt,
+        finishedAt: trace.finishedAt,
+        finalAnswer: trace.finalAnswer,
+        stopReason: trace.stopReason,
+        steps: trace.steps.map((s) => ({
+            index: s.index,
+            decidedAt: s.decidedAt,
+            actionType: s.action_type,
+            description: s.description ?? null,
+            point: s.point ?? null,
+            text: s.text ?? null,
+            appName: s.app_name ?? null,
+            key: s.key ?? null,
+            button: s.button ?? null,
+            double: s.double ?? null,
+            direction: s.direction ?? null,
+            amount: s.amount ?? null,
+            waitMs: s.wait_ms ?? null,
+            url: s.url ?? null,
+            ref: s.ref ?? null,
+            browserSnapshotError: s.browserSnapshotError ?? null,
+            answerText: s.answer_text ?? null,
+            executed: s.executed,
+            executionError: s.executionError ?? null,
+        })),
+    };
+}
+
+function finishAgentTrace(trace, stopReason, finalAnswer) {
+    trace.finishedAt = new Date().toISOString();
+    trace.stopReason = stopReason;
+    trace.finalAnswer = finalAnswer;
+    console.log(`[agent-trace] run finished (${stopReason}, ${trace.steps.length} steps):`, trace);
+    invoke('save_agent_trace', { record: traceToHistoryRecord(trace) }).catch((e) => {
+        console.error('[agent-trace] failed to persist history:', e);
+    });
+    // Counts and an enum only — no step descriptions, text, or targets.
+    const failedSteps = trace.steps.filter((s) => s.executed === false || s.executionError).length;
+    captureTelemetry('multistep_run_completed', {
+        step_count: trace.steps.length,
+        aborted: stopReason === 'aborted',
+        ended_reason: stopReason === 'done' && failedSteps > 0 ? 'done_with_errors' : stopReason,
+        browser_used: trace.steps.some((s) => String(s.action_type || '').startsWith('browser_')),
+    });
+
+    // No-op in release builds (Rust side checks debug_assertions).
+    invoke('save_run_debug_screenshots', {
+        screenshots: trace.steps.map((s) => s.screenshot_base64 || null),
+    }).catch((e) => {
+        console.error('[agent-trace] failed to save debug screenshots:', e);
+    });
+}
+
 // Gate before a multi-step automation sequence runs — shows the model's
 // rough plan once (not per-step, tedious past 2-3 steps) and waits for a
 // real keypress, same confirm pattern as confirmProposedActionIfAny. Once
@@ -843,6 +1112,18 @@ const MULTI_STEP_STEP_DELAY_MS = 900; // let the UI settle after an action befor
 // No-op if there's no plan (the common case).
 async function runMultiStepLoop(taskDescription, plan) {
     if (!plan || !plan.length) return;
+
+    // A browser session (commands/browser.rs) is deliberately left open
+    // after a PAST run ends cleanly, so the user can actually see/use its
+    // result — but that means a fresh run has no local memory of it. Clear
+    // any such leftover here so a new task never silently inherits a
+    // stale, already-navigated browser from an unrelated earlier one.
+    // Best-effort: no session to close is the common case, not an error.
+    try {
+        await invoke('close_browser_session');
+    } catch (e) {
+        console.error('Failed to clear a leftover browser session:', e);
+    }
 
     try {
         const enabled = await invoke('get_os_actions_enabled');
@@ -906,10 +1187,12 @@ async function runMultiStepLoop(taskDescription, plan) {
     await appWindow.setIgnoreCursorEvents(true);
     await enableEscapeDismiss();
     const requestId = activeRequestId;
+    const trace = startAgentTrace(taskDescription, plan);
 
     progressPill.classList.remove('hidden');
     const completedSteps = [];
     let finalAnswer = null;
+    let stopReason = null;
 
     let geminiApiKey = "";
     try {
@@ -917,9 +1200,74 @@ async function runMultiStepLoop(taskDescription, plan) {
     } catch (e) {
         console.error('[multistep] Failed to read Gemini key:', e);
     }
+    const llmFields = await llmRequestFields();
+
+    // Detects the SAME action proposed back to back, by actual parameters —
+    // not by the model's own free-text description, which gets reworded
+    // every time even when the underlying action is identical (confirmed
+    // for real: 8 consecutive retypes of the same text, each phrased
+    // differently — "Type the identified IP address...", "Typing the
+    // identified IPv4 address...", none recognized by the model itself as
+    // a repeat of the last one). On detection, one corrective re-ask is
+    // attempted (see stuck_on_repeat below) before giving up.
+    //
+    // click gets its own comparison: Gemini's point estimate jitters a few
+    // units between repeated attempts at the same visual target instead of
+    // landing on the exact same [y, x] twice — confirmed for real, a run
+    // that clicked a LinkedIn shortcut 3 times at [226,792]/[227,792]/
+    // [226,792], never byte-identical, so exact-match comparison never
+    // caught it as a repeat and the corrective re-ask never fired. Distance
+    // within CLICK_REPEAT_DISTANCE (normalized 0-1000, same space as point)
+    // counts as "the same attempt" for every other action type; anything
+    // else still needs an exact match.
+    const CLICK_REPEAT_DISTANCE = 40;
+    let lastAction = null;
+    const actionSignature = (s) => JSON.stringify({
+        t: s.action_type, text: s.text || null, point: s.point || null,
+        app: s.app_name || null, key: s.key || null, button: s.button || null,
+        double: s.double || null, direction: s.direction || null, amount: s.amount || null,
+    });
+    const sameAction = (a, b) => {
+        if (!a || !b || a.action_type !== b.action_type) return false;
+        if (a.action_type === 'click') {
+            if ((a.button || 'left') !== (b.button || 'left')) return false;
+            if (!!a.double !== !!b.double) return false;
+            if (!Array.isArray(a.point) || !Array.isArray(b.point)) return false;
+            const dy = a.point[0] - b.point[0];
+            const dx = a.point[1] - b.point[1];
+            return Math.sqrt(dy * dy + dx * dx) <= CLICK_REPEAT_DISTANCE;
+        }
+        return actionSignature(a) === actionSignature(b);
+    };
+    // browser_open/browser_close are idempotent in Rust (start_browser_
+    // session is a no-op if a session's already open) — repeating either
+    // costs nothing, so they shouldn't count toward "stuck". Confirmed for
+    // real: the model proposed browser_open twice in a row (plan text
+    // still said "Open the Brave browser", a holdover from before this
+    // action existed) and the ONLY actual problem was the repeat-guard
+    // killing an otherwise-harmless run over it.
+    const EXEMPT_FROM_REPEAT_CHECK = new Set(['done', 'error', 'browser_open', 'browser_close']);
+
+    // Local Playwright browser session (commands/browser.rs) — spawned on
+    // the user's own machine so browser steps click by accessibility ref
+    // instead of guessed pixel coordinates. Tracked here so (a) the loop
+    // knows whether to fetch a browser_snapshot before each decision, and
+    // (b) the process actually gets torn down on every exit path, not just
+    // the happy one — a Chromium instance left running after an aborted or
+    // errored task would otherwise linger silently.
+    let browserSessionActive = false;
+    async function closeBrowserIfOpen() {
+        if (!browserSessionActive) return;
+        browserSessionActive = false;
+        try {
+            await invoke('close_browser_session');
+        } catch (e) {
+            console.error('Failed to close browser session:', e);
+        }
+    }
 
     for (let i = 0; i < MULTI_STEP_MAX_STEPS; i++) {
-        if (requestId !== activeRequestId) return; // aborted
+        if (requestId !== activeRequestId) { await closeBrowserIfOpen(); finishAgentTrace(trace, 'aborted', null); return; } // aborted
 
         progressText.textContent = `Step ${i + 1}: deciding…`;
 
@@ -929,7 +1277,32 @@ async function runMultiStepLoop(taskDescription, plan) {
         } catch (e) {
             console.error('Failed to capture screenshot for step:', e);
             finalAnswer = 'Lost track of the screen mid-task — stopping here.';
+            stopReason = 'screenshot_error';
             break;
+        }
+
+        // Supplements the pixel screenshot when a browser_open has already
+        // run this task — the backend folds it into the prompt as a
+        // ref-tagged element list, which is what lets browser_click/
+        // browser_type target exactly instead of guessing a coordinate.
+        // A failure here just means one step falls back to pixel clicking,
+        // not worth aborting the whole run over.
+        let browserSnapshot = null;
+        let browserSnapshotError = null;
+        if (browserSessionActive) {
+            try {
+                browserSnapshot = await invoke('browser_snapshot');
+            } catch (e) {
+                // Recorded onto the step below, not just console.error'd —
+                // this failing silently is exactly how a totally broken
+                // snapshot (a removed Playwright API) went unnoticed for
+                // the whole life of the feature: every browser run quietly
+                // degraded to pixel-guessing and the trace showed nothing
+                // wrong. A silent fallback that hides a dead feature is
+                // worse than a loud one.
+                browserSnapshotError = String(e);
+                console.error('Failed to capture browser snapshot:', e);
+            }
         }
 
         let step;
@@ -942,26 +1315,169 @@ async function runMultiStepLoop(taskDescription, plan) {
                     plan,
                     completed_steps: completedSteps,
                     screenshot_base64: screenshotBase64,
-                    gemini_api_key: geminiApiKey
+                    gemini_api_key: geminiApiKey,
+                    ...llmFields,
+                    browser_snapshot: browserSnapshot,
                 })
             });
             step = await res.json();
         } catch (e) {
             console.error('Step decision request failed:', e);
             finalAnswer = 'Lost connection while figuring out the next step — stopping here.';
+            stopReason = 'network_error';
             break;
         }
 
-        if (requestId !== activeRequestId) return; // aborted while awaiting
+        if (requestId !== activeRequestId) { await closeBrowserIfOpen(); finishAgentTrace(trace, 'aborted', null); return; } // aborted while awaiting
 
         console.log(`[multistep] step ${i + 1}:`, JSON.stringify(step));
 
-        if (step.action_type === 'done') {
-            finalAnswer = step.answer_text || 'Done.';
+        // Repeat detection + ONE active corrective re-ask, before checking
+        // action_type at all — a correction can itself resolve to done/error,
+        // so those checks run after this, against whatever `step` ends up
+        // being (original or corrected). This replaced a passive "count to
+        // 3 identical repeats then give up" — that let the model burn 2
+        // guaranteed-failing repeats before stopping, on the assumption it
+        // might self-correct on its own from the prompt's general "don't
+        // repeat" instruction. It doesn't, reliably (confirmed for real,
+        // repeatedly). Now it gets exactly one forceful, targeted nudge at
+        // the moment it's detected stuck, then stops if that doesn't help.
+        if (!EXEMPT_FROM_REPEAT_CHECK.has(step.action_type) && sameAction(step, lastAction)) {
+            progressText.textContent = 'Correcting course…';
+            let corrected = null;
+            try {
+                const res2 = await fetch(`${API_BASE_URL}/api/agent/step`, {
+                    method: "POST",
+                    headers: API_HEADERS,
+                    body: JSON.stringify({
+                        task_description: taskDescription,
+                        plan,
+                        completed_steps: completedSteps,
+                        screenshot_base64: screenshotBase64,
+                        gemini_api_key: geminiApiKey,
+                        ...llmFields,
+                        browser_snapshot: browserSnapshot,
+                        stuck_on_repeat: true,
+                    })
+                });
+                corrected = await res2.json();
+            } catch (e) {
+                console.error('Corrective re-ask failed:', e);
+            }
+
+            if (requestId !== activeRequestId) { await closeBrowserIfOpen(); finishAgentTrace(trace, 'aborted', null); return; }
+
+            if (corrected && corrected.action_type) {
+                if (corrected.action_type === 'done' || corrected.action_type === 'error' || !sameAction(corrected, step)) {
+                    console.log(`[multistep] step ${i + 1} corrected:`, JSON.stringify(corrected));
+                    step = corrected;
+                }
+                // else: proposed the exact same thing even after an explicit
+                // warning — genuinely stuck, falls through to the check below.
+            }
+        }
+
+        // Backend-synthesized only (agent.py's /step route) — a Gemini call
+        // failure or malformed response, never a real model decision. Was
+        // previously indistinguishable from "done" (same action_type),
+        // which showed a failed step as a green "Completed" run for real.
+        if (step.action_type === 'error') {
+            finalAnswer = step.answer_text || 'Something went wrong deciding the next step.';
+            stopReason = 'network_error';
+            trace.steps.push({
+                index: i + 1,
+                decidedAt: new Date().toISOString(),
+                action_type: 'error',
+                description: step.description || null,
+                answer_text: step.answer_text || null,
+                screenshot_base64: screenshotBase64,
+                executed: false,
+                executionError: step.answer_text || null,
+            });
             break;
         }
 
+        if (step.action_type === 'done') {
+            // The model occasionally emits a stray JSON-shaped string here
+            // instead of a real sentence (seen for real: answer_text that
+            // was itself another action's JSON, echoed back malformed) —
+            // showing that verbatim looks broken. Raw value still goes into
+            // the trace for debugging; only the user-facing text is cleaned.
+            const rawAnswer = typeof step.answer_text === 'string' ? step.answer_text.trim() : '';
+            const looksLikeStrayJson = rawAnswer.startsWith('{') && rawAnswer.endsWith('}');
+            finalAnswer = (rawAnswer && !looksLikeStrayJson)
+                ? rawAnswer
+                : "Done, but the model's summary came back malformed — check the result directly.";
+            stopReason = 'done';
+            trace.steps.push({
+                index: i + 1,
+                decidedAt: new Date().toISOString(),
+                action_type: 'done',
+                description: step.description || null,
+                answer_text: step.answer_text || null,
+                screenshot_base64: screenshotBase64,
+                executed: true,
+                executionError: null,
+            });
+            break;
+        }
+
+        if (!EXEMPT_FROM_REPEAT_CHECK.has(step.action_type) && sameAction(step, lastAction)) {
+            // Either the guard above didn't apply (shouldn't happen given
+            // the check that gates it) or the corrective re-ask still came
+            // back identical (or, for click, still within the same
+            // near-miss cluster) — genuinely stuck, not just transiently
+            // repeating. Stop instead of burning the rest of the budget.
+            finalAnswer = `Stuck repeating the same action ("${step.description || step.action_type}") even after a corrective retry — stopping instead of wasting the remaining steps.`;
+            stopReason = 'stuck_repeating';
+            trace.steps.push({
+                index: i + 1,
+                decidedAt: new Date().toISOString(),
+                action_type: step.action_type,
+                description: step.description || null,
+                point: step.point || null,
+                text: step.text || null,
+                app_name: step.app_name || null,
+                key: step.key || null,
+                button: step.button || null,
+                double: step.double || null,
+                direction: step.direction || null,
+                amount: step.amount || null,
+                wait_ms: step.wait_ms || null,
+                url: step.url || null,
+                ref: step.ref || null,
+                screenshot_base64: screenshotBase64,
+                executed: false,
+                executionError: 'Skipped — identical to the previous action even after a corrective retry.',
+            });
+            break;
+        }
+        lastAction = step;
+
         progressText.textContent = step.description || `Step ${i + 1}…`;
+
+        const stepRecord = {
+            index: i + 1,
+            decidedAt: new Date().toISOString(),
+            action_type: step.action_type,
+            description: step.description || null,
+            point: step.point || null,
+            text: step.text || null,
+            app_name: step.app_name || null,
+            key: step.key || null,
+            button: step.button || null,
+            double: step.double || null,
+            direction: step.direction || null,
+            amount: step.amount || null,
+            wait_ms: step.wait_ms || null,
+            url: step.url || null,
+            ref: step.ref || null,
+            browserSnapshotError,
+            screenshot_base64: screenshotBase64,
+            executed: false,
+            executionError: null,
+        };
+        trace.steps.push(stepRecord);
 
         try {
             if (step.action_type === 'click' && step.point) {
@@ -969,7 +1485,7 @@ async function runMultiStepLoop(taskDescription, plan) {
                 // convention already validated in storyboard mode.
                 const yNorm = step.point[0] / 1000;
                 const xNorm = step.point[1] / 1000;
-                await invoke('execute_click', { xNorm, yNorm });
+                await invoke('execute_click', { xNorm, yNorm, button: step.button || null, double: step.double || false });
             } else if (step.action_type === 'type_text' && step.text) {
                 // false: don't restore the pre-hotkey window's focus — this
                 // step should type into whatever the sequence itself just
@@ -980,9 +1496,27 @@ async function runMultiStepLoop(taskDescription, plan) {
                 await invoke('execute_open_app', { appName: step.app_name });
             } else if (step.action_type === 'key_press' && step.key) {
                 await invoke('execute_key_press', { key: step.key });
+            } else if (step.action_type === 'scroll' && step.direction) {
+                await invoke('execute_scroll', { direction: step.direction, amount: step.amount || null });
+            } else if (step.action_type === 'wait') {
+                // No Rust call — the pause itself happens below via settleMs.
+            } else if (step.action_type === 'browser_open') {
+                await invoke('start_browser_session');
+                browserSessionActive = true;
+            } else if (step.action_type === 'browser_navigate' && step.url) {
+                await invoke('browser_navigate', { url: step.url });
+            } else if (step.action_type === 'browser_click' && step.ref) {
+                await invoke('browser_click', { reference: step.ref });
+            } else if (step.action_type === 'browser_type' && step.ref) {
+                await invoke('browser_type', { reference: step.ref, text: step.text || '' });
+            } else if (step.action_type === 'browser_close') {
+                await invoke('close_browser_session');
+                browserSessionActive = false;
             }
+            stepRecord.executed = true;
         } catch (e) {
             console.error('Step execution failed:', e);
+            stepRecord.executionError = String(e);
         }
 
         completedSteps.push(step.description || step.action_type);
@@ -992,18 +1526,36 @@ async function runMultiStepLoop(taskDescription, plan) {
         // menu, mid-launch), which made the model think the open failed and
         // repeat it. Rust's execute_open_app also grew its own internal
         // settle time; this is on top of that, before the NEXT step's
-        // screenshot is taken.
-        const settleMs = step.action_type === 'open_app' ? 2200 : MULTI_STEP_STEP_DELAY_MS;
+        // screenshot is taken. 'wait' honors the model's own requested
+        // duration (clamped 300-3000ms server-side already) instead of the
+        // default settle time.
+        const settleMs = step.action_type === 'open_app'
+            ? 2200
+            : step.action_type === 'wait'
+                ? (step.wait_ms || 1000)
+                : MULTI_STEP_STEP_DELAY_MS;
         await new Promise((r) => setTimeout(r, settleMs));
     }
 
-    if (requestId !== activeRequestId) return; // aborted during the final delay
+    if (requestId !== activeRequestId) { await closeBrowserIfOpen(); finishAgentTrace(trace, 'aborted', null); return; } // aborted during the final delay
 
+    // Deliberately NOT closing the browser here for done/max_steps/
+    // stuck_repeating/error — confirmed for real: a task whose whole point
+    // was "open a browser and show me Wikipedia" had its browser closed
+    // out from under it the instant "done" fired, destroying the actual
+    // deliverable. Only a genuine mid-run abort (the four spots above,
+    // where the user cancelled the automation itself) should force-close;
+    // every other ending leaves the window open for the user to see or
+    // keep using. A stray leftover session from a PAST run is instead
+    // cleaned up at the START of the next one (see the top of this
+    // function), so nothing leaks across unrelated tasks either.
     progressPill.classList.add('hidden');
 
     if (!finalAnswer) {
         finalAnswer = `Stopped after ${MULTI_STEP_MAX_STEPS} steps without finishing — try a narrower request.`;
+        stopReason = stopReason || 'max_steps';
     }
+    finishAgentTrace(trace, stopReason || 'max_steps', finalAnswer);
 
     // No TTS narration for the multi-step summary yet — deliberate v1 scope
     // cut, not an oversight; text-only final answer, same dismiss-timing
@@ -1046,11 +1598,13 @@ btnSubmit.addEventListener('click', async () => {
             agentTaskDescription = agentMatch[1] || "Analyze this UI area for agent actions";
             response = await runAgentTask(agentTaskDescription);
         } else {
+            captureTelemetry('region_select_used', {});
             response = await invoke('process_crop', {
                 rect,
                 query: rawQuery || null,
                 requestId: String(requestId)
             });
+            trackQueryOutcome('region', response.answer_text);
         }
 
         if (requestId !== activeRequestId) return; // superseded while we were waiting

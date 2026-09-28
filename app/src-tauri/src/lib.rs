@@ -263,6 +263,7 @@ pub fn run() {
         }))
         .manage(Mutex::new(SessionState::new()))
         .manage(commands::tts::TtsState::new())
+        .manage(Mutex::new(None::<commands::browser::BrowserSession>))
         .invoke_handler(tauri::generate_handler![
             api_config::get_api_config,
             trigger_capture,
@@ -295,12 +296,36 @@ pub fn run() {
             commands::settings::get_tavily_key_status,
             commands::settings::clear_tavily_key,
             commands::settings::get_tavily_key_for_request,
+            commands::settings::save_openai_key,
+            commands::settings::get_openai_key_status,
+            commands::settings::clear_openai_key,
+            commands::settings::get_model_settings,
+            commands::settings::set_llm_provider,
+            commands::settings::set_llm_model,
+            commands::settings::get_llm_request_fields,
+            commands::settings::list_models,
             commands::actions::execute_type_text,
             commands::actions::execute_open_app,
             commands::actions::execute_click,
             commands::actions::execute_key_press,
+            commands::actions::execute_scroll,
             commands::update::check_for_update,
             commands::update::open_release_page,
+            commands::history::save_agent_trace,
+            commands::history::get_agent_history,
+            commands::history::clear_agent_history,
+            commands::history::save_run_debug_screenshots,
+            commands::settings::get_telemetry_enabled,
+            commands::settings::set_telemetry_enabled,
+            commands::settings::get_telemetry_prompt_shown,
+            commands::settings::set_telemetry_prompt_shown,
+            commands::telemetry::capture_telemetry_event,
+            commands::browser::start_browser_session,
+            commands::browser::browser_navigate,
+            commands::browser::browser_snapshot,
+            commands::browser::browser_click,
+            commands::browser::browser_type,
+            commands::browser::close_browser_session,
             enable_escape_dismiss,
             disable_escape_dismiss
         ])
@@ -354,8 +379,9 @@ pub fn run() {
             use tauri::tray::TrayIconBuilder;
 
             let settings_item = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
+            let history_item = MenuItem::with_id(app, "history", "Agent History...", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit Pointr", true, None::<&str>)?;
-            let tray_menu = Menu::with_items(app, &[&settings_item, &quit_item])?;
+            let tray_menu = Menu::with_items(app, &[&settings_item, &history_item, &quit_item])?;
 
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -363,6 +389,12 @@ pub fn run() {
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "settings" => {
                         if let Some(win) = app.get_webview_window("settings") {
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        }
+                    }
+                    "history" => {
+                        if let Some(win) = app.get_webview_window("history") {
                             let _ = win.show();
                             let _ = win.set_focus();
                         }
@@ -383,6 +415,14 @@ mod dpi_tests {
     use super::*;
     use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
 
+    // The OS cursor is global state, so any two tests that move it will
+    // fight if cargo runs them in parallel — which is exactly what
+    // happened: this test's (0.25, 0.6) target showed up as a bogus
+    // "landed" reading inside the click-coordinate test. Both lock this
+    // before touching the cursor. Poisoning is ignored deliberately: a
+    // panic in one cursor test shouldn't cascade into failing the other.
+    pub(crate) static CURSOR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     /// Regression test for the DPI-awareness bug: moves the real system
     /// cursor to known fractional positions on the current monitor (whatever
     /// DPI scaling this machine actually has) and asserts our own
@@ -393,6 +433,7 @@ mod dpi_tests {
     /// scale-factor ratio (e.g. ~0.8x at 125%) — well outside the tolerance.
     #[test]
     fn cursor_normalization_matches_at_current_dpi_scaling() {
+        let _guard = CURSOR_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         set_dpi_awareness();
 
         let (_, monitor) = capture::cursor::get_cursor_and_monitor()

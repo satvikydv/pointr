@@ -5,6 +5,8 @@ const toggleTrack = document.getElementById('toggle-track');
 const toggleKnob = document.getElementById('toggle-knob');
 const osToggleTrack = document.getElementById('os-toggle-track');
 const osToggleKnob = document.getElementById('os-toggle-knob');
+const telemetryToggleTrack = document.getElementById('telemetry-toggle-track');
+const telemetryToggleKnob = document.getElementById('telemetry-toggle-knob');
 const voiceSection = document.getElementById('voice-section');
 const voiceTrigger = document.getElementById('voice-trigger');
 const voiceTriggerLabel = document.getElementById('voice-trigger-label');
@@ -26,6 +28,9 @@ const btnGithubDisconnect = document.getElementById('btn-github-disconnect');
 const state = {
     audioOn: true,
     osActionsOn: true,
+    // Opt-in: mirrors the Rust default, and stays false if the real value
+    // can't be read (fail closed, same as the capture path itself).
+    telemetryOn: false,
     voices: [], // {id, display_name, language}
     selectedId: null,
     savedId: null,
@@ -45,7 +50,7 @@ let playTimer = null;
 // one generic setup function instead of duplicating connect/disconnect/
 // status logic per key. Each section gets its own state.<prefix>Connected/
 // state.<prefix>Busy fields, rendered generically in render() below.
-function wireKeySection(prefix, { saveCmd, statusCmd, clearCmd }) {
+function wireKeySection(prefix, { saveCmd, statusCmd, clearCmd, onChange }) {
     const connectedRow = document.getElementById(`${prefix}-connected-row`);
     const keyRow = document.getElementById(`${prefix}-key-row`);
     const input = document.getElementById(`${prefix}-key-input`);
@@ -74,6 +79,7 @@ function wireKeySection(prefix, { saveCmd, statusCmd, clearCmd }) {
         }
         state[busyKey] = false;
         render();
+        if (onChange) onChange();
         clearTimeout(statusTimer);
         statusTimer = setTimeout(() => {
             state.statusText = '';
@@ -89,6 +95,7 @@ function wireKeySection(prefix, { saveCmd, statusCmd, clearCmd }) {
         }
         state[connectedKey] = false;
         render();
+        if (onChange) onChange();
     });
 
     return {
@@ -104,9 +111,156 @@ function wireKeySection(prefix, { saveCmd, statusCmd, clearCmd }) {
 }
 
 const keySections = [
-    wireKeySection('gemini', { saveCmd: 'save_gemini_key', statusCmd: 'get_gemini_key_status', clearCmd: 'clear_gemini_key' }),
+    wireKeySection('gemini', {
+        saveCmd: 'save_gemini_key', statusCmd: 'get_gemini_key_status', clearCmd: 'clear_gemini_key',
+        onChange: () => loadModelList('gemini'),
+    }),
+    wireKeySection('openai', {
+        saveCmd: 'save_openai_key', statusCmd: 'get_openai_key_status', clearCmd: 'clear_openai_key',
+        onChange: () => loadModelList('openai'),
+    }),
     wireKeySection('tavily', { saveCmd: 'save_tavily_key', statusCmd: 'get_tavily_key_status', clearCmd: 'clear_tavily_key' }),
 ];
+
+// ---------------------------------------------------------------------
+// AI model: provider + model per provider. Rendered by renderModel(), not
+// render(), since rebuilding the <select> on every render would close it
+// mid-pick.
+// ---------------------------------------------------------------------
+const providerButtons = document.querySelectorAll('#provider-picker button');
+const modelSelect = document.getElementById('model-select');
+const customModelRow = document.getElementById('custom-model-row');
+const customModelInput = document.getElementById('custom-model-input');
+const btnCustomModel = document.getElementById('btn-custom-model');
+const modelHint = document.getElementById('model-hint');
+const CUSTOM_OPTION = '__custom__';
+const PROVIDER_NAMES = { gemini: 'Gemini', openai: 'OpenAI' };
+
+const modelState = {
+    provider: 'gemini',
+    chosen: { gemini: '', openai: '' },
+    lists: { gemini: null, openai: null }, // {models, live} once loaded
+    customOpen: false,
+};
+
+function flashSaved() {
+    state.statusText = 'Saved.';
+    state.statusIsUnsaved = false;
+    render();
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => {
+        state.statusText = '';
+        render();
+    }, 2200);
+}
+
+function renderModel() {
+    const provider = modelState.provider;
+    for (const b of providerButtons) {
+        b.classList.toggle('active', b.dataset.provider === provider);
+    }
+
+    const chosen = modelState.chosen[provider];
+    const list = modelState.lists[provider];
+    const models = list ? [...list.models] : [];
+    // A custom pick (or one the live list doesn't include) still shows as
+    // the selected entry rather than silently displaying something else.
+    if (chosen && !models.includes(chosen)) models.unshift(chosen);
+
+    modelSelect.innerHTML = '';
+    for (const id of models) {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = id;
+        modelSelect.appendChild(opt);
+    }
+    const custom = document.createElement('option');
+    custom.value = CUSTOM_OPTION;
+    custom.textContent = 'Custom model ID…';
+    modelSelect.appendChild(custom);
+    modelSelect.value = modelState.customOpen ? CUSTOM_OPTION : chosen;
+
+    customModelRow.classList.toggle('hidden', !modelState.customOpen);
+    customModelInput.placeholder = provider === 'openai'
+        ? 'Any model ID, e.g. gpt-6-sol'
+        : 'Any model ID, e.g. gemini-3.5-flash';
+
+    const name = PROVIDER_NAMES[provider];
+    if (provider === 'openai' && !state.openaiConnected) {
+        modelHint.textContent = 'Connect an OpenAI key below to use OpenAI models. Until then, requests will fail with a missing key message.';
+    } else if (!list) {
+        modelHint.textContent = 'Loading models…';
+    } else if (list.live) {
+        modelHint.textContent = `Every ${name} model your key can use with screenshots.`;
+    } else {
+        modelHint.textContent = `Suggested ${name} models. Connect your own ${name} key below to list every model it can use.`;
+    }
+}
+
+async function loadModelList(provider) {
+    try {
+        modelState.lists[provider] = await invoke('list_models', { provider });
+    } catch (e) {
+        console.error(`Failed to list ${provider} models:`, e);
+        modelState.lists[provider] = { models: [], live: false };
+    }
+    if (provider === modelState.provider) renderModel();
+}
+
+async function saveModel(model) {
+    const provider = modelState.provider;
+    try {
+        await invoke('set_llm_model', { provider, model });
+        modelState.chosen[provider] = model;
+        modelState.customOpen = false;
+        flashSaved();
+    } catch (e) {
+        console.error('Failed to save model:', e);
+        state.statusText = `Failed to save: ${e}`;
+        state.statusIsUnsaved = true;
+        render();
+    }
+    renderModel();
+}
+
+for (const b of providerButtons) {
+    b.addEventListener('click', async () => {
+        const provider = b.dataset.provider;
+        if (provider === modelState.provider) return;
+        try {
+            await invoke('set_llm_provider', { provider });
+            modelState.provider = provider;
+            modelState.customOpen = false;
+            flashSaved();
+        } catch (e) {
+            console.error('Failed to save provider:', e);
+        }
+        renderModel();
+    });
+}
+
+modelSelect.addEventListener('change', () => {
+    if (modelSelect.value === CUSTOM_OPTION) {
+        modelState.customOpen = true;
+        customModelInput.value = '';
+        renderModel();
+        customModelInput.focus();
+        return;
+    }
+    saveModel(modelSelect.value);
+});
+
+btnCustomModel.addEventListener('click', () => {
+    const model = customModelInput.value.trim();
+    if (model) saveModel(model);
+});
+customModelInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') btnCustomModel.click();
+    if (e.key === 'Escape') {
+        modelState.customOpen = false;
+        renderModel();
+    }
+});
 
 function voiceLabel(voice) {
     return voice ? `${voice.display_name} (${voice.language})` : 'No voices found';
@@ -122,6 +276,9 @@ function render() {
     osToggleTrack.style.background = state.osActionsOn ? '#5b8cff' : 'rgba(255,255,255,0.12)';
     osToggleTrack.style.border = `1px solid ${state.osActionsOn ? '#5b8cff' : 'rgba(255,255,255,0.16)'}`;
     osToggleKnob.style.left = (state.osActionsOn ? 18 : 1) + 'px';
+    telemetryToggleTrack.style.background = state.telemetryOn ? '#5b8cff' : 'rgba(255,255,255,0.12)';
+    telemetryToggleTrack.style.border = `1px solid ${state.telemetryOn ? '#5b8cff' : 'rgba(255,255,255,0.16)'}`;
+    telemetryToggleKnob.style.left = (state.telemetryOn ? 18 : 1) + 'px';
 
     // Voice section disabled look when audio is off
     voiceSection.style.opacity = state.audioOn ? '1' : '0.45';
@@ -219,6 +376,19 @@ osToggleTrack.addEventListener('click', async () => {
         await invoke('set_os_actions_enabled', { enabled: state.osActionsOn });
     } catch (e) {
         console.error('Failed to save os-actions-enabled setting:', e);
+    }
+});
+
+telemetryToggleTrack.addEventListener('click', async () => {
+    state.telemetryOn = !state.telemetryOn;
+    render();
+    try {
+        await invoke('set_telemetry_enabled', { enabled: state.telemetryOn });
+        // Flipping this in Settings also counts as answering the one-time
+        // prompt, so it doesn't ask again afterwards.
+        await invoke('set_telemetry_prompt_shown', { shown: true });
+    } catch (e) {
+        console.error('Failed to save telemetry-enabled setting:', e);
     }
 });
 
@@ -320,6 +490,13 @@ async function init() {
     }
 
     try {
+        state.telemetryOn = await invoke('get_telemetry_enabled');
+    } catch (e) {
+        console.error('Failed to load telemetry-enabled setting:', e);
+        state.telemetryOn = false; // fail closed
+    }
+
+    try {
         state.githubConnected = await invoke('get_github_token_status');
     } catch (e) {
         console.error('Failed to load GitHub connection status:', e);
@@ -328,6 +505,18 @@ async function init() {
     for (const s of keySections) {
         await s.loadStatus();
     }
+
+    try {
+        const m = await invoke('get_model_settings');
+        modelState.provider = m.provider;
+        modelState.chosen = { gemini: m.gemini_model, openai: m.openai_model };
+    } catch (e) {
+        console.error('Failed to load model settings:', e);
+    }
+    renderModel();
+    // Not awaited: a slow provider must not hold up the rest of Settings.
+    loadModelList('gemini');
+    loadModelList('openai');
 
     try {
         const saved = await invoke('get_selected_voice');

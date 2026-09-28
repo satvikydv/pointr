@@ -16,4 +16,8 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    # Celery's default is 24h. A task result holds the answer and plan text,
+    # and the client polls for it for at most ~60s after submitting, so
+    # 5 minutes leaves generous headroom while keeping retention honest.
+    result_expires=300,
 )

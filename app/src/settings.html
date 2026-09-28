@@ -136,7 +136,8 @@
         color: rgba(255, 255, 255, 0.45);
       }
       #toggle-track,
-      #os-toggle-track {
+      #os-toggle-track,
+      #telemetry-toggle-track {
         width: 38px;
         height: 22px;
         border-radius: 11px;
@@ -146,7 +147,8 @@
         flex-shrink: 0;
       }
       #toggle-knob,
-      #os-toggle-knob {
+      #os-toggle-knob,
+      #telemetry-toggle-knob {
         position: absolute;
         top: 1px;
         width: 18px;
@@ -364,6 +366,49 @@
       .btn-key-disconnect:hover {
         color: rgba(255, 255, 255, 0.75);
       }
+      .segmented {
+        display: flex;
+        gap: 4px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 3px;
+        margin-bottom: 10px;
+      }
+      .segmented button {
+        flex: 1;
+        font-size: 12.5px;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.6);
+        background: transparent;
+        border: none;
+        border-radius: 6px;
+        padding: 7px 0;
+        cursor: pointer;
+      }
+      .segmented button.active {
+        color: #0b1220;
+        background: #5b8cff;
+      }
+      .model-select {
+        width: 100%;
+        box-sizing: border-box;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 9px 10px;
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.92);
+        font-family: 'Consolas', 'Segoe UI Mono', monospace;
+        cursor: pointer;
+      }
+      .model-select option {
+        background: #1c1e24;
+        color: rgba(255, 255, 255, 0.92);
+      }
+      #custom-model-row {
+        margin-top: 8px;
+      }
       .hidden {
         display: none !important;
       }
@@ -401,6 +446,16 @@
 
         <div class="divider"></div>
 
+        <div class="toggle-row">
+          <div class="toggle-title">Share anonymous usage data</div>
+          <div id="telemetry-toggle-track">
+            <div id="telemetry-toggle-knob"></div>
+          </div>
+        </div>
+        <div class="toggle-hint">Sends which features get used and when something errors, nothing else. No screenshots, queries, file contents, or tokens ever leave your machine. Off by default.</div>
+
+        <div class="divider"></div>
+
         <div id="voice-section">
           <div class="section-label">Narration voice</div>
           <div id="voice-picker-wrap">
@@ -410,6 +465,22 @@
             </div>
             <div id="voice-dropdown" class="hidden"></div>
           </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div id="model-section">
+          <div class="section-label">AI model</div>
+          <div class="segmented" id="provider-picker">
+            <button data-provider="gemini">Gemini</button>
+            <button data-provider="openai">OpenAI</button>
+          </div>
+          <select id="model-select" class="model-select"></select>
+          <div id="custom-model-row" class="key-row hidden">
+            <input id="custom-model-input" class="key-input" type="text" placeholder="Any model ID, e.g. gemini-3.5-flash" autocomplete="off" spellcheck="false" />
+            <button id="btn-custom-model" class="btn-key-connect">Use</button>
+          </div>
+          <div class="toggle-hint" id="model-hint">Loading models…</div>
         </div>
 
         <div class="divider"></div>
@@ -424,7 +495,22 @@
             <input id="gemini-key-input" class="key-input" type="password" placeholder="AIza… (from aistudio.google.com)" autocomplete="off" />
             <button id="btn-gemini-connect" class="btn-key-connect">Connect</button>
           </div>
-          <div class="toggle-hint">Required for Pointr to work — every request uses your own free Gemini API key, not a shared one. Stored encrypted on this device (DPAPI), never written anywhere else.</div>
+          <div class="toggle-hint">Used when the model provider is Gemini. Every request uses your own free Gemini API key, not a shared one. Stored encrypted on this device (DPAPI), never written anywhere else.</div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div id="openai-section">
+          <div class="section-label">OpenAI API key</div>
+          <div id="openai-connected-row" class="connected-row hidden">
+            <div class="connected-label"><span class="dot"></span>Connected</div>
+            <button id="btn-openai-disconnect" class="btn-key-disconnect">Disconnect</button>
+          </div>
+          <div id="openai-key-row" class="key-row">
+            <input id="openai-key-input" class="key-input" type="password" placeholder="sk-… (from platform.openai.com)" autocomplete="off" />
+            <button id="btn-openai-connect" class="btn-key-connect">Connect</button>
+          </div>
+          <div class="toggle-hint">Needed only when the model provider is OpenAI. Billed to your own OpenAI account. Stored encrypted on this device (DPAPI), never written anywhere else.</div>
         </div>
 
         <div class="divider"></div>

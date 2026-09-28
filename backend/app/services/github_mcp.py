@@ -19,7 +19,7 @@ update_pull_request, update_pull_request_branch.
 import asyncio
 from typing import Optional
 
-from google.genai import types
+from app.services.tool_loop import mcp_result_text, mcp_tool_specs, run_tool_loop
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
@@ -59,65 +59,36 @@ MAX_TOOL_CALL_STEPS = 8
 
 
 async def _run(
-    prompt: str, model: str, api_key: str, github_token: str, image_bytes: Optional[bytes] = None
+    prompt: str, model: str, api_key: str, github_token: str,
+    image_bytes: Optional[bytes] = None, provider: str = "gemini",
 ) -> str:
-    from google import genai
     import httpx2
 
-    client = genai.Client(api_key=api_key)
     http_client = httpx2.AsyncClient(headers={"Authorization": f"Bearer {github_token}"})
-
     async with streamable_http_client(GITHUB_MCP_URL, http_client=http_client) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools_result = await session.list_tools()
             gh_tools = [t for t in tools_result.tools if t.name in READ_ONLY_TOOLS]
 
-            gemini_tool = types.Tool(function_declarations=[
-                types.FunctionDeclaration(
-                    name=t.name,
-                    description=t.description,
-                    parameters_json_schema=t.input_schema,
-                )
-                for t in gh_tools
-            ])
-            config = types.GenerateContentConfig(tools=[gemini_tool])
-            initial_parts = [types.Part(text=prompt)]
-            if image_bytes:
-                initial_parts.append(types.Part.from_bytes(data=image_bytes, mime_type="image/png"))
-            contents = [types.Content(role="user", parts=initial_parts)]
+            async def execute(name: str, args: dict) -> str:
+                return mcp_result_text(await session.call_tool(name, args))
 
-            for _ in range(MAX_TOOL_CALL_STEPS):
-                response = await client.aio.models.generate_content(
-                    model=model, contents=contents, config=config,
-                )
-                fcs = response.function_calls
-                if not fcs:
-                    return response.text
-
-                contents.append(response.candidates[0].content)
-                response_parts = []
-                for fc in fcs:
-                    result = await session.call_tool(fc.name, fc.args or {})
-                    text_out = "\n".join(
-                        c.text for c in result.content if hasattr(c, "text")
-                    )
-                    response_parts.append(
-                        types.Part.from_function_response(
-                            name=fc.name, response={"result": text_out}
-                        )
-                    )
-                contents.append(types.Content(role="user", parts=response_parts))
-
-            return "I looked through GitHub but couldn't settle on an answer in time — try a more specific request."
+            return await run_tool_loop(
+                provider=provider, api_key=api_key, model=model, prompt=prompt,
+                image_bytes=image_bytes, tools=mcp_tool_specs(gh_tools), execute=execute,
+                max_steps=MAX_TOOL_CALL_STEPS,
+                exhausted_message="I looked through GitHub but couldn't settle on an answer in time — try a more specific request.",
+            )
 
 
 def run_agent_turn_with_github_sync(
-    prompt: str, model: str, api_key: str, github_token: str, image_bytes: Optional[bytes] = None
+    prompt: str, model: str, api_key: str, github_token: str,
+    image_bytes: Optional[bytes] = None, provider: str = "gemini",
 ) -> str:
     """Blocking entry point for the Celery task (plain sync context, no
     running event loop) — mirrors mcp_filesystem's sync wrapper."""
-    return asyncio.run(_run(prompt, model, api_key, github_token, image_bytes))
+    return asyncio.run(_run(prompt, model, api_key, github_token, image_bytes, provider))
 
 
 async def list_available_tools(github_token: str) -> list:

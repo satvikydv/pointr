@@ -1,0 +1,10 @@
+{
+  "name": "pointr-browser-driver",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Local Playwright driver spawned by the Pointr desktop app to run browser-based agent steps on the user's own machine, with a real visible browser window, instead of pixel-level clicks.",
+  "main": "browser-driver.js",
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}

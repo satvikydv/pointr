@@ -4,22 +4,28 @@ from google.genai import types
 from app.config import settings
 
 class GeminiService:
-    def __init__(self, api_key: str):
+    provider = "gemini"
+
+    def __init__(self, api_key: str, model: str | None = None):
         # Client() raises immediately if api_key is empty (unlike the old
         # google.generativeai SDK, which only failed on first actual call) —
         # keep the same "app starts fine, individual requests get a clear
         # message" behavior by not constructing it at all without a key.
         self.client = genai.Client(api_key=api_key) if api_key else None
+        # Chosen per request in Settings; falls back to the server default.
+        self.model = model or settings.gemini_model
 
-    async def analyze(self, image_bytes: bytes, prompt: str) -> str:
+    async def analyze(self, image_bytes: bytes, prompt: str, json_mode: bool = False) -> str:
         if not self.client:
             return "Gemini API key not configured."
 
         try:
             image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/png")
+            config = types.GenerateContentConfig(response_mime_type="application/json") if json_mode else None
             response = await self.client.aio.models.generate_content(
-                model=settings.gemini_model,
+                model=self.model,
                 contents=[prompt, image_part],
+                config=config,
             )
             return response.text
         except Exception as e:
@@ -51,7 +57,7 @@ class GeminiService:
                     tools=[types.Tool(google_search=types.GoogleSearch())]
                 )
             response = self.client.models.generate_content(
-                model=settings.gemini_model,
+                model=self.model,
                 contents=[prompt],
                 config=config,
             )
@@ -80,7 +86,7 @@ class GeminiService:
                 )
             image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/png")
             response = self.client.models.generate_content(
-                model=settings.gemini_model,
+                model=self.model,
                 contents=[prompt, image_part],
                 config=config,
             )
@@ -104,9 +110,9 @@ class GeminiService:
         start = time.monotonic()
         try:
             image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/png")
-            print(f"[gemini] calling generate_content_stream, image={len(image_bytes)} bytes, model={settings.gemini_model}")
+            print(f"[gemini] calling generate_content_stream, image={len(image_bytes)} bytes, model={self.model}")
             response_stream = await self.client.aio.models.generate_content_stream(
-                model=settings.gemini_model,
+                model=self.model,
                 contents=[prompt, image_part],
             )
             print(f"[gemini] generate_content_stream returned after {time.monotonic() - start:.2f}s")
