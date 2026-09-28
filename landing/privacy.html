@@ -1,142 +1,185 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pointr - Privacy</title>
 <meta name="description" content="What Pointr keeps on your computer, what leaves it and where it goes, and what its server holds. No accounts, no database of your data.">
-<style>
-body { margin: 0; background: #0a0e16; }
-a { color: #8fb4ff; text-decoration: none; }
-a:hover { color: #b7cdff; }
-.page { width:100%; min-height:100vh; background:radial-gradient(ellipse 900px 560px at 50% -8%,rgba(91,140,255,0.12),transparent 60%),linear-gradient(175deg,#0a0e16 0%,#0d1220 40%,#0a0e16 100%); font-family:'Segoe UI Variable','Segoe UI',system-ui,sans-serif; color:rgba(255,255,255,0.92); }
-.topbar { position:sticky; top:0; z-index:50; display:flex; align-items:center; justify-content:space-between; padding:18px 56px; background:rgba(10,14,22,0.55); backdrop-filter:blur(20px) saturate(140%); border-bottom:1px solid rgba(255,255,255,0.06); }
-.topnav { display:flex; align-items:center; gap:36px; }
-.topnav a { font-size:13.5px; color:rgba(255,255,255,0.6); }
-.topnav .here { font-size:13.5px; color:rgba(255,255,255,0.95); font-weight:600; }
-.wrap { max-width:720px; margin:0 auto; padding:64px 24px 140px; display:flex; flex-direction:column; gap:64px; }
-h1 { font-size:36px; font-weight:700; letter-spacing:-0.01em; margin:0 0 16px; }
-h2 { font-size:24px; font-weight:600; margin:0 0 14px; }
-.lead { font-size:16px; line-height:1.65; color:rgba(255,255,255,0.6); max-width:600px; }
-p { font-size:14.5px; line-height:1.65; color:rgba(255,255,255,0.6); margin:0 0 14px; max-width:640px; }
-.updated { font-size:12.5px; color:rgba(255,255,255,0.35); margin-top:14px; }
-.pts { display:flex; flex-direction:column; gap:10px; margin-top:24px; }
-.pt { display:flex; align-items:flex-start; gap:14px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:14px 16px; font-size:14.5px; line-height:1.55; color:rgba(255,255,255,0.75); }
-.pt .dot { width:6px; height:6px; border-radius:50%; background:#5B8CFF; margin-top:8px; flex-shrink:0; }
-.rows { display:flex; flex-direction:column; gap:1px; border-radius:12px; overflow:hidden; border:1px solid rgba(255,255,255,0.08); margin-top:6px; }
-.row { display:grid; grid-template-columns:1fr 1fr; gap:24px; padding:14px 18px; background:rgba(255,255,255,0.03); font-size:14px; line-height:1.55; color:rgba(255,255,255,0.7); }
-.row:nth-child(even) { background:rgba(255,255,255,0.015); }
-.row .what { color:rgba(255,255,255,0.9); font-weight:600; }
-.row .note { color:rgba(255,255,255,0.5); font-size:13px; }
-.mono { font-family:'Consolas','Segoe UI Mono',monospace; font-size:12.5px; color:rgba(255,255,255,0.85); background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.16); border-radius:5px; padding:2px 7px; }
-.foot { border-top:1px solid rgba(255,255,255,0.06); padding:36px 56px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; }
-@media (max-width:640px) { .topbar { padding:14px 20px; } .row { grid-template-columns:1fr; gap:6px; } .foot { padding:28px 20px; } }
-</style>
+<link rel="stylesheet" href="./style.css">
 </head>
 <body>
-<div class="page">
 
-  <div class="topbar">
-    <a href="./index.html" style="display:flex;align-items:center;gap:10px;">
-      <div style="width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#dce8ff,#5B8CFF 55%,#2c4a99 100%);box-shadow:0 0 10px rgba(91,140,255,0.6);"></div>
-      <div style="font-size:16px;font-weight:600;letter-spacing:0.01em;color:rgba(255,255,255,0.92);">Pointr</div>
+<div class="bg-canvas">
+
+  <!-- Fixed Unified Navbar -->
+  <header class="site-header">
+    <div class="nav-container">
+      <a href="./index.html" class="nav-brand" aria-label="Pointr Home">
+        <div class="brand-orb"></div>
+        <div class="brand-title">Pointr</div>
+      </a>
+
+      <!-- Desktop Nav -->
+      <nav class="nav-menu" aria-label="Main Navigation">
+        <a href="./index.html#features" class="nav-link">Features</a>
+        <a href="./index.html#changelog" class="nav-link">Changelog</a>
+        <a href="./setup.html" class="nav-link">Setup Guide</a>
+        <a href="./privacy.html" class="nav-link active">Privacy</a>
+      </nav>
+
+      <div class="nav-actions">
+        <div class="version-badge">
+          <div class="live-dot"></div>
+          v0.1.1
+        </div>
+        <a href="https://github.com/satvikydv/pointr/releases/download/v0.1.1/Pointr_0.1.1_x64-setup.exe" class="nav-cta-btn">
+          <div class="windows-grid-icon" style="width:13px;height:13px;">
+            <div></div><div></div><div></div><div></div>
+          </div>
+          <span>Download</span>
+        </a>
+        <button class="mobile-toggle" aria-label="Toggle navigation menu" aria-expanded="false">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Mobile Drawer -->
+  <div class="mobile-drawer" role="dialog" aria-modal="true" aria-label="Mobile Navigation Menu">
+    <a href="./index.html#features" class="mobile-nav-link">
+      <span>Features</span>
+      <span style="font-size:12px;opacity:0.4;">→</span>
     </a>
-    <div class="topnav">
-      <a href="./index.html#features">Features</a>
-      <a href="./index.html#changelog">Changelog</a>
-      <a href="./setup.html">Setup Guide</a>
-      <div class="here">Privacy</div>
+    <a href="./index.html#changelog" class="mobile-nav-link">
+      <span>Changelog</span>
+      <span style="font-size:12px;opacity:0.4;">→</span>
+    </a>
+    <a href="./setup.html" class="mobile-nav-link">
+      <span>Setup Guide</span>
+      <span style="font-size:12px;opacity:0.4;">→</span>
+    </a>
+    <a href="./privacy.html" class="mobile-nav-link active">
+      <span>Privacy</span>
+      <span style="font-size:12px;color:var(--accent-primary);">●</span>
+    </a>
+    <div class="mobile-drawer-bottom">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0 4px;">
+        <span style="font-size:13px;color:var(--text-muted);">Current Release</span>
+        <div class="version-badge">
+          <div class="live-dot"></div>
+          v0.1.1
+        </div>
+      </div>
+      <a href="https://github.com/satvikydv/pointr/releases/download/v0.1.1/Pointr_0.1.1_x64-setup.exe" class="nav-cta-btn">
+        <div class="windows-grid-icon">
+          <div></div><div></div><div></div><div></div>
+        </div>
+        <span>Download for Windows (x64)</span>
+      </a>
     </div>
   </div>
 
-  <div class="wrap">
+  <div class="page-content">
 
-    <div>
-      <h1>Privacy</h1>
-      <div class="lead">Pointr has no accounts, no sign-in, and no database of your data. This page says exactly what stays on your computer, what leaves it and where it goes, and what little our server holds while it works.</div>
-      <div class="pts">
-        <div class="pt"><div class="dot"></div><div>Pointr does not save your screenshots, questions, clipboard text, or answers on any server of ours.</div></div>
-        <div class="pt"><div class="dot"></div><div>Your API keys and tokens stay on your computer, encrypted with your Windows account.</div></div>
-        <div class="pt"><div class="dot"></div><div>Anonymous usage data is off unless you turn it on, and even then it never includes what you asked or what was on your screen.</div></div>
-        <div class="pt"><div class="dot"></div><div>Your requests do pass through to Google (and Tavily or GitHub if you connect them), so their terms apply too. Details below.</div></div>
+    <div class="privacy-wrap">
+
+      <div>
+        <h1 style="font-size:clamp(30px, 5vw, 38px);font-weight:700;letter-spacing:-0.02em;margin:0 0 16px;">Privacy</h1>
+        <p style="font-size:16px;line-height:1.65;color:var(--text-secondary);margin:0 0 28px;max-width:620px;">Pointr has no accounts, no sign-in, and no database of your data. This page says exactly what stays on your computer, what leaves it and where it goes, and what little our server holds while it works.</p>
+        
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <div class="privacy-point"><div style="width:6px;height:6px;border-radius:50%;background:#5B8CFF;margin-top:8px;flex-shrink:0;"></div><div>Pointr does not save your screenshots, questions, clipboard text, or answers on any server of ours.</div></div>
+          <div class="privacy-point"><div style="width:6px;height:6px;border-radius:50%;background:#5B8CFF;margin-top:8px;flex-shrink:0;"></div><div>Your API keys and tokens stay on your computer, encrypted with your Windows account.</div></div>
+          <div class="privacy-point"><div style="width:6px;height:6px;border-radius:50%;background:#5B8CFF;margin-top:8px;flex-shrink:0;"></div><div>Anonymous usage data is off unless you turn it on, and even then it never includes what you asked or what was on your screen.</div></div>
+          <div class="privacy-point"><div style="width:6px;height:6px;border-radius:50%;background:#5B8CFF;margin-top:8px;flex-shrink:0;"></div><div>Your requests do pass through to Google (and Tavily or GitHub if you connect them), so their terms apply too. Details below.</div></div>
+        </div>
+        <div style="font-size:12.5px;color:var(--text-muted);margin-top:16px;">Last updated 2026-09-23</div>
       </div>
-      <div class="updated">Last updated 2026-09-23</div>
-    </div>
 
-    <div id="on-your-computer">
-      <h2>What stays on your computer</h2>
-      <p>Pointr keeps a small folder of its own on your machine, and nothing in it is sent anywhere.</p>
-      <div class="rows">
-        <div class="row"><div class="what">Settings</div><div>Your voice choice and on/off switches, plus the random ID used only if you opt in to usage data.</div></div>
-        <div class="row"><div class="what">API keys and tokens</div><div>Gemini, OpenAI, Tavily and GitHub credentials, encrypted with Windows (DPAPI) so they only unlock under your Windows account. Copying the file to another machine or user gives you unreadable text.</div></div>
-        <div class="row"><div class="what">Agent history</div><div>Your last 50 multi-step runs: what you asked, the steps taken, any text it typed, and the final answer. No screenshots. Wipe it with "Clear history" in the History window.</div></div>
-        <div class="row"><div class="what">Browser component</div><div>The browser Pointr downloads the first time you run a browser task.</div></div>
+      <div id="on-your-computer">
+        <h2 style="font-size:24px;font-weight:600;margin:0 0 14px;">What stays on your computer</h2>
+        <p style="font-size:14.5px;line-height:1.65;color:var(--text-secondary);margin:0 0 14px;">Pointr keeps a small folder of its own on your machine, and nothing in it is sent anywhere.</p>
+        <div class="privacy-table">
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Settings</strong><div>Your voice choice and on/off switches, plus the random ID used only if you opt in to usage data.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">API keys and tokens</strong><div>Gemini, OpenAI, Tavily and GitHub credentials, encrypted with Windows (DPAPI) so they only unlock under your Windows account. Copying the file to another machine or user gives you unreadable text.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Agent history</strong><div>Your last 50 multi-step runs: what you asked, the steps taken, any text it typed, and the final answer. No screenshots. Wipe it with "Clear history" in the History window.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Browser component</strong><div>The browser Pointr downloads the first time you run a browser task.</div></div>
+        </div>
+        <p style="margin-top:16px;font-size:14px;color:var(--text-secondary);">To remove everything Pointr keeps locally, delete the folder <span style="font-family:var(--font-mono);font-size:12.5px;color:rgba(255,255,255,0.9);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 7px;">%APPDATA%\dev.pointr.app</span>.</p>
       </div>
-      <p style="margin-top:16px;">To remove everything Pointr keeps locally, delete the folder <span class="mono">%APPDATA%\dev.pointr.app</span>.</p>
-    </div>
 
-    <div id="leaves-your-computer">
-      <h2>What leaves your computer, and where it goes</h2>
-      <p>Pointr works by sending what it needs to answer you to a backend, which passes it to an AI model. The backend is hosted by the project, or you can run your own since the code is open source.</p>
-      <div class="rows">
-        <div class="row"><div><div class="what">Screenshot and your question</div></div><div>Sent with every question. On a multi-step task a fresh screenshot is sent before each step. They go to Pointr's backend, which forwards them to the AI provider you picked in Settings (Google Gemini or OpenAI) using your own API key. Your OpenAI key is only sent when OpenAI is the chosen provider.</div></div>
-        <div class="row"><div><div class="what">Clipboard text</div></div><div>Only for <span class="mono">agent:</span> tasks, sent along with the task so the agent can use it. Same path as above.</div></div>
-        <div class="row"><div><div class="what">Browser page details</div></div><div>During a browser task, the names of the buttons, links and fields on the page, and its address, are sent with each step so the model can pick what to click.</div></div>
-        <div class="row"><div><div class="what">Web search terms</div></div><div>Only if you connect Tavily and a task needs live information. Sent to Tavily through the backend using your key.</div></div>
-        <div class="row"><div><div class="what">GitHub requests</div></div><div>Only if you connect GitHub. Read-only requests using your token. Nothing is ever written back to GitHub.</div></div>
-        <div class="row"><div><div class="what">Update check</div></div><div>Pointr asks GitHub for the latest release number on start. It sends no personal information.</div></div>
-        <div class="row"><div><div class="what">Your API keys and GitHub token</div></div><div>Sent to the backend with each request only so it can call Google, Tavily or GitHub for you. They are used for that request and not stored.</div></div>
+      <div id="leaves-your-computer">
+        <h2 style="font-size:24px;font-weight:600;margin:0 0 14px;">What leaves your computer, and where it goes</h2>
+        <p style="font-size:14.5px;line-height:1.65;color:var(--text-secondary);margin:0 0 14px;">Pointr works by sending what it needs to answer you to a backend, which passes it to an AI model. The backend is hosted by the project, or you can run your own since the code is open source.</p>
+        <div class="privacy-table">
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Screenshot &amp; question</strong><div>Sent with every question. On a multi-step task a fresh screenshot is sent before each step. They go to Pointr's backend, which forwards them to the AI provider you picked in Settings (Google Gemini or OpenAI) using your own API key. Your OpenAI key is only sent when OpenAI is the chosen provider.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Clipboard text</strong><div>Only for <span style="font-family:var(--font-mono);font-size:12px;color:#8fb4ff;">agent:</span> tasks, sent along with the task so the agent can use it. Same path as above.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Browser page details</strong><div>During a browser task, the names of the buttons, links and fields on the page, and its address, are sent with each step so the model can pick what to click.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Web search terms</strong><div>Only if you connect Tavily and a task needs live information. Sent to Tavily through the backend using your key.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">GitHub requests</strong><div>Only if you connect GitHub. Read-only requests using your token. Nothing is ever written back to GitHub.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Update check</strong><div>Pointr asks GitHub for the latest release number on start. It sends no personal information.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Your API keys &amp; tokens</strong><div>Sent to the backend with each request only so it can call Google, Tavily or GitHub for you. They are used for that request and not stored.</div></div>
+        </div>
       </div>
-    </div>
 
-    <div id="server-holds">
-      <h2>What Pointr's server holds</h2>
-      <p>Nothing is written to a database, and the server's queue keeps no data on disk. What it does hold, and for how long:</p>
-      <div class="rows">
-        <div class="row"><div class="what">Screenshots, questions, clipboard text</div><div>In memory only, for as long as the request takes. Not saved.</div></div>
-        <div class="row"><div class="what">Task results</div><div>The answer and plan for an agent task wait in memory for 5 minutes so your app can pick them up, then expire.</div></div>
-        <div class="row"><div class="what">Short conversation memory</div><div>The last few questions and answers of a session, so follow-ups make sense. Kept in the server's memory only, never on disk, and cleared whenever the server restarts.</div></div>
-        <div class="row"><div class="what">Your IP address</div><div>Held in memory for about a minute to limit abuse (rate limiting), then dropped.</div></div>
-        <div class="row"><div class="what">Logs</div><div>Timings and error messages, such as how long a request took and whether it succeeded. Logs do not include your questions, screenshots, clipboard text, or answers, and are size-limited and rotated.</div></div>
+      <div id="server-holds">
+        <h2 style="font-size:24px;font-weight:600;margin:0 0 14px;">What Pointr's server holds</h2>
+        <p style="font-size:14.5px;line-height:1.65;color:var(--text-secondary);margin:0 0 14px;">Nothing is written to a database, and the server's queue keeps no data on disk. What it does hold, and for how long:</p>
+        <div class="privacy-table">
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Screenshots &amp; questions</strong><div>In memory only, for as long as the request takes. Not saved.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Task results</strong><div>The answer and plan for an agent task wait in memory for 5 minutes so your app can pick them up, then expire.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Short conversation memory</strong><div>The last few questions and answers of a session, so follow-ups make sense. Kept in the server's memory only, never on disk, and cleared whenever the server restarts.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Your IP address</strong><div>Held in memory for about a minute to limit abuse (rate limiting), then dropped.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Logs</strong><div>Timings and error messages, such as how long a request took and whether it succeeded. Logs do not include your questions, screenshots, clipboard text, or answers, and are size-limited and rotated.</div></div>
+        </div>
+        <p style="margin-top:16px;font-size:14px;color:var(--text-secondary);">Like any web service, the infrastructure it runs on (hosting, DNS, certificates) necessarily sees standard connection details such as IP addresses. Pointr does not use them for anything.</p>
       </div>
-      <p style="margin-top:16px;">Like any web service, the infrastructure it runs on (hosting, DNS, certificates) necessarily sees standard connection details such as IP addresses. Pointr does not use them for anything.</p>
-    </div>
 
-    <div id="third-parties">
-      <h2>Third parties</h2>
-      <p><span style="color:rgba(255,255,255,0.9);font-weight:600;">Google (Gemini).</span> Your screenshots and questions reach Google's Gemini API under your own API key. How Google handles that content depends on your key's plan, and its terms differ between free and paid use. Read <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener">Google's Gemini API terms</a> for your tier before using Pointr with anything sensitive.</p>
-      <p><span style="color:rgba(255,255,255,0.9);font-weight:600;">OpenAI (if you choose it).</span> If you switch the provider to OpenAI in Settings, your screenshots and questions go to OpenAI's API under your own key instead of Google's. Pointr asks OpenAI not to store its responses (the API's store option is turned off). See <a href="https://openai.com/policies/privacy-policy/" target="_blank" rel="noopener">OpenAI's privacy policy</a> and its API data controls for how it treats API traffic.</p>
-      <p><span style="color:rgba(255,255,255,0.9);font-weight:600;">Tavily and GitHub.</span> Only used if you connect them, and only for the requests described above. Their own policies apply to what they receive.</p>
-      <p><span style="color:rgba(255,255,255,0.9);font-weight:600;">PostHog.</span> Receives anonymous usage data, and only if you opt in. See below.</p>
-    </div>
-
-    <div id="usage-data">
-      <h2>Anonymous usage data (optional)</h2>
-      <p>Pointr asks once, the first time you use it, and the default is off. You can change your answer any time in Settings under "Share anonymous usage data".</p>
-      <div class="rows">
-        <div class="row"><div class="what">If you turn it on, sent</div><div>Which features get used, how many steps a task took, how it ended (finished, stopped, or errored), the Pointr version, your Windows build number, and a random ID made on your computer that isn't linked to you. Pointr also tells the analytics service not to record your IP address or location.</div></div>
-        <div class="row"><div class="what">Never sent, on or off</div><div>Screenshots, your questions or task text, clipboard contents, file names or contents, Pointr's answers, and API keys or tokens.</div></div>
-        <div class="row"><div class="what">Where it goes</div><div>PostHog, a product analytics service. See <a href="https://posthog.com/privacy" target="_blank" rel="noopener">PostHog's privacy policy</a>.</div></div>
+      <div id="third-parties">
+        <h2 style="font-size:24px;font-weight:600;margin:0 0 14px;">Third parties</h2>
+        <p style="font-size:14.5px;line-height:1.65;color:var(--text-secondary);margin:0 0 12px;"><strong style="color:rgba(255,255,255,0.95);">Google (Gemini).</strong> Your screenshots and questions reach Google's Gemini API under your own API key. How Google handles that content depends on your key's plan, and its terms differ between free and paid use. Read <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener">Google's Gemini API terms</a> for your tier before using Pointr with anything sensitive.</p>
+        <p style="font-size:14.5px;line-height:1.65;color:var(--text-secondary);margin:0 0 12px;"><strong style="color:rgba(255,255,255,0.95);">OpenAI (if you choose it).</strong> If you switch the provider to OpenAI in Settings, your screenshots and questions go to OpenAI's API under your own key instead of Google's. Pointr asks OpenAI not to store its responses (the API's store option is turned off). See <a href="https://openai.com/policies/privacy-policy/" target="_blank" rel="noopener">OpenAI's privacy policy</a> and its API data controls for how it treats API traffic.</p>
+        <p style="font-size:14.5px;line-height:1.65;color:var(--text-secondary);margin:0 0 12px;"><strong style="color:rgba(255,255,255,0.95);">Tavily and GitHub.</strong> Only used if you connect them, and only for the requests described above. Their own policies apply to what they receive.</p>
+        <p style="font-size:14.5px;line-height:1.65;color:var(--text-secondary);margin:0 0 12px;"><strong style="color:rgba(255,255,255,0.95);">PostHog.</strong> Receives anonymous usage data, and only if you opt in. See below.</p>
       </div>
-      <p style="margin-top:16px;">The random ID resets if you delete the settings file, and turning the option off stops anything further from being sent.</p>
-    </div>
 
-    <div id="your-control">
-      <h2>You're in control</h2>
-      <p>Turn usage data off in Settings, clear your history in the History window, disconnect any key from Settings, or delete the local folder to remove everything Pointr keeps. Pointr is open source under the AGPL-3.0, so you can read exactly what it does, or run your own backend instead of the hosted one.</p>
-      <p>Questions or concerns? Open an issue at <a href="https://github.com/satvikydv/pointr/issues" target="_blank" rel="noopener">github.com/satvikydv/pointr</a>.</p>
+      <div id="usage-data">
+        <h2 style="font-size:24px;font-weight:600;margin:0 0 14px;">Anonymous usage data (optional)</h2>
+        <p style="font-size:14.5px;line-height:1.65;color:var(--text-secondary);margin:0 0 14px;">Pointr asks once, the first time you use it, and the default is off. You can change your answer any time in Settings under "Share anonymous usage data".</p>
+        <div class="privacy-table">
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">If you turn it on, sent</strong><div>Which features get used, how many steps a task took, how it ended (finished, stopped, or errored), the Pointr version, your Windows build number, and a random ID made on your computer that isn't linked to you. Pointr also tells the analytics service not to record your IP address or location.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Never sent, on or off</strong><div>Screenshots, your questions or task text, clipboard contents, file names or contents, Pointr's answers, and API keys or tokens.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Where it goes</strong><div>PostHog, a product analytics service. See <a href="https://posthog.com/privacy" target="_blank" rel="noopener">PostHog's privacy policy</a>.</div></div>
+        </div>
+        <p style="margin-top:16px;font-size:14px;color:var(--text-secondary);">The random ID resets if you delete the settings file, and turning the option off stops anything further from being sent.</p>
+      </div>
+
+      <div id="your-control">
+        <h2 style="font-size:24px;font-weight:600;margin:0 0 14px;">You're in control</h2>
+        <p style="font-size:14.5px;line-height:1.65;color:var(--text-secondary);margin:0 0 12px;">Turn usage data off in Settings, clear your history in the History window, disconnect any key from Settings, or delete the local folder to remove everything Pointr keeps. Pointr is open source under the AGPL-3.0, so you can read exactly what it does, or run your own backend instead of the hosted one.</p>
+        <p style="font-size:14.5px;line-height:1.65;color:var(--text-secondary);margin:0 0 12px;">Questions or concerns? Open an issue at <a href="https://github.com/satvikydv/pointr/issues" target="_blank" rel="noopener">github.com/satvikydv/pointr</a>.</p>
+      </div>
+
     </div>
 
   </div>
 
-  <div class="foot">
-    <div style="display:flex;align-items:center;gap:8px;">
-      <div style="width:10px;height:10px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#dce8ff,#5B8CFF 55%,#2c4a99 100%);"></div>
-      <div style="font-size:13px;color:rgba(255,255,255,0.45);">Pointr - built for Windows.</div>
+  <!-- Unified Footer -->
+  <footer class="site-footer">
+    <div class="footer-container">
+      <div class="footer-brand">
+        <div class="footer-orb"></div>
+        <div class="footer-tagline">Pointr - built for Windows.</div>
+      </div>
+      <div class="footer-copy">© 2026 Pointr</div>
     </div>
-    <div style="font-family:'Consolas','Segoe UI Mono',monospace;font-size:12px;color:rgba(255,255,255,0.3);">© 2026 Pointr</div>
-  </div>
+  </footer>
 
 </div>
+
+<script src="./nav.js"></script>
 </body>
 </html>
