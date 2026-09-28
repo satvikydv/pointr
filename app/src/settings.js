@@ -3,8 +3,13 @@ const { Window } = window.__TAURI__.window;
 
 const toggleTrack = document.getElementById('toggle-track');
 const toggleKnob = document.getElementById('toggle-knob');
-const osToggleTrack = document.getElementById('os-toggle-track');
-const osToggleKnob = document.getElementById('os-toggle-knob');
+const permissionButtons = document.querySelectorAll('#permission-picker button');
+const permissionHint = document.getElementById('permission-hint');
+const PERMISSION_HINTS = {
+    off: 'Pointr only answers. It never types, clicks, or opens anything for you.',
+    ask: 'Pointr shows what it is about to do and waits for Enter before acting. Esc cancels.',
+    allow: 'Pointr acts straight away, with no prompt. Each step shows as it runs, and Esc stops it at any point.',
+};
 const telemetryToggleTrack = document.getElementById('telemetry-toggle-track');
 const telemetryToggleKnob = document.getElementById('telemetry-toggle-knob');
 const voiceSection = document.getElementById('voice-section');
@@ -27,7 +32,8 @@ const btnGithubDisconnect = document.getElementById('btn-github-disconnect');
 
 const state = {
     audioOn: true,
-    osActionsOn: true,
+    // 'off' | 'ask' | 'allow' — replaced the old on/off OS actions toggle.
+    actionPermission: 'ask',
     // Opt-in: mirrors the Rust default, and stays false if the real value
     // can't be read (fail closed, same as the capture path itself).
     telemetryOn: false,
@@ -273,9 +279,10 @@ function render() {
     toggleTrack.style.border = `1px solid ${state.audioOn ? '#5b8cff' : 'rgba(255,255,255,0.16)'}`;
     toggleKnob.style.left = (state.audioOn ? 18 : 1) + 'px';
 
-    osToggleTrack.style.background = state.osActionsOn ? '#5b8cff' : 'rgba(255,255,255,0.12)';
-    osToggleTrack.style.border = `1px solid ${state.osActionsOn ? '#5b8cff' : 'rgba(255,255,255,0.16)'}`;
-    osToggleKnob.style.left = (state.osActionsOn ? 18 : 1) + 'px';
+    for (const b of permissionButtons) {
+        b.classList.toggle('active', b.dataset.permission === state.actionPermission);
+    }
+    permissionHint.textContent = PERMISSION_HINTS[state.actionPermission] || '';
     telemetryToggleTrack.style.background = state.telemetryOn ? '#5b8cff' : 'rgba(255,255,255,0.12)';
     telemetryToggleTrack.style.border = `1px solid ${state.telemetryOn ? '#5b8cff' : 'rgba(255,255,255,0.16)'}`;
     telemetryToggleKnob.style.left = (state.telemetryOn ? 18 : 1) + 'px';
@@ -369,15 +376,20 @@ toggleTrack.addEventListener('click', async () => {
     }
 });
 
-osToggleTrack.addEventListener('click', async () => {
-    state.osActionsOn = !state.osActionsOn;
-    render();
-    try {
-        await invoke('set_os_actions_enabled', { enabled: state.osActionsOn });
-    } catch (e) {
-        console.error('Failed to save os-actions-enabled setting:', e);
-    }
-});
+for (const b of permissionButtons) {
+    b.addEventListener('click', async () => {
+        const permission = b.dataset.permission;
+        if (permission === state.actionPermission) return;
+        try {
+            await invoke('set_action_permission', { permission });
+            state.actionPermission = permission;
+            flashSaved();
+        } catch (e) {
+            console.error('Failed to save action permission:', e);
+        }
+        render();
+    });
+}
 
 telemetryToggleTrack.addEventListener('click', async () => {
     state.telemetryOn = !state.telemetryOn;
@@ -484,9 +496,10 @@ async function init() {
     }
 
     try {
-        state.osActionsOn = await invoke('get_os_actions_enabled');
+        state.actionPermission = await invoke('get_action_permission');
     } catch (e) {
-        console.error('Failed to load os-actions-enabled setting:', e);
+        console.error('Failed to load action permission:', e);
+        state.actionPermission = 'off'; // fail closed, same as main.js
     }
 
     try {

@@ -92,6 +92,7 @@ pub fn capture_event(app: &AppHandle, name: &str, properties: Value) {
     let (provider, model) = crate::commands::settings::telemetry_model_info(app);
     props.insert("provider".into(), json!(provider));
     props.insert("model".into(), json!(model));
+    props.insert("action_permission".into(), json!(crate::commands::settings::action_permission(app)));
 
     // PostHog enriches events server-side from the request's source IP,
     // attaching IP, city, postal code and lat/long — none of which we send

@@ -899,6 +899,37 @@ async function runAgentTask(taskDescription) {
     throw new Error(`Agent task timed out after ${AGENT_POLL_MAX_ATTEMPTS * AGENT_POLL_INTERVAL_MS / 1000}s`);
 }
 
+/// Settings' "On-screen actions": 'off' | 'ask' | 'allow'. Fails closed to
+/// 'off' if it can't be read, so a broken settings file never lets actions
+/// run unprompted.
+async function getActionPermission() {
+    try {
+        return await invoke('get_action_permission');
+    } catch (e) {
+        console.error('Failed to read action permission:', e);
+        return 'off';
+    }
+}
+
+/// Enter/Esc wait on the overlay, used by both confirm prompts. Disables
+/// the global Escape-dismiss shortcut for its duration: left alone, an Esc
+/// here could trigger dismissOverlay() without resolving this promise,
+/// orphaning the listener, and a later unrelated Enter would then resolve
+/// it as a confirm and run the stale action for real.
+async function waitForEnterOrEscape() {
+    await disableEscapeDismiss();
+    return new Promise((resolve) => {
+        const onKey = (e) => {
+            if (e.key === 'Enter' || e.key === 'Escape') {
+                e.preventDefault();
+                document.removeEventListener('keydown', onKey);
+                resolve(e.key === 'Enter');
+            }
+        };
+        document.addEventListener('keydown', onKey);
+    });
+}
+
 // Gate before any agent-proposed desktop action (type_text/open_app)
 // actually runs — shows the model's plain-language description and waits
 // for a real keypress. Window goes interactive for this (Enter/Esc via a
@@ -909,19 +940,19 @@ async function runAgentTask(taskDescription) {
 async function confirmProposedActionIfAny(action) {
     if (!action) return;
 
-    try {
-        const enabled = await invoke('get_os_actions_enabled');
-        if (!enabled) return; // OS actions off in Settings — skip silently, answer_text still shows normally
-    } catch (e) {
-        console.error('Failed to check os_actions_enabled:', e);
-        return; // fail closed — no confirm prompt, no action, if the setting can't be read
-    }
+    // 'off': skip silently, answer_text still shows normally.
+    const permission = await getActionPermission();
+    if (permission === 'off') return;
 
     const appWindow = Window.getCurrent();
     const box = document.getElementById('action-confirm-box');
     const typeSection = document.getElementById('action-confirm-type');
     const openSection = document.getElementById('action-confirm-open');
     const runningPill = document.getElementById('action-running-pill');
+
+    if (action.action_type !== 'type_text' && action.action_type !== 'open_app') {
+        return; // unrecognized action type — nothing sensible to run
+    }
 
     let target = '';
     if (action.action_type === 'type_text') {
@@ -930,63 +961,45 @@ async function confirmProposedActionIfAny(action) {
         } catch (e) {
             console.error('Failed to read active window title:', e);
         }
-        document.getElementById('action-confirm-type-title').textContent = target ? `Type into ${target}` : 'Type into the focused field';
-        typeSection.classList.remove('hidden');
-        openSection.classList.add('hidden');
-    } else if (action.action_type === 'open_app') {
-        document.getElementById('action-confirm-open-title').textContent = `Open ${action.app_name}`;
-        openSection.classList.remove('hidden');
-        typeSection.classList.add('hidden');
-    } else {
-        return; // unrecognized action type — nothing sensible to confirm
     }
 
-    await appWindow.setIgnoreCursorEvents(false);
-    await appWindow.setFocus();
-    box.classList.remove('hidden');
+    // 'allow' skips the prompt entirely; the running pill below still says
+    // what's happening, and Esc still dismisses.
+    if (permission === 'ask') {
+        if (action.action_type === 'type_text') {
+            document.getElementById('action-confirm-type-title').textContent = target ? `Type into ${target}` : 'Type into the focused field';
+            typeSection.classList.remove('hidden');
+            openSection.classList.add('hidden');
+        } else {
+            document.getElementById('action-confirm-open-title').textContent = `Open ${action.app_name}`;
+            openSection.classList.remove('hidden');
+            typeSection.classList.add('hidden');
+        }
 
-    // The global Escape-dismiss shortcut (enableEscapeDismiss, registered
-    // earlier in the flow) is still live at this point — left alone, an Esc
-    // press here could trigger dismissOverlay() (hides the window) *without*
-    // ever resolving this promise, orphaning the keydown listener below with
-    // its "resolve" still pending. A later, totally unrelated Enter press
-    // would then resolve it as a confirm and run the stale action for real.
-    // Disabling it for the duration means Escape here can only ever be
-    // handled by the local listener below.
-    await disableEscapeDismiss();
+        await appWindow.setIgnoreCursorEvents(false);
+        await appWindow.setFocus();
+        box.classList.remove('hidden');
 
-    const confirmed = await new Promise((resolve) => {
-        const onKey = (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                document.removeEventListener('keydown', onKey);
-                resolve(true);
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                document.removeEventListener('keydown', onKey);
-                resolve(false);
-            }
-        };
-        document.addEventListener('keydown', onKey);
-    });
+        const confirmed = await waitForEnterOrEscape();
 
-    if (!confirmed) {
-        // Esc here cancels the action AND closes the whole overlay — same
-        // meaning Esc has everywhere else in the app, rather than skipping
-        // just the action and falling through to show the answer anyway.
-        // dismissOverlay() handles hiding action-confirm-box, restoring
-        // click-through, and disabling the escape shortcut itself, so there's
-        // nothing left to re-enable/restore here.
-        await dismissOverlay();
-        return;
+        if (!confirmed) {
+            // Esc here cancels the action AND closes the whole overlay — same
+            // meaning Esc has everywhere else in the app, rather than skipping
+            // just the action and falling through to show the answer anyway.
+            // dismissOverlay() handles hiding action-confirm-box, restoring
+            // click-through, and disabling the escape shortcut itself, so there's
+            // nothing left to re-enable/restore here.
+            await dismissOverlay();
+            return;
+        }
+
+        await enableEscapeDismiss();
+
+        box.classList.add('hidden');
+        // Restore click-through — every other answer-display state runs this
+        // way, so the normal renderResponse() flow that follows stays consistent.
+        await appWindow.setIgnoreCursorEvents(true);
     }
-
-    await enableEscapeDismiss();
-
-    box.classList.add('hidden');
-    // Restore click-through — every other answer-display state runs this
-    // way, so the normal renderResponse() flow that follows stays consistent.
-    await appWindow.setIgnoreCursorEvents(true);
 
     document.getElementById('action-running-text').textContent =
         action.action_type === 'type_text' ? `Typing into ${target || 'the focused field'}…` : `Opening ${action.app_name}…`;
@@ -1125,13 +1138,9 @@ async function runMultiStepLoop(taskDescription, plan) {
         console.error('Failed to clear a leftover browser session:', e);
     }
 
-    try {
-        const enabled = await invoke('get_os_actions_enabled');
-        if (!enabled) return; // OS actions off — skip silently, answer_text still shows normally
-    } catch (e) {
-        console.error('Failed to check os_actions_enabled:', e);
-        return; // fail closed
-    }
+    // 'off': skip silently, answer_text still shows normally.
+    const permission = await getActionPermission();
+    if (permission === 'off') return;
 
     const appWindow = Window.getCurrent();
     const box = document.getElementById('multistep-confirm-box');
@@ -1140,43 +1149,29 @@ async function runMultiStepLoop(taskDescription, plan) {
     const progressPill = document.getElementById('multistep-progress-pill');
     const progressText = document.getElementById('multistep-progress-text');
 
-    title.textContent = `I'll do this in ${plan.length} steps:`;
-    planList.innerHTML = '';
-    plan.forEach((step) => {
-        const li = document.createElement('li');
-        li.textContent = step;
-        planList.appendChild(li);
-    });
+    // 'allow' starts immediately: the progress pill shows each step as it
+    // runs and Esc aborts at any point, same as after a confirmed plan.
+    if (permission === 'ask') {
+        title.textContent = `I'll do this in ${plan.length} steps:`;
+        planList.innerHTML = '';
+        plan.forEach((step) => {
+            const li = document.createElement('li');
+            li.textContent = step;
+            planList.appendChild(li);
+        });
 
-    await appWindow.setIgnoreCursorEvents(false);
-    await appWindow.setFocus();
-    box.classList.remove('hidden');
+        await appWindow.setIgnoreCursorEvents(false);
+        await appWindow.setFocus();
+        box.classList.remove('hidden');
 
-    // Same race avoided as confirmProposedActionIfAny: disable the global
-    // Escape shortcut for the duration of this local keydown-based confirm,
-    // so only this listener can ever resolve it.
-    await disableEscapeDismiss();
+        const confirmed = await waitForEnterOrEscape();
 
-    const confirmed = await new Promise((resolve) => {
-        const onKey = (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                document.removeEventListener('keydown', onKey);
-                resolve(true);
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                document.removeEventListener('keydown', onKey);
-                resolve(false);
-            }
-        };
-        document.addEventListener('keydown', onKey);
-    });
+        box.classList.add('hidden');
 
-    box.classList.add('hidden');
-
-    if (!confirmed) {
-        await dismissOverlay();
-        return;
+        if (!confirmed) {
+            await dismissOverlay();
+            return;
+        }
     }
 
     // Running phase: window goes click-through like every other answer

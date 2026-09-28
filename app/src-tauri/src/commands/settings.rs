@@ -19,8 +19,14 @@ struct PersistedSettings {
     voice_id: Option<String>,
     #[serde(default = "default_speech_enabled")]
     speech_enabled: bool,
+    /// Superseded by `action_permission`, kept only so an existing
+    /// settings.json with actions switched off still reads as "off".
     #[serde(default = "default_os_actions_enabled")]
     os_actions_enabled: bool,
+    /// "off" | "ask" | "allow". None means not chosen yet: derived from the
+    /// legacy toggle (off stays off, otherwise "ask").
+    #[serde(default)]
+    action_permission: Option<String>,
     /// DPAPI-encrypted (`CryptProtectData`), then base64-encoded for JSON —
     /// tied to this Windows user account, so the ciphertext is useless
     /// copied to another machine or read by another user. Same underlying
@@ -83,6 +89,7 @@ impl Default for PersistedSettings {
             voice_id: None,
             speech_enabled: true,
             os_actions_enabled: true,
+            action_permission: None,
             github_token_encrypted: None,
             gemini_api_key_encrypted: None,
             tavily_api_key_encrypted: None,
@@ -198,16 +205,67 @@ pub fn set_speech_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
     save_settings(&app, &settings)
 }
 
+pub const ACTION_PERMISSIONS: [&str; 3] = ["off", "ask", "allow"];
+
+fn resolve_action_permission(s: &PersistedSettings) -> &'static str {
+    match s.action_permission.as_deref() {
+        Some("off") => "off",
+        Some("allow") => "allow",
+        Some("ask") => "ask",
+        // Unset or unrecognized: honour the legacy toggle, else the safe default.
+        _ if !s.os_actions_enabled => "off",
+        _ => "ask",
+    }
+}
+
+pub(crate) fn action_permission(app: &AppHandle) -> &'static str {
+    resolve_action_permission(&load_settings(app))
+}
+
+/// Whether Pointr may act on screen, and whether it asks first.
 #[tauri::command]
-pub fn get_os_actions_enabled(app: AppHandle) -> Result<bool, String> {
-    Ok(load_settings(&app).os_actions_enabled)
+pub fn get_action_permission(app: AppHandle) -> Result<String, String> {
+    Ok(resolve_action_permission(&load_settings(&app)).to_string())
 }
 
 #[tauri::command]
-pub fn set_os_actions_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+pub fn set_action_permission(app: AppHandle, permission: String) -> Result<(), String> {
+    if !ACTION_PERMISSIONS.contains(&permission.as_str()) {
+        return Err(format!("Unknown action permission: {}", permission));
+    }
     let mut settings = load_settings(&app);
-    settings.os_actions_enabled = enabled;
+    // Kept in step so an older build reading this file still honours "off".
+    settings.os_actions_enabled = permission != "off";
+    settings.action_permission = Some(permission);
     save_settings(&app, &settings)
+}
+
+#[cfg(test)]
+mod action_permission_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_toggle_maps_to_off_or_ask() {
+        let mut s = PersistedSettings::default();
+        assert_eq!(resolve_action_permission(&s), "ask");
+        s.os_actions_enabled = false;
+        assert_eq!(resolve_action_permission(&s), "off");
+    }
+
+    #[test]
+    fn explicit_choice_wins_over_legacy_toggle() {
+        let mut s = PersistedSettings::default();
+        s.os_actions_enabled = false;
+        s.action_permission = Some("allow".into());
+        assert_eq!(resolve_action_permission(&s), "allow");
+    }
+
+    #[test]
+    fn unknown_value_falls_back_safely() {
+        let mut s = PersistedSettings::default();
+        s.action_permission = Some("yolo".into());
+        assert_eq!(resolve_action_permission(&s), "ask");
+    }
 }
 
 #[tauri::command]
