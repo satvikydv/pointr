@@ -1,0 +1,183 @@
+<!doctype html>
+<!-- Source for landing/og-image.png (the link-preview card). Regenerate with:
+  msedge --headless=new --hide-scrollbars --window-size=1200,630 --virtual-time-budget=8000 ^
+    --screenshot=landing/og-image.png file:///<repo>/.github/assets/og-source.html -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap');
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1200px; height: 630px; overflow: hidden; }
+body {
+  font-family: 'Plus Jakarta Sans', 'Segoe UI Variable', 'Segoe UI', sans-serif;
+  color: #fff;
+  background:
+    radial-gradient(900px 520px at 82% 48%, rgba(91,140,255,0.34), transparent 62%),
+    radial-gradient(620px 420px at 6% 108%, rgba(140,92,255,0.22), transparent 60%),
+    radial-gradient(500px 300px at 30% -10%, rgba(91,140,255,0.10), transparent 70%),
+    #090c14;
+  position: relative;
+}
+/* faint dot grid, fading out toward the left so the headline stays clean */
+.grid {
+  position: absolute; inset: 0;
+  background-image: radial-gradient(rgba(255,255,255,0.13) 1px, transparent 1.4px);
+  background-size: 26px 26px;
+  -webkit-mask-image: linear-gradient(90deg, transparent 30%, #000 75%);
+  mask-image: linear-gradient(90deg, transparent 30%, #000 75%);
+  opacity: 0.55;
+}
+.mono { font-family: 'JetBrains Mono', 'Consolas', monospace; }
+
+/* ---------- left column ---------- */
+.left { position: absolute; left: 76px; top: 64px; width: 560px; height: 502px; }
+.brand { display: flex; align-items: center; gap: 14px; }
+.brand-name { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
+.orb-wrap { position: relative; flex-shrink: 0; }
+.orb-glow { position: absolute; border-radius: 50%; filter: blur(9px);
+  background: radial-gradient(circle, rgba(140,180,255,0.55), rgba(91,140,255,0.16) 45%, rgba(91,140,255,0) 70%); }
+.orb { position: absolute; border-radius: 50%; overflow: hidden; isolation: isolate;
+  box-shadow: 0 0 22px rgba(91,140,255,0.6), inset 0 -8px 12px rgba(0,0,0,0.35), inset 0 3px 8px rgba(255,255,255,0.25);
+  background: radial-gradient(circle at 32% 28%, rgba(210,225,255,0.95), rgba(91,140,255,0.55) 40%, rgba(30,45,90,0.88) 78%, rgba(10,14,26,0.96) 100%); }
+.orb .swirl { position: absolute; width: 140%; height: 140%; left: -20%; top: -20%; border-radius: 50%; mix-blend-mode: screen;
+  background: conic-gradient(from 20deg, rgba(143,180,255,0) 0%, rgba(143,180,255,0.9) 15%, rgba(58,99,204,0) 35%, rgba(185,143,255,0.65) 55%, rgba(58,99,204,0) 75%, rgba(143,180,255,0.75) 95%); }
+.orb .hl { position: absolute; width: 38%; height: 26%; left: 18%; top: 12%; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.85), rgba(255,255,255,0) 75%); }
+
+h1 { margin-top: 62px; font-size: 76px; line-height: 1.02; font-weight: 800; letter-spacing: -0.035em; }
+h1 .grad { background: linear-gradient(100deg, #8fb4ff 0%, #b9a2ff 55%, #f2b6ff 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent; }
+.sub { margin-top: 26px; width: 500px; font-size: 24px; line-height: 1.42; color: rgba(255,255,255,0.66); font-weight: 500; }
+
+.keys { position: absolute; left: 0; bottom: 0; display: flex; flex-direction: column; gap: 12px; }
+.keyrow { display: flex; align-items: center; gap: 12px; }
+.chip { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px;
+  border-radius: 10px; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 16px;
+  color: rgba(255,255,255,0.92); background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.16);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08); }
+.chip.hot { background: rgba(91,140,255,0.16); border-color: rgba(91,140,255,0.5); box-shadow: 0 0 24px rgba(91,140,255,0.25), inset 0 1px 0 rgba(255,255,255,0.1); }
+.plus { color: rgba(255,255,255,0.35); font-family: 'JetBrains Mono', monospace; font-size: 15px; }
+.keylabel { font-size: 17px; color: rgba(255,255,255,0.5); font-weight: 500; }
+.winlogo { display: inline-grid; grid-template-columns: 1fr 1fr; gap: 2px; width: 15px; height: 15px; }
+.winlogo i { background: #fff; border-radius: 1px; display: block; }
+
+/* ---------- right scene ---------- */
+.scene { position: absolute; left: 640px; top: 0; width: 560px; height: 630px; }
+.bigorb { position: absolute; right: -130px; bottom: -150px; width: 340px; height: 340px; opacity: 0.8; }
+.bigorb .swirl { filter: blur(16px); opacity: 0.7; }
+
+.win {
+  position: absolute; left: 30px; top: 150px; width: 470px; height: 320px; border-radius: 18px;
+  background: linear-gradient(160deg, rgba(28,34,52,0.92), rgba(16,20,32,0.92));
+  border: 1px solid rgba(255,255,255,0.13);
+  box-shadow: 0 40px 90px rgba(0,0,0,0.55), 0 0 0 1px rgba(91,140,255,0.08), inset 0 1px 0 rgba(255,255,255,0.08);
+  transform: perspective(1400px) rotateY(-9deg) rotateX(3deg);
+  overflow: hidden;
+}
+.win .bar { height: 38px; display: flex; align-items: center; gap: 8px; padding: 0 16px; border-bottom: 1px solid rgba(255,255,255,0.07); background: rgba(255,255,255,0.03); }
+.dot { width: 11px; height: 11px; border-radius: 50%; background: rgba(255,255,255,0.16); }
+.win .body { padding: 22px 26px; position: relative; }
+.ln { height: 9px; border-radius: 5px; background: rgba(255,255,255,0.10); margin-bottom: 15px; }
+.ln.k { background: rgba(143,180,255,0.32); }
+.ln.a { background: rgba(185,143,255,0.30); }
+.ln.err { background: rgba(255,84,112,0.34); box-shadow: 0 0 0 1px rgba(255,84,112,0.35); }
+
+/* the crosshair marker Pointr burns onto the capture */
+.marker { position: absolute; left: 186px; top: 124px; width: 34px; height: 34px; }
+.marker::before { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid #ff5470; box-shadow: 0 0 18px rgba(255,84,112,0.7); }
+.marker::after { content: ""; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: #ff5470; }
+
+.answer {
+  position: absolute; left: 96px; top: 400px; width: 372px; padding: 16px 18px; border-radius: 16px;
+  background: rgba(20,25,40,0.78); border: 1px solid rgba(255,255,255,0.16);
+  box-shadow: 0 30px 70px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.09);
+  -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+}
+.answer .hd { display: flex; align-items: center; gap: 9px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.1em; color: rgba(255,255,255,0.55); margin-bottom: 9px; }
+.answer .tx { font-size: 17px; line-height: 1.45; color: rgba(255,255,255,0.93); font-weight: 500; }
+.answer .tx b { color: #8fb4ff; font-weight: 700; }
+
+.voice {
+  position: absolute; left: 60px; top: 78px; height: 52px; padding: 0 20px 0 18px; border-radius: 26px;
+  display: flex; align-items: center; gap: 14px;
+  background: rgba(14,18,30,0.82); border: 1px solid rgba(91,140,255,0.45);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.5), 0 0 40px rgba(91,140,255,0.22);
+}
+.bars { display: flex; align-items: center; gap: 4px; height: 26px; }
+.bars i { display: block; width: 4px; border-radius: 3px; background: #5b8cff; }
+.badge { font-size: 12px; font-weight: 800; letter-spacing: 0.07em; color: #f2b84b; background: rgba(242,184,75,0.13);
+  border: 1px solid rgba(242,184,75,0.4); border-radius: 6px; padding: 3px 9px; }
+.voice .say { font-size: 18px; font-weight: 600; color: rgba(255,255,255,0.92); }
+
+.url { text-shadow: 0 2px 12px rgba(9,12,20,0.9); position: absolute; right: 44px; bottom: 30px; font-family: 'JetBrains Mono', monospace; font-size: 17px; font-weight: 600; color: rgba(255,255,255,0.55); letter-spacing: 0.01em; }
+</style>
+</head>
+<body>
+<div class="grid"></div>
+
+<div class="scene">
+  <div class="bigorb">
+    <div class="orb-glow" style="inset:-60px;filter:blur(30px);"></div>
+    <div class="orb" style="inset:0;"><div class="swirl"></div><div class="hl"></div></div>
+  </div>
+
+  <div class="win">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+    <div class="body">
+      <div class="ln k" style="width:34%"></div>
+      <div class="ln" style="width:78%"></div>
+      <div class="ln a" style="width:52%"></div>
+      <div class="ln" style="width:66%"></div>
+      <div class="ln err" style="width:58%"></div>
+      <div class="ln" style="width:44%"></div>
+      <div class="ln k" style="width:71%"></div>
+      <div class="ln" style="width:30%"></div>
+    </div>
+    <div class="marker"></div>
+  </div>
+
+  <div class="answer">
+    <div class="hd">
+      <span class="orb-wrap" style="width:14px;height:14px;"><span class="orb" style="inset:0;"><span class="swirl"></span></span></span>
+      POINTR
+    </div>
+    <div class="tx">That's the <b>null check</b> on line 42. Add a guard before you dereference it.</div>
+  </div>
+
+  <div class="voice">
+    <div class="bars">
+      <i style="height:8px"></i><i style="height:16px"></i><i style="height:26px"></i><i style="height:18px"></i><i style="height:10px"></i>
+    </div>
+    <span class="say">Agent, fix this error</span>
+    <span class="badge">AGENT</span>
+  </div>
+</div>
+
+<div class="left">
+  <div class="brand">
+    <div class="orb-wrap" style="width:38px;height:38px;">
+      <div class="orb-glow" style="inset:-9px;"></div>
+      <div class="orb" style="inset:0;"><div class="swirl"></div><div class="hl"></div></div>
+    </div>
+    <div class="brand-name">Pointr</div>
+  </div>
+
+  <h1>Ask your screen<br><span class="grad">anything</span><span class="grad" style="margin-left:-6px;">.</span></h1>
+  <div class="sub">A Windows overlay that sees what's on your screen, answers in place, and acts for you.</div>
+
+  <div class="keys">
+    <div class="keyrow">
+      <span class="chip hot">Hold Ctrl <span class="plus">+</span> <span class="winlogo"><i></i><i></i><i></i><i></i></span></span>
+      <span class="keylabel">speak, then let go</span>
+    </div>
+    <div class="keyrow">
+      <span class="chip">Ctrl <span class="plus">+</span> Alt <span class="plus">+</span> Space</span>
+      <span class="keylabel">type a question</span>
+    </div>
+  </div>
+</div>
+
+<div class="url">pointr.duckdns.org</div>
+</body>
+</html>

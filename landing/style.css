@@ -531,8 +531,10 @@ a:hover {
   gap: 1.5px;
   width: 11px;
   height: 11px;
-  vertical-align: -1px;
-  margin: 0 1px;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+  margin: 0 2px;
 }
 
 .win-key div {
