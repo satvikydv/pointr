@@ -523,6 +523,23 @@ a:hover {
   padding: 0 16px;
 }
 
+/* The Windows logo inline in text (hero hotkey line): same 2x2 mark as the
+   download button's icon, but sized to the text and colored like it. */
+.win-key {
+  display: inline-grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5px;
+  width: 11px;
+  height: 11px;
+  vertical-align: -1px;
+  margin: 0 1px;
+}
+
+.win-key div {
+  background: currentColor;
+  border-radius: 0.5px;
+}
+
 /* ==========================================================================
    FEATURES SECTION
    ========================================================================== */
