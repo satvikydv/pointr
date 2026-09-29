@@ -379,7 +379,7 @@ listen('voice-final', (event) => {
         showVoiceError("Didn't catch that. Hold Ctrl+Win, speak, then let go.");
         return;
     }
-    runDirectAnalysis(voiceToQuery(text));
+    runDirectAnalysis(voiceToQuery(text), 'voice');
 });
 
 listen('voice-cancelled', () => {
@@ -404,7 +404,7 @@ directQueryInput.addEventListener('keydown', (e) => {
     // the window is interactive at this point, so it's reliably delivered.
 });
 
-async function runDirectAnalysis(queryText) {
+async function runDirectAnalysis(queryText, source = 'typed') {
     const requestId = ++activeRequestId;
     const appWindow = Window.getCurrent();
 
@@ -419,9 +419,9 @@ async function runDirectAnalysis(queryText) {
     try {
         if (explainMatch) {
             const topic = explainMatch[1] || queryText;
-            captureTelemetry('direct_query_sent', { mode: 'explain' });
+            captureTelemetry('direct_query_sent', { mode: 'explain', source });
             const storyboard = await invoke('process_explain', { topic });
-            trackQueryOutcome('explain', 'ok');
+            trackQueryOutcome('explain', 'ok', source);
             console.log('[explain] storyboard steps:', JSON.stringify(storyboard.steps, null, 2));
 
             if (requestId !== activeRequestId) return; // superseded by a later press
@@ -440,14 +440,14 @@ async function runDirectAnalysis(queryText) {
         // press, which only opens the overlay (it used to fire from Rust at
         // capture time, so it counted overlay opens, including cancelled
         // ones). agent: tasks report through their own agent_task_* events.
-        if (!agentMatch) captureTelemetry('direct_query_sent', { mode: 'direct' });
+        if (!agentMatch) captureTelemetry('direct_query_sent', { mode: 'direct', source });
         const response = agentMatch
-            ? await runAgentTask(agentTaskDescription)
+            ? await runAgentTask(agentTaskDescription, source)
             : await invoke('process_direct', {
                 query: queryText || null,
                 requestId: String(requestId)
             });
-        if (!agentMatch) trackQueryOutcome('direct', response.answer_text);
+        if (!agentMatch) trackQueryOutcome('direct', response.answer_text, source);
 
         if (requestId !== activeRequestId) return; // superseded by a later press
 
@@ -463,7 +463,7 @@ async function runDirectAnalysis(queryText) {
         await appWindow.setFocus();
 
         if (response.multi_step_plan) {
-            await runMultiStepLoop(agentTaskDescription, response.multi_step_plan);
+            await runMultiStepLoop(agentTaskDescription, response.multi_step_plan, source);
             return;
         }
 
@@ -474,7 +474,7 @@ async function runDirectAnalysis(queryText) {
         renderResponse(response, rect);
     } catch (error) {
         if (requestId !== activeRequestId) return;
-        if (!agentMatch) trackQueryOutcome(explainMatch ? 'explain' : 'direct', 'exception');
+        if (!agentMatch) trackQueryOutcome(explainMatch ? 'explain' : 'direct', 'exception', source);
 
         console.error("Error in direct analysis:", error);
         await showOverlayError(`${error}`);
@@ -863,13 +863,13 @@ function upstreamStatus(answerText) {
     return m ? Number(m[1]) : null;
 }
 
-function trackQueryOutcome(mode, outcome) {
+function trackQueryOutcome(mode, outcome, source = 'typed') {
     if (outcome === 'exception') {
-        captureTelemetry('query_failed', { mode, reason: 'exception' });
+        captureTelemetry('query_failed', { mode, source, reason: 'exception' });
     } else if (isBackendErrorAnswer(outcome)) {
-        captureTelemetry('query_failed', { mode, reason: 'backend_error_answer', upstream_status: upstreamStatus(outcome) });
+        captureTelemetry('query_failed', { mode, source, reason: 'backend_error_answer', upstream_status: upstreamStatus(outcome) });
     } else {
-        captureTelemetry('query_completed', { mode });
+        captureTelemetry('query_completed', { mode, source });
     }
 }
 
@@ -918,7 +918,7 @@ async function askTelemetryConsentIfNeeded() {
 const AGENT_POLL_MAX_ATTEMPTS = 60;
 const AGENT_POLL_INTERVAL_MS = 1000;
 
-async function runAgentTask(taskDescription) {
+async function runAgentTask(taskDescription, source = 'typed') {
     const sessionId = crypto.randomUUID();
 
     let clipboardText = "";
@@ -969,7 +969,7 @@ async function runAgentTask(taskDescription) {
     const llmFields = await llmRequestFields();
 
     // Categorical only — never the task text itself. See telemetry.rs.
-    captureTelemetry('agent_task_started', {});
+    captureTelemetry('agent_task_started', { source });
 
     const postTask = (fields) => fetch(`${API_BASE_URL}/api/agent/task`, {
         method: "POST",
@@ -1017,18 +1017,18 @@ async function runAgentTask(taskDescription) {
                 multi_step_plan: statusData.result.multi_step_plan || null
             };
             if (isBackendErrorAnswer(result.answer_text)) {
-                captureTelemetry('agent_task_failed', { reason: 'backend_error_answer', upstream_status: upstreamStatus(result.answer_text) });
+                captureTelemetry('agent_task_failed', { source, reason: 'backend_error_answer', upstream_status: upstreamStatus(result.answer_text) });
             } else {
-                captureTelemetry('agent_task_completed', { capability: capabilityUsed(result) });
+                captureTelemetry('agent_task_completed', { source, capability: capabilityUsed(result) });
             }
             return result;
         } else if (statusData.status === "FAILURE") {
-            captureTelemetry('agent_task_failed', { reason: 'backend_failure' });
+            captureTelemetry('agent_task_failed', { source, reason: 'backend_failure' });
             throw new Error("Task failed: " + statusData.result);
         }
     }
 
-    captureTelemetry('agent_task_failed', { reason: 'timeout' });
+    captureTelemetry('agent_task_failed', { source, reason: 'timeout' });
     throw new Error(`Agent task timed out after ${AGENT_POLL_MAX_ATTEMPTS * AGENT_POLL_INTERVAL_MS / 1000}s`);
 }
 
@@ -1228,7 +1228,7 @@ function traceToHistoryRecord(trace) {
     };
 }
 
-function finishAgentTrace(trace, stopReason, finalAnswer) {
+function finishAgentTrace(trace, stopReason, finalAnswer, source = 'typed') {
     trace.finishedAt = new Date().toISOString();
     trace.stopReason = stopReason;
     trace.finalAnswer = finalAnswer;
@@ -1239,6 +1239,7 @@ function finishAgentTrace(trace, stopReason, finalAnswer) {
     // Counts and an enum only — no step descriptions, text, or targets.
     const failedSteps = trace.steps.filter((s) => s.executed === false || s.executionError).length;
     captureTelemetry('multistep_run_completed', {
+        source,
         step_count: trace.steps.length,
         aborted: stopReason === 'aborted',
         ended_reason: stopReason === 'done' && failedSteps > 0 ? 'done_with_errors' : stopReason,
@@ -1260,7 +1261,7 @@ function finishAgentTrace(trace, stopReason, finalAnswer) {
 // for just the next action -> execute it -> repeat, re-grounding off the
 // real screen each time rather than trusting the upfront plan's guesses.
 // No-op if there's no plan (the common case).
-async function runMultiStepLoop(taskDescription, plan) {
+async function runMultiStepLoop(taskDescription, plan, source = 'typed') {
     if (!plan || !plan.length) return;
 
     // A browser session (commands/browser.rs) is deliberately left open
@@ -1399,7 +1400,7 @@ async function runMultiStepLoop(taskDescription, plan) {
     }
 
     for (let i = 0; i < MULTI_STEP_MAX_STEPS; i++) {
-        if (requestId !== activeRequestId) { await closeBrowserIfOpen(); finishAgentTrace(trace, 'aborted', null); return; } // aborted
+        if (requestId !== activeRequestId) { await closeBrowserIfOpen(); finishAgentTrace(trace, 'aborted', null, source); return; } // aborted
 
         progressText.textContent = `Step ${i + 1}: deciding…`;
 
@@ -1460,7 +1461,7 @@ async function runMultiStepLoop(taskDescription, plan) {
             break;
         }
 
-        if (requestId !== activeRequestId) { await closeBrowserIfOpen(); finishAgentTrace(trace, 'aborted', null); return; } // aborted while awaiting
+        if (requestId !== activeRequestId) { await closeBrowserIfOpen(); finishAgentTrace(trace, 'aborted', null, source); return; } // aborted while awaiting
 
         console.log(`[multistep] step ${i + 1}:`, JSON.stringify(step));
 
@@ -1497,7 +1498,7 @@ async function runMultiStepLoop(taskDescription, plan) {
                 console.error('Corrective re-ask failed:', e);
             }
 
-            if (requestId !== activeRequestId) { await closeBrowserIfOpen(); finishAgentTrace(trace, 'aborted', null); return; }
+            if (requestId !== activeRequestId) { await closeBrowserIfOpen(); finishAgentTrace(trace, 'aborted', null, source); return; }
 
             if (corrected && corrected.action_type) {
                 if (corrected.action_type === 'done' || corrected.action_type === 'error' || !sameAction(corrected, step)) {
@@ -1669,7 +1670,7 @@ async function runMultiStepLoop(taskDescription, plan) {
         await new Promise((r) => setTimeout(r, settleMs));
     }
 
-    if (requestId !== activeRequestId) { await closeBrowserIfOpen(); finishAgentTrace(trace, 'aborted', null); return; } // aborted during the final delay
+    if (requestId !== activeRequestId) { await closeBrowserIfOpen(); finishAgentTrace(trace, 'aborted', null, source); return; } // aborted during the final delay
 
     // Deliberately NOT closing the browser here for done/max_steps/
     // stuck_repeating/error — confirmed for real: a task whose whole point
@@ -1687,7 +1688,7 @@ async function runMultiStepLoop(taskDescription, plan) {
         finalAnswer = `Stopped after ${MULTI_STEP_MAX_STEPS} steps without finishing — try a narrower request.`;
         stopReason = stopReason || 'max_steps';
     }
-    finishAgentTrace(trace, stopReason || 'max_steps', finalAnswer);
+    finishAgentTrace(trace, stopReason || 'max_steps', finalAnswer, source);
 
     // No TTS narration for the multi-step summary yet — deliberate v1 scope
     // cut, not an oversight; text-only final answer, same dismiss-timing
@@ -1728,7 +1729,7 @@ btnSubmit.addEventListener('click', async () => {
         let agentTaskDescription = null;
         if (agentMatch) {
             agentTaskDescription = agentMatch[1] || "Analyze this UI area for agent actions";
-            response = await runAgentTask(agentTaskDescription);
+            response = await runAgentTask(agentTaskDescription, 'region');
         } else {
             captureTelemetry('region_select_used', {});
             response = await invoke('process_crop', {
@@ -1736,7 +1737,7 @@ btnSubmit.addEventListener('click', async () => {
                 query: rawQuery || null,
                 requestId: String(requestId)
             });
-            trackQueryOutcome('region', response.answer_text);
+            trackQueryOutcome('region', response.answer_text, 'region');
         }
 
         if (requestId !== activeRequestId) return; // superseded while we were waiting
@@ -1748,7 +1749,7 @@ btnSubmit.addEventListener('click', async () => {
         await enableEscapeDismiss();
 
         if (response.multi_step_plan) {
-            await runMultiStepLoop(agentTaskDescription, response.multi_step_plan);
+            await runMultiStepLoop(agentTaskDescription, response.multi_step_plan, 'region');
             return;
         }
 
