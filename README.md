@@ -13,7 +13,7 @@
   [![Backend](https://img.shields.io/badge/backend-FastAPI%20%2B%20Celery-009688)](backend)
   [![BYOK](https://img.shields.io/badge/AI-Gemini%20%7C%20OpenAI%20(BYOK)-8b5cf6)](#bring-your-own-key)
 
-  [Website](https://pointr-alpha.vercel.app) · [Setup Guide](https://pointr-alpha.vercel.app/setup.html) · [Privacy](https://pointr-alpha.vercel.app/privacy.html) · [Releases](https://github.com/satvikydv/pointr/releases) · [Issues](https://github.com/satvikydv/pointr/issues)
+  [Website](https://www.pointr.duckdns.org) · [Setup Guide](https://www.pointr.duckdns.org/setup.html) · [Privacy](https://www.pointr.duckdns.org/privacy.html) · [Releases](https://github.com/satvikydv/pointr/releases) · [Issues](https://github.com/satvikydv/pointr/issues)
 </div>
 
 ---
@@ -37,7 +37,9 @@ Pointr doesn't run on a shared, metered backend. Connect a [Gemini](https://aist
 
 ## Install
 
-Download the latest Windows installer from **[Releases](https://github.com/satvikydv/pointr/releases/latest)**, run it, and connect an API key in Settings — see the **[setup guide](https://pointr-alpha.vercel.app/setup.html)** for the two-minute walkthrough. The installer talks to Pointr's hosted backend by default; nothing else to run.
+Download the latest Windows installer from **[Releases](https://github.com/satvikydv/pointr/releases/latest)**, run it, and connect an API key in Settings — see the **[setup guide](https://www.pointr.duckdns.org/setup.html)** for the two-minute walkthrough. The installer talks to Pointr's hosted backend by default; nothing else to run.
+
+Requires 64-bit Windows 10 (1903 or later) or Windows 11, plus the Microsoft Visual C++ Redistributable, which most PCs already have. If Pointr won't start and mentions a missing `MSVCP140.dll` or `VCRUNTIME140.dll`, install the [x64 redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe) and try again.
 
 ## Build from source
 
@@ -74,11 +76,11 @@ By default the client build targets `http://localhost:8000` — set `POINTR_ENV=
         Windows only                  Gemini / OpenAI, GitHub, Tavily
 ```
 
-The backend is a relay, not a store: screenshots, queries and answers pass through per request and aren't retained. See [Privacy](https://pointr-alpha.vercel.app/privacy.html) for exactly what's kept, for how long, and why.
+The backend is a relay, not a store: screenshots, queries and answers pass through per request and aren't retained. See [Privacy](https://www.pointr.duckdns.org/privacy.html) for exactly what's kept, for how long, and why.
 
 ## Privacy & telemetry
 
-Usage telemetry is **opt-in, off by default**, asked once. It's anonymous (a random install ID, no account) and never includes screenshots, queries, file contents, answers, or tokens — only which features get used and whether a request failed. Full details: [privacy page](https://pointr-alpha.vercel.app/privacy.html).
+Usage telemetry is **opt-in, off by default**, asked once. It's anonymous (a random install ID, no account) and never includes screenshots, queries, file contents, answers, or tokens — only which features get used and whether a request failed. Full details: [privacy page](https://www.pointr.duckdns.org/privacy.html).
 
 ## Contributing
 
