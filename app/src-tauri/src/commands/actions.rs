@@ -1,11 +1,157 @@
 use crate::CaptureState;
-use enigo::{Axis, Button, Direction, Enigo, Key, Keyboard, Mouse, Settings};
+use enigo::{Axis, Button, Direction, Enigo, InputResult, Key, Keyboard, Mouse, Settings};
 use std::sync::Mutex;
 use std::thread::sleep;
 use std::time::Duration;
 use tauri::State;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SetCursorPos, SetForegroundWindow};
+
+/// Works around a real bug in enigo 0.2.1's own `Keyboard::text`: it loops
+/// over the string, and on hitting a `'\n'` or `'\t'` it does
+/// `return self.key(...)` — inside the loop, so it sends only that one
+/// keystroke and returns immediately, silently dropping every character
+/// already queued before it and never looking at anything after it either
+/// (verified against enigo's source, win/win_impl.rs). Reported live: a
+/// drafted reply (any text with a blank line in it) came out as an empty
+/// line and a cursor moved down one line, nothing typed before or after —
+/// exactly this. Splits on our side instead, so each `enigo.text()` call
+/// only ever sees a single line and can't hit that path; `'\r'` is
+/// silently dropped, matching what enigo's own text() already did with it.
+fn type_text(enigo: &mut Enigo, text: &str) -> InputResult<()> {
+    let mut line = String::new();
+    for c in text.chars() {
+        match c {
+            '\n' => {
+                if !line.is_empty() {
+                    enigo.text(&line)?;
+                    line.clear();
+                }
+                enigo.key(Key::Return, Direction::Click)?;
+            }
+            '\t' => {
+                if !line.is_empty() {
+                    enigo.text(&line)?;
+                    line.clear();
+                }
+                enigo.key(Key::Tab, Direction::Click)?;
+            }
+            '\r' => {}
+            _ => line.push(c),
+        }
+    }
+    if !line.is_empty() {
+        enigo.text(&line)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod type_text_tests {
+    use super::*;
+    use windows::core::w;
+    use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, DestroyWindow, PeekMessageW, SendMessageW, ShowWindow, MSG, PM_REMOVE, SW_SHOW,
+        WINDOW_EX_STYLE, WM_GETTEXT, WM_GETTEXTLENGTH, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    };
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+
+    /// A real, classic Win32 multiline edit control — not Notepad, whose
+    /// text area on newer Windows builds may not be a plain Win32 control
+    /// at all. Pumps its own message queue while `send` runs, since a
+    /// window with no message loop never dispatches the WM_KEYDOWN/WM_CHAR
+    /// that injected input arrives as, even once it's focused.
+    struct TestEdit(windows::Win32::Foundation::HWND);
+
+    impl TestEdit {
+        fn new() -> Self {
+            unsafe {
+                let hwnd = CreateWindowExW(
+                    WINDOW_EX_STYLE(0),
+                    w!("EDIT"),
+                    w!(""),
+                    WS_OVERLAPPEDWINDOW | WS_VISIBLE | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(0x0004), // ES_MULTILINE
+                    0, 0, 400, 200,
+                    None, None, None, None,
+                )
+                .expect("failed to create test edit control");
+                ShowWindow(hwnd, SW_SHOW);
+                let _ = windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(hwnd);
+                let _ = SetFocus(hwnd);
+                Self(hwnd)
+            }
+        }
+
+        fn pump(&self, dur: Duration) {
+            let start = std::time::Instant::now();
+            let mut msg = MSG::default();
+            while start.elapsed() < dur {
+                unsafe {
+                    while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
+                        let _ = windows::Win32::UI::WindowsAndMessaging::TranslateMessage(&msg);
+                        windows::Win32::UI::WindowsAndMessaging::DispatchMessageW(&msg);
+                    }
+                }
+                sleep(Duration::from_millis(5));
+            }
+        }
+
+        fn text(&self) -> String {
+            unsafe {
+                let len = SendMessageW(self.0, WM_GETTEXTLENGTH, WPARAM(0), LPARAM(0)).0 as usize;
+                let mut buf = vec![0u16; len + 1];
+                SendMessageW(self.0, WM_GETTEXT, WPARAM(buf.len()), LPARAM(buf.as_mut_ptr() as isize));
+                String::from_utf16_lossy(&buf[..len])
+            }
+        }
+    }
+
+    impl Drop for TestEdit {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = DestroyWindow(self.0);
+            }
+        }
+    }
+
+    const DRAFT: &str = "Hi Jordan,\n\nThanks for reaching out, I'll have it ready Friday.\n\nBest,\nSatvik";
+
+    /// Reproduces the reported bug directly against enigo's own `text()`
+    /// (not our wrapper): the cursor ends up one line down and every
+    /// character of the draft is missing. Not run by default — moves real
+    /// keyboard focus on whatever machine runs it.
+    ///   cargo test --lib type_text_tests -- --ignored --nocapture --test-threads=1
+    #[test]
+    #[ignore]
+    fn enigos_own_text_drops_a_multiline_draft() {
+        let edit = TestEdit::new();
+        edit.pump(Duration::from_millis(200));
+        let mut enigo = Enigo::new(&Settings::default()).unwrap();
+        enigo.text(DRAFT).unwrap();
+        edit.pump(Duration::from_millis(300));
+        let got = edit.text();
+        println!("enigo.text() directly -> {:?}", got);
+        assert_ne!(got, DRAFT, "if this starts passing, upstream enigo fixed the bug and the workaround can be dropped");
+        assert!(got.chars().all(|c| c == '\r' || c == '\n'), "expected only the stray newline, got {:?}", got);
+    }
+
+    /// Same draft, through our type_text() wrapper: everything lands.
+    #[test]
+    #[ignore]
+    fn type_text_preserves_a_multiline_draft() {
+        let edit = TestEdit::new();
+        edit.pump(Duration::from_millis(200));
+        let mut enigo = Enigo::new(&Settings::default()).unwrap();
+        type_text(&mut enigo, DRAFT).unwrap();
+        edit.pump(Duration::from_millis(300));
+        let got = edit.text();
+        println!("type_text() -> {:?}", got);
+        // Win32 multiline edit controls store newlines as \r\n regardless
+        // of what was typed.
+        assert_eq!(got.replace("\r\n", "\n"), DRAFT);
+    }
+}
 
 /// Types text into whatever currently has OS input focus — no coordinates,
 /// no click, so none of the "wrong pixel" risk a grounded click would carry.
@@ -42,7 +188,7 @@ pub fn execute_type_text(
     }
 
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| format!("Failed to init input simulation: {}", e))?;
-    enigo.text(&text).map_err(|e| format!("Failed to type text: {}", e))
+    type_text(&mut enigo, &text).map_err(|e| format!("Failed to type text: {}", e))
 }
 
 /// Opens an app via the Start menu search — Win key, type the name, Enter.
@@ -60,7 +206,7 @@ pub fn execute_open_app(app_name: String) -> Result<(), String> {
     enigo.key(Key::Meta, Direction::Click).map_err(|e| format!("Failed to press Win key: {}", e))?;
     sleep(Duration::from_millis(400)); // let the Start menu open and its search box take focus
 
-    enigo.text(&app_name).map_err(|e| format!("Failed to type app name: {}", e))?;
+    type_text(&mut enigo, &app_name).map_err(|e| format!("Failed to type app name: {}", e))?;
     sleep(Duration::from_millis(600)); // let search results populate before Enter — 350ms was too tight, saw stale/empty results in the multi-step loop
 
     enigo.key(Key::Return, Direction::Click).map_err(|e| format!("Failed to press Enter: {}", e))?;
