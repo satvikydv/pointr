@@ -109,6 +109,7 @@
       <div class="hero-hotkey">Ctrl + Alt + Space - anywhere on your screen</div>
     </section>
 
+
     <!-- Features Section -->
     <section id="features" class="features-container">
 
@@ -194,60 +195,109 @@
         </div>
       </div>
 
-      <!-- Feature 04 -->
+      <!-- Feature 04: Autonomous Permissions -->
       <div class="feature-block gold reversed">
         <div class="feature-info-col">
           <div class="feature-num-watermark">04</div>
-          <div class="feature-label gold">04 - ACTION CONFIRM</div>
+          <div class="feature-label gold">04 - ACTION CONFIRM &amp; PERMISSIONS</div>
           <h2 class="feature-heading">You decide how much it can do on its own</h2>
           <div class="feature-desc">Pointr can type into a focused field or open an app for you. By default it shows exactly what it's about to do and waits for Enter - or switch to Always allow in Settings and it just gets on with it, Esc still stops any run.</div>
         </div>
         <div class="feature-visual-col">
-          <div class="feature-card-4">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-              <div style="width:8px;height:8px;border-radius:50%;background:#f2b84b;box-shadow:0 0 8px rgba(242,184,75,0.6);"></div>
-              <div style="font-size:11px;font-weight:700;letter-spacing:0.06em;color:#f2b84b;text-transform:uppercase;">Action requested</div>
+          <!-- Interactive Permission Simulator -->
+          <div class="perm-interactive-card">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+              <div style="font-size:12px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#f2b84b;">
+                Permission Sandbox
+              </div>
+              <div class="voice-keys-badge">
+                <span class="kbd-key">Enter</span>
+                <span style="font-size:11px;color:rgba(255,255,255,0.4);">/</span>
+                <span class="kbd-key">Esc</span>
+              </div>
             </div>
-            <div style="font-size:15px;font-weight:600;color:rgba(255,255,255,0.96);margin-bottom:10px;">Type into Slack - #eng-standup</div>
-            <div style="background:rgba(0,0,0,0.35);border:1px solid rgba(242,184,75,0.2);border-radius:8px;padding:10px 12px;font-family:var(--font-mono);font-size:12px;line-height:1.55;color:rgba(255,255,255,0.85);">Fixed the unmount bug - added a cleanup flag…</div>
-            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);">
-              <span style="font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.9);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.18);border-radius:5px;padding:3px 7px;">Enter</span>
-              <span style="font-size:12px;color:rgba(255,255,255,0.55);">to confirm</span>
-              <span style="width:3px;height:3px;border-radius:50%;background:rgba(255,255,255,0.3);margin:0 2px;"></span>
-              <span style="font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.9);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.18);border-radius:5px;padding:3px 7px;">Esc</span>
-              <span style="font-size:12px;color:rgba(255,255,255,0.55);">to cancel</span>
+
+            <!-- Mode Selector Tabs -->
+            <div class="perm-mode-tabs" role="tablist">
+              <button class="perm-tab-btn active" data-mode="ask" role="tab">Always ask</button>
+              <button class="perm-tab-btn" data-mode="allow" role="tab">Always allow</button>
+              <button class="perm-tab-btn" data-mode="off" role="tab">Off (Safe)</button>
+            </div>
+
+            <!-- Dynamic State Box -->
+            <div class="perm-state-box">
+              <!-- Rendered via nav.js -->
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Feature 05 -->
+      <!-- Feature 05: Push-to-Talk Voice Flow -->
       <div class="feature-block">
         <div class="feature-visual-col">
-          <div class="feature-card-1" style="flex-direction:column;align-items:stretch;gap:14px;">
-            <div style="display:flex;align-items:center;gap:12px;">
-              <div style="display:flex;align-items:center;gap:3px;height:18px;flex-shrink:0;">
-                <div style="width:3px;height:7px;border-radius:2px;background:#5B8CFF;"></div>
-                <div style="width:3px;height:14px;border-radius:2px;background:#5B8CFF;"></div>
-                <div style="width:3px;height:18px;border-radius:2px;background:#5B8CFF;animation:orbBloomBreathe 1.1s ease-in-out infinite;"></div>
-                <div style="width:3px;height:12px;border-radius:2px;background:#5B8CFF;"></div>
-                <div style="width:3px;height:6px;border-radius:2px;background:#5B8CFF;"></div>
+          <!-- Interactive Voice Widget -->
+          <div class="voice-interactive-card">
+            <div class="voice-card-header">
+              <div class="voice-status-pill">
+                <div class="live-dot" style="background:#3fb59a;"></div>
+                <span>Push-to-Talk Ready</span>
               </div>
-              <div style="font-size:15px;color:rgba(255,255,255,0.7);font-weight:500;">Agent, open Notepad and type hello</div>
+              <div class="voice-keys-badge">
+                <span class="kbd-key">Ctrl</span>
+                <span style="font-size:11px;color:rgba(255,255,255,0.4);">+</span>
+                <span class="kbd-key">⊞ Win</span>
+              </div>
             </div>
-            <div style="display:flex;align-items:center;gap:8px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);">
-              <span style="font-family:var(--font-mono);font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#f2b84b;background:rgba(242,184,75,0.12);border:1px solid rgba(242,184,75,0.3);border-radius:5px;padding:2px 7px;">Agent</span>
-              <span style="font-size:12px;color:rgba(255,255,255,0.45);">detected from what you said</span>
+
+            <!-- Animated Audio Equalizer Waveform -->
+            <div class="voice-wave-visualizer">
+              <div class="voice-wave-bar" style="height:14px;"></div>
+              <div class="voice-wave-bar" style="height:22px;"></div>
+              <div class="voice-wave-bar" style="height:32px;"></div>
+              <div class="voice-wave-bar" style="height:18px;"></div>
+              <div class="voice-wave-bar" style="height:28px;"></div>
+              <div class="voice-wave-bar" style="height:10px;"></div>
+              <div class="voice-wave-bar" style="height:34px;"></div>
+              <div class="voice-wave-bar" style="height:20px;"></div>
+              <div class="voice-wave-bar" style="height:30px;"></div>
+              <div class="voice-wave-bar" style="height:16px;"></div>
+              <div class="voice-wave-bar" style="height:26px;"></div>
+              <div class="voice-wave-bar" style="height:12px;"></div>
+              <div class="voice-wave-bar" style="height:36px;"></div>
+              <div class="voice-wave-bar" style="height:18px;"></div>
+              <div class="voice-wave-bar" style="height:10px;"></div>
             </div>
+
+            <!-- Live Streaming Transcript -->
+            <div class="voice-transcript-box">
+              <span class="voice-transcript-text">"Pointr, open Notepad and write the standup notes"</span>
+              <span class="voice-transcript-cursor"></span>
+            </div>
+
+            <!-- Voice Mode Pills -->
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+              <div class="voice-prompt-chips">
+                <button class="voice-chip active" data-type="agent">Agent task</button>
+                <button class="voice-chip" data-type="explain">Explain</button>
+                <button class="voice-chip" data-type="direct">Direct ask</button>
+              </div>
+              <span class="flow-badge blue voice-detected-tag" style="font-size:10px;">Agent mode (NV-Parakeet)</span>
+            </div>
+
+            <!-- Interactive Speak Button -->
+            <button class="voice-mic-btn" type="button" aria-label="Hold or Click to Speak">
+              <span>🎙️ Hold or Click to Speak</span>
+            </button>
           </div>
         </div>
         <div class="feature-info-col">
           <div class="feature-num-watermark">05</div>
-          <div class="feature-label">05 - VOICE</div>
+          <div class="feature-label">05 - VOICE FLOWS</div>
           <h2 class="feature-heading">Hold a key, speak, let go</h2>
           <div class="feature-desc">Hold Ctrl + Win and say what you want - Pointr transcribes it on your own computer as you talk and sends it the instant you release, exactly like typing. Say "agent" or "explain" first to use those modes, or just address it as "Pointr". Your voice never leaves your machine unless you choose otherwise.</div>
         </div>
       </div>
+
 
     </section>
 

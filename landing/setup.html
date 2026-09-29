@@ -220,19 +220,87 @@
 
         <!-- Actions -->
         <section id="actions">
-          <h2 style="font-size:26px;font-weight:600;margin:0 0 16px;">On-screen actions</h2>
-          <p style="font-size:14.5px;line-height:1.6;color:var(--text-secondary);margin:0 0 24px;">Settings → <strong style="color:#ffffff;">On-screen actions</strong> decides whether Pointr may act on your computer, and whether it asks first. <strong style="color:#ffffff;">Off</strong> limits Pointr to answering questions; it will never click, type, or press keys on your behalf. <strong style="color:#ffffff;">Always ask</strong> (the default) waits for Enter before acting, as described below. <strong style="color:#ffffff;">Always allow</strong> skips that prompt and starts straight away: each step still shows as it runs, and <strong style="color:#ffffff;">Esc</strong> stops it at any point. Pick Always allow only if you're comfortable with Pointr acting on what it reads from your screen without a check first.</p>
+          <h2 style="font-size:26px;font-weight:600;margin:0 0 16px;">On-screen actions &amp; permissions</h2>
+          <p style="font-size:14.5px;line-height:1.6;color:var(--text-secondary);margin:0 0 20px;">Settings → <strong style="color:#ffffff;">On-screen actions</strong> decides whether Pointr may act on your computer, and whether it asks first. Click any tier below to explore how Pointr handles permissions:</p>
+
+          <!-- Interactive 3-Tier Permissions Matrix -->
+          <div class="perm-matrix-grid">
+            <div class="perm-tier-card selected tier-ask" data-tier="ask">
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <span class="flow-badge gold">Recommended</span>
+                <span style="font-size:16px;">🛡️</span>
+              </div>
+              <div style="font-size:15px;font-weight:600;color:#fff;">Always ask</div>
+              <div style="font-size:13px;line-height:1.55;color:var(--text-secondary);">
+                Shows plan or keystroke proposal in an overlay. Waits for explicit <strong style="color:#fff;">Enter</strong> before touching any window.
+              </div>
+              <div style="font-family:var(--font-mono);font-size:11px;color:#f2b84b;margin-top:auto;">
+                Default • Full Safety
+              </div>
+            </div>
+
+            <div class="perm-tier-card tier-allow" data-tier="allow">
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <span class="flow-badge blue">Autonomous</span>
+                <span style="font-size:16px;">⚡</span>
+              </div>
+              <div style="font-size:15px;font-weight:600;color:#fff;">Always allow</div>
+              <div style="font-size:13px;line-height:1.55;color:var(--text-secondary);">
+                Starts straight away upon plan generation. Each step still displays live on screen. <strong style="color:#fff;">Esc</strong> halts at any time.
+              </div>
+              <div style="font-family:var(--font-mono);font-size:11px;color:#8fb4ff;margin-top:auto;">
+                Fast Multi-Step Execution
+              </div>
+            </div>
+
+            <div class="perm-tier-card tier-off" data-tier="off">
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <span class="flow-badge" style="background:rgba(255,255,255,0.08);color:#bbb;">Read-Only</span>
+                <span style="font-size:16px;">🔒</span>
+              </div>
+              <div style="font-size:15px;font-weight:600;color:#fff;">Off</div>
+              <div style="font-size:13px;line-height:1.55;color:var(--text-secondary);">
+                Completely restricts Pointr to answering questions and drawing screen annotations. Never types or clicks.
+              </div>
+              <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-top:auto;">
+                Strict Zero-Action Mode
+              </div>
+            </div>
+          </div>
+
+          <!-- Execution Lifecycle Flowchart -->
+          <div class="flowchart-container">
+            <div style="font-size:13px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--text-muted);">
+              Permission &amp; Execution Lifecycle
+            </div>
+            <div class="flow-pipeline">
+              <div class="flow-step-box">
+                <span class="flow-badge blue">Phase 1</span>
+                <div style="font-size:14px;font-weight:600;color:#fff;">Analyze Screen</div>
+                <div style="font-size:12px;color:var(--text-secondary);">Reads focused app &amp; form fields</div>
+              </div>
+              <div class="flow-arrow-icon">➔</div>
+              <div class="flow-step-box gold">
+                <span class="flow-badge gold">Phase 2: Gate</span>
+                <div style="font-size:14px;font-weight:600;color:#fff;">User Verification</div>
+                <div style="font-size:12px;color:var(--text-secondary);"><span class="kbd-key">Enter</span> executes • <span class="kbd-key">Esc</span> cancels</div>
+              </div>
+              <div class="flow-arrow-icon">➔</div>
+              <div class="flow-step-box highlight">
+                <span class="flow-badge blue">Phase 3</span>
+                <div style="font-size:14px;font-weight:600;color:#fff;">Live Execution</div>
+                <div style="font-size:12px;color:var(--text-secondary);">Automated typing &amp; clicks with audit log</div>
+              </div>
+            </div>
+          </div>
+
           <div style="display:flex;flex-direction:column;gap:20px;">
             <div>
-              <div style="font-size:16px;font-weight:600;color:rgba(255,255,255,0.95);margin-bottom:6px;">One action</div>
-              <div style="font-size:14.5px;line-height:1.6;color:var(--text-secondary);">For a single step, like typing a drafted reply into the field you're in or opening an app, Pointr shows exactly what it's about to do and waits for you to press <strong style="color:#ffffff;">Enter</strong>.</div>
+              <div style="font-size:16px;font-weight:600;color:rgba(255,255,255,0.95);margin-bottom:6px;">Single-action vs Multi-step tasks</div>
+              <div style="font-size:14.5px;line-height:1.6;color:var(--text-secondary);">For single steps (e.g. typing a draft into Slack), Pointr waits for Enter. For complex multi-step tasks, Pointr presents its entire breakdown plan upfront. Once confirmed with Enter, it carries out each step smoothly while observing the screen before each click.</div>
             </div>
             <div>
-              <div style="font-size:16px;font-weight:600;color:rgba(255,255,255,0.95);margin-bottom:6px;">Multi-step tasks</div>
-              <div style="font-size:14.5px;line-height:1.6;color:var(--text-secondary);">For tasks that need several steps, Pointr shows its plan once and waits for <strong style="color:#ffffff;">Enter</strong>. After that it runs on its own, looking at your screen before each step and showing which step it's on. It can open apps, click, type, press keys and shortcuts (like Ctrl+S), and scroll. Press <strong style="color:#ffffff;">Esc</strong> at any point to stop it. Steps after the plan is confirmed are not asked about again, so start these when you're ready to watch.</div>
-            </div>
-            <div>
-              <div style="font-size:16px;font-weight:600;color:rgba(255,255,255,0.95);margin-bottom:6px;">Agent history</div>
+              <div style="font-size:16px;font-weight:600;color:rgba(255,255,255,0.95);margin-bottom:6px;">Agent history audit log</div>
               <div style="font-size:14.5px;line-height:1.6;color:var(--text-secondary);">Every multi-step run is logged so you can see what Pointr did and whether each step worked. Open it from the tray icon → <strong style="color:#ffffff;">Agent History</strong>, or the clock button beside the question box. It keeps your last 50 runs, only on your own computer, and holds no screenshots. Use <strong style="color:#ffffff;">Clear history</strong> to wipe it.</div>
             </div>
           </div>
@@ -272,19 +340,51 @@
         <!-- Voice -->
         <section id="voice">
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
-            <h2 style="font-size:26px;font-weight:600;margin:0;">Voice</h2>
-            <span style="font-family:var(--font-mono);font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#f2b84b;background:rgba(242,184,75,0.12);border:1px solid rgba(242,184,75,0.3);border-radius:5px;padding:3px 8px;">One-time 670 MB download</span>
+            <h2 style="font-size:26px;font-weight:600;margin:0;">Voice Flows &amp; Privacy Architecture</h2>
+            <span style="font-family:var(--font-mono);font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#3fb59a;background:rgba(63,181,154,0.12);border:1px solid rgba(63,181,154,0.3);border-radius:5px;padding:3px 8px;">100% On-Device Available</span>
           </div>
-          <p style="font-size:14.5px;line-height:1.6;color:var(--text-secondary);margin:0 0 20px;">Hold <strong style="color:#ffffff;">Ctrl + Win</strong>, say what you want, and let go. Pointr captures your screen the moment you start, shows your words as you speak, and sends them the instant you release, exactly as if you'd typed them. Start with "agent" or "explain" to use those modes - or just address it by name, "Pointr, open Notepad and type hello" works the same as saying "agent" first. A stray "uh" or "hey" before either still gets recognized.</p>
+          <p style="font-size:14.5px;line-height:1.6;color:var(--text-secondary);margin:0 0 20px;">Hold <strong style="color:#ffffff;">Ctrl + Win</strong>, say what you want, and let go. Pointr captures your screen the moment you start, shows your words as you speak, and sends them the instant you release, exactly as if you'd typed them. Choose between local on-device transcription and cloud-assisted transcription:</p>
 
+          <!-- Interactive Voice Architecture Flowchart -->
+          <div id="voiceFlowContainer" class="flowchart-container">
+            <div class="flowchart-tabs">
+              <button class="flowchart-tab active" data-flow="local">Option A: On-Device (Parakeet 670MB)</button>
+              <button class="flowchart-tab" data-flow="cloud">Option B: OpenAI Whisper Cloud (BYOK)</button>
+            </div>
+            <div class="flow-pipeline">
+              <!-- Rendered via nav.js -->
+              <div class="flow-step-box highlight">
+                <span class="flow-badge blue">Input</span>
+                <div style="font-size:14px;font-weight:600;color:#fff;">Push-to-Talk</div>
+                <div style="font-size:12px;color:var(--text-secondary);">Hold <span class="kbd-key">Ctrl</span> + <span class="kbd-key">Win</span></div>
+                <div style="font-size:11px;color:#8fb4ff;margin-top:2px;">Mic active only while held</div>
+              </div>
+              <div class="flow-arrow-icon">➔</div>
+              <div class="flow-step-box green">
+                <span class="flow-badge green">100% On-Device</span>
+                <div style="font-size:14px;font-weight:600;color:#fff;">NVIDIA Parakeet</div>
+                <div style="font-size:12px;color:var(--text-secondary);">Local 670 MB Speech Model</div>
+                <div style="font-size:11px;color:#3fb59a;margin-top:2px;">Audio never leaves your PC</div>
+              </div>
+              <div class="flow-arrow-icon">➔</div>
+              <div class="flow-step-box">
+                <span class="flow-badge blue">Memory Clean</span>
+                <div style="font-size:14px;font-weight:600;color:#fff;">Zero Disk Audio</div>
+                <div style="font-size:12px;color:var(--text-secondary);">Audio discarded instantly</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Only text prompt forwarded</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Setup Steps -->
           <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:24px;">
-            <div class="guide-step-card">
-              <div style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);color:rgba(255,255,255,0.7);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">1</div>
-              <div style="font-size:14.5px;line-height:1.55;color:rgba(255,255,255,0.75);">Open <strong style="color:#ffffff;">Settings → Voice</strong> and click <strong style="color:#ffffff;">Download</strong>. This fetches the speech model (about 670 MB) once, and checks every file before using it. (Or skip the download and use your OpenAI key, see below.)</div>
+            <div class="guide-step-card primary">
+              <div style="width:24px;height:24px;border-radius:50%;background:rgba(91,140,255,0.18);border:1px solid rgba(91,140,255,0.5);color:#8fb4ff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">1</div>
+              <div style="font-size:14.5px;line-height:1.55;color:rgba(255,255,255,0.85);">Open <strong style="color:#ffffff;">Settings → Voice</strong> and click <strong style="color:#ffffff;">Download</strong> to fetch the on-device model (670 MB once). Or switch provider to <strong style="color:#ffffff;">My OpenAI key</strong> to skip the download entirely.</div>
             </div>
             <div class="guide-step-card">
               <div style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);color:rgba(255,255,255,0.7);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">2</div>
-              <div style="font-size:14.5px;line-height:1.55;color:rgba(255,255,255,0.75);">Hold <strong style="color:#ffffff;">Ctrl + Win</strong> anywhere. If Windows asks, allow microphone access for desktop apps (Settings → Privacy &amp; security → Microphone).</div>
+              <div style="font-size:14.5px;line-height:1.55;color:rgba(255,255,255,0.75);">Hold <strong style="color:#ffffff;">Ctrl + Win</strong> anywhere on your screen. When Windows asks, allow microphone access for desktop apps. Release the keys when done speaking.</div>
             </div>
           </div>
 
@@ -294,15 +394,12 @@
               <div style="font-size:14.5px;line-height:1.6;color:var(--text-secondary);">Speech is turned into text on your own machine by NVIDIA's Parakeet model. Audio is never uploaded or saved; only the resulting text is sent, the same as a typed question. The microphone is on only while you hold the keys.</div>
             </div>
             <div>
-              <div style="font-size:16px;font-weight:600;color:rgba(255,255,255,0.95);margin-bottom:6px;">Rather not download it?</div>
-              <div style="font-size:14.5px;line-height:1.6;color:var(--text-secondary);">Choose <strong style="color:#ffffff;">My OpenAI key</strong> under Settings → Voice instead. Your speech is then sent to OpenAI under your own <a href="#models">OpenAI key</a> to be turned into text (billed to your OpenAI account), so no download is needed and it works on slower computers. Each pause-separated phrase is sent while you're still talking, but it's usually a little slower than on-device, and your voice does leave your computer.</div>
-            </div>
-            <div>
               <div style="font-size:16px;font-weight:600;color:rgba(255,255,255,0.95);margin-bottom:6px;">Good to know</div>
-              <div style="font-size:14.5px;line-height:1.6;color:var(--text-secondary);">It understands English and 24 other European languages. It uses about 1 GB of memory while voice is on; turn voice off in Settings to free it. Pressing another key while holding Ctrl + Win (for example Ctrl + Win + D) cancels listening and does the normal Windows shortcut instead. Holding the keys while Pointr is reading an answer aloud stops it and starts a new question.</div>
+              <div style="font-size:14.5px;line-height:1.6;color:var(--text-secondary);">It understands English and 24 other European languages. It uses about 1 GB of memory while voice is on; turn voice off in Settings to free it. Pressing another key while holding Ctrl + Win (for example <span class="kbd-key">Ctrl</span> + <span class="kbd-key">Win</span> + <span class="kbd-key">D</span>) cancels listening and does the normal Windows shortcut instead. Holding the keys while Pointr is reading an answer aloud stops it and starts a new question.</div>
             </div>
           </div>
         </section>
+
 
         <!-- Usage Data -->
         <section id="usage-data">
@@ -468,7 +565,7 @@
         <div class="footer-orb"></div>
         <div class="footer-tagline">Pointr - built for Windows.</div>
       </div>
-      <div class="footer-copy">© 2026 Pointr</div>
+      <div class="footer-copy">@satvikydv</div>
     </div>
   </footer>
 
