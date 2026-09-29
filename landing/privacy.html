@@ -21,6 +21,7 @@
 <meta name="twitter:description" content="What Pointr keeps on your computer, what leaves it, and what its server holds. No accounts, no database of your data.">
 <meta name="twitter:image" content="https://www.pointr.duckdns.org/og-image.png">
 <link rel="stylesheet" href="./style.css">
+<script src="./analytics.js" defer></script>
 </head>
 <body>
 
@@ -45,9 +46,9 @@
       <div class="nav-actions">
         <div class="version-badge">
           <div class="live-dot"></div>
-          v0.1.1
+          v0.2.0
         </div>
-        <a href="https://github.com/satvikydv/pointr/releases/download/v0.1.1/Pointr_0.1.1_x64-setup.exe" class="nav-cta-btn">
+        <a href="https://github.com/satvikydv/pointr/releases/download/v0.2.0/Pointr_0.2.0_x64-setup.exe" class="nav-cta-btn">
           <div class="windows-grid-icon" style="width:13px;height:13px;">
             <div></div><div></div><div></div><div></div>
           </div>
@@ -85,10 +86,10 @@
         <span style="font-size:13px;color:var(--text-muted);">Current Release</span>
         <div class="version-badge">
           <div class="live-dot"></div>
-          v0.1.1
+          v0.2.0
         </div>
       </div>
-      <a href="https://github.com/satvikydv/pointr/releases/download/v0.1.1/Pointr_0.1.1_x64-setup.exe" class="nav-cta-btn">
+      <a href="https://github.com/satvikydv/pointr/releases/download/v0.2.0/Pointr_0.2.0_x64-setup.exe" class="nav-cta-btn">
         <div class="windows-grid-icon">
           <div></div><div></div><div></div><div></div>
         </div>
@@ -111,7 +112,7 @@
           <div class="privacy-point"><div style="width:6px;height:6px;border-radius:50%;background:#5B8CFF;margin-top:8px;flex-shrink:0;"></div><div>Anonymous usage data is off unless you turn it on, and even then it never includes what you asked or what was on your screen.</div></div>
           <div class="privacy-point"><div style="width:6px;height:6px;border-radius:50%;background:#5B8CFF;margin-top:8px;flex-shrink:0;"></div><div>Your requests do pass through to Google (and Tavily or GitHub if you connect them), so their terms apply too. Details below.</div></div>
         </div>
-        <div style="font-size:12.5px;color:var(--text-muted);margin-top:16px;">Last updated 2026-09-28</div>
+        <div style="font-size:12.5px;color:var(--text-muted);margin-top:16px;">Last updated 2026-09-29</div>
       </div>
 
       <div id="on-your-computer">
@@ -123,6 +124,7 @@
           <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Agent history</strong><div>Your last 50 multi-step runs: what you asked, the steps taken, any text it typed, and the final answer. No screenshots. Wipe it with "Clear history" in the History window.</div></div>
           <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Browser component</strong><div>The browser Pointr downloads the first time you run a browser task.</div></div>
           <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Your voice</strong><div>When you hold Ctrl + Win, speech is turned into text on your own computer by a speech model Pointr downloads once. The audio is never uploaded and never saved: it's discarded as soon as the text is ready. The microphone is only on while you hold the keys. Only the resulting text leaves your computer, exactly like a typed question. The exception is if you choose "My OpenAI key" under Settings → Voice: then your speech is sent straight from your computer to OpenAI, under your own key, to be turned into text. It does not pass through Pointr's server.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Voice shortcut</strong><div>To notice when you hold Ctrl + Win, Pointr uses a Windows keyboard hook that watches those two keys. It looks at nothing else you type and never records, stores or sends your keystrokes.</div></div>
           <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Speech model</strong><div>NVIDIA's Parakeet model (about 670 MB, licensed CC-BY-4.0), downloaded from Hugging Face the first time you set up voice. Downloading it tells Hugging Face your IP address, like any download.</div></div>
         </div>
         <p style="margin-top:16px;font-size:14px;color:var(--text-secondary);">To remove everything Pointr keeps locally, delete the folders <span style="font-family:var(--font-mono);font-size:12.5px;color:rgba(255,255,255,0.9);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 7px;">%APPDATA%\dev.pointr.app</span> and <span style="font-family:var(--font-mono);font-size:12.5px;color:rgba(255,255,255,0.9);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:2px 7px;">%LOCALAPPDATA%\dev.pointr.app</span> (where the speech model lives).</p>
@@ -160,7 +162,7 @@
         <p style="font-size:14.5px;line-height:1.65;color:var(--text-secondary);margin:0 0 12px;"><strong style="color:rgba(255,255,255,0.95);">Google (Gemini).</strong> Your screenshots and questions reach Google's Gemini API under your own API key. How Google handles that content depends on your key's plan, and its terms differ between free and paid use. Read <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener">Google's Gemini API terms</a> for your tier before using Pointr with anything sensitive.</p>
         <p style="font-size:14.5px;line-height:1.65;color:var(--text-secondary);margin:0 0 12px;"><strong style="color:rgba(255,255,255,0.95);">OpenAI (if you choose it).</strong> If you switch the provider to OpenAI in Settings, your screenshots and questions go to OpenAI's API under your own key instead of Google's. Pointr asks OpenAI not to store its responses (the API's store option is turned off). See <a href="https://openai.com/policies/privacy-policy/" target="_blank" rel="noopener">OpenAI's privacy policy</a> and its API data controls for how it treats API traffic.</p>
         <p style="font-size:14.5px;line-height:1.65;color:var(--text-secondary);margin:0 0 12px;"><strong style="color:rgba(255,255,255,0.95);">Tavily and GitHub.</strong> Only used if you connect them, and only for the requests described above. Their own policies apply to what they receive.</p>
-        <p style="font-size:14.5px;line-height:1.65;color:var(--text-secondary);margin:0 0 12px;"><strong style="color:rgba(255,255,255,0.95);">PostHog.</strong> Receives anonymous usage data, and only if you opt in. See below.</p>
+        <p style="font-size:14.5px;line-height:1.65;color:var(--text-secondary);margin:0 0 12px;"><strong style="color:rgba(255,255,255,0.95);">PostHog.</strong> Receives anonymous usage data from the app, and only if you opt in (see below), and anonymous page views from this website (see "This website").</p>
       </div>
 
       <div id="usage-data">
@@ -172,6 +174,16 @@
           <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Where it goes</strong><div>PostHog, a product analytics service. See <a href="https://posthog.com/privacy" target="_blank" rel="noopener">PostHog's privacy policy</a>.</div></div>
         </div>
         <p style="margin-top:16px;font-size:14px;color:var(--text-secondary);">The random ID resets if you delete the settings file, and turning the option off stops anything further from being sent.</p>
+      </div>
+
+      <div id="website">
+        <h2 style="font-size:24px;font-weight:600;margin:0 0 14px;">This website</h2>
+        <p style="font-size:14.5px;line-height:1.65;color:var(--text-secondary);margin:0 0 14px;">To see how many people visit and which posts or links they came from, this site counts page views with PostHog. It is deliberately light.</p>
+        <div class="privacy-table">
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Counted</strong><div>Which page was opened, the site you came from and any <span style="font-family:var(--font-mono);font-size:12px;color:#8fb4ff;">utm_</span> tags on the link, your browser and device type, screen size, how far down the page you scrolled, and clicks on the download button and on links that leave the site.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Not used</strong><div>No cookies, no ads, no session recordings, and no IP address or location. The visit ID is random, stays in your browser only until you close the tab, and is not linked to you.</div></div>
+          <div class="privacy-row"><strong style="color:rgba(255,255,255,0.95);">Opting out</strong><div>Turn on Do Not Track or Global Privacy Control in your browser and nothing is sent. You can also add <span style="font-family:var(--font-mono);font-size:12px;color:#8fb4ff;">?notrack=1</span> to any address on this site to stop it in that browser.</div></div>
+        </div>
       </div>
 
       <div id="your-control">

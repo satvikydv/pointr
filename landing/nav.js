@@ -327,12 +327,12 @@ document.addEventListener('DOMContentLoaded', () => {
           <span class="flow-badge blue">Input</span>
           <div style="font-size:14px;font-weight:600;color:#fff;">Push-to-Talk</div>
           <div style="font-size:12px;color:var(--text-secondary);">Hold <span class="kbd-key">Ctrl</span> + <span class="kbd-key">Win</span></div>
-          <div style="font-size:11px;color:#8fb4ff;margin-top:2px;">Mic streams on release</div>
+          <div style="font-size:11px;color:#8fb4ff;margin-top:2px;">Phrases sent as you speak</div>
         </div>
         <div class="flow-arrow-icon">➔</div>
         <div class="flow-step-box gold">
           <span class="flow-badge gold">Direct BYOK</span>
-          <div style="font-size:14px;font-weight:600;color:#fff;">OpenAI Whisper</div>
+          <div style="font-size:14px;font-weight:600;color:#fff;">OpenAI transcription</div>
           <div style="font-size:12px;color:var(--text-secondary);">Under your OpenAI API Key</div>
           <div style="font-size:11px;color:#f2b84b;margin-top:2px;">No 670 MB model download</div>
         </div>
