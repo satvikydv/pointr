@@ -17,10 +17,15 @@
 //
 // Skipping your own visits: open the site once with ?notrack=1 in each browser
 // you use. It's remembered in that browser; ?notrack=0 turns tracking back on.
+//
+// Testing: add ?analytics_debug=1 to any URL (works on localhost too). Events
+// are sent for real and each one is also printed in the browser console, and if
+// nothing is sent the console says why. Open DevTools > Network and filter on
+// "capture" to see the requests themselves.
 (function () {
   'use strict';
 
-  var KEY = '';
+  var KEY = 'phc_t6kLQCRmm2HKnjaQmnJ4uFNyCsyGFwrB9gUbxj2rgNmK';
   var HOST = 'https://us.i.posthog.com';
 
   var me = document.currentScript;
@@ -29,7 +34,14 @@
   if (me && me.getAttribute('data-host')) HOST = me.getAttribute('data-host');
   var testing = !!(me && me.getAttribute('data-host'));
 
-  if (!KEY) return;
+  var debug = false;
+  try { debug = new URLSearchParams(location.search).get('analytics_debug') === '1'; } catch (e) {}
+  if (debug) testing = true; // allow localhost / file:// while debugging
+  function skip(why) {
+    if (debug) console.info('[pointr-analytics] not sending: ' + why);
+  }
+
+  if (!KEY) { skip('no project key set in analytics.js'); return; }
 
   function store(kind) {
     try { return window[kind]; } catch (e) { return null; }
@@ -42,17 +54,17 @@
     var flag = new URLSearchParams(location.search).get('notrack');
     if (local && flag === '1') local.setItem('pointr_notrack', '1');
     if (local && flag === '0') local.removeItem('pointr_notrack');
-    if (local && local.getItem('pointr_notrack') === '1') return;
+    if (local && local.getItem('pointr_notrack') === '1') { skip('this browser is excluded (?notrack=1); open any page with ?notrack=0 to undo'); return; }
   } catch (e) {}
 
   // Respect Do Not Track and Global Privacy Control.
-  if (navigator.doNotTrack === '1' || window.doNotTrack === '1' || navigator.globalPrivacyControl) return;
+  if (navigator.doNotTrack === '1' || window.doNotTrack === '1' || navigator.globalPrivacyControl) { skip('Do Not Track / Global Privacy Control is on in this browser'); return; }
 
   var host = location.hostname;
-  if (!testing && (location.protocol === 'file:' || host === 'localhost' || host === '127.0.0.1')) return;
+  if (!testing && (location.protocol === 'file:' || host === 'localhost' || host === '127.0.0.1')) { skip('local page (add ?analytics_debug=1 to test from here)'); return; }
 
   var ua = navigator.userAgent || '';
-  if (/bot|crawl|spider|slurp|preview|lighthouse|facebookexternalhit|linkedinbot|twitterbot/i.test(ua)) return;
+  if (/bot|crawl|spider|slurp|preview|lighthouse|facebookexternalhit|linkedinbot|twitterbot/i.test(ua)) { skip('user agent looks like a bot'); return; }
 
   // UUIDv7 (time-ordered), which is what PostHog expects for session ids.
   function uuidv7() {
@@ -147,6 +159,7 @@
     Object.keys(u).forEach(function (k) { props[k] = u[k]; });
     if (extra) Object.keys(extra).forEach(function (k) { props[k] = extra[k]; });
 
+    if (debug) console.log('[pointr-analytics] ' + event, props);
     var body = JSON.stringify({
       api_key: KEY,
       event: event,

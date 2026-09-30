@@ -366,6 +366,21 @@ a:hover {
   animation: orbBloomBreathe 2.6s ease-in-out infinite;
 }
 
+/* The sphere's outer glow lives on the wrapper's ::before instead of on the
+   sphere itself: the sphere needs a mask (below) to be clipped round on
+   iPhone Safari, and a mask would also cut off its own outer box-shadow. */
+.hero-orb-wrap::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(230px, 52vw);
+  height: min(230px, 52vw);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  box-shadow: 0 0 60px rgba(91, 140, 255, 0.55);
+}
+
 .hero-orb-sphere {
   position: relative;
   width: min(230px, 52vw);
@@ -373,7 +388,12 @@ a:hover {
   border-radius: 50%;
   overflow: hidden;
   isolation: isolate;
-  box-shadow: 0 0 60px rgba(91, 140, 255, 0.55), inset 0 -30px 50px rgba(0, 0, 0, 0.35), inset 0 20px 30px rgba(255, 255, 255, 0.25);
+  /* Safari (iPhone, and Mac) ignores border-radius + overflow:hidden for
+     children that animate with blur and blend modes, so the swirl layers
+     showed through as a square. A mask forces a real round clip. */
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
+  mask-image: radial-gradient(circle, #000 100%, #000 100%);
+  box-shadow: inset 0 -30px 50px rgba(0, 0, 0, 0.35), inset 0 20px 30px rgba(255, 255, 255, 0.25);
   background: radial-gradient(circle at 32% 28%, rgba(210, 225, 255, 0.9), rgba(91, 140, 255, 0.5) 40%, rgba(30, 45, 90, 0.85) 78%, rgba(10, 14, 26, 0.95) 100%);
 }
 
