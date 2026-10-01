@@ -380,5 +380,61 @@ document.addEventListener('DOMContentLoaded', () => {
       }, 450);
     });
   }
-});
+  // ==========================================
+  // 6. DOWNLOAD NOTICE (unsigned installer)
+  // ==========================================
+  // The installer isn't code-signed yet, so Windows SmartScreen will warn when
+  // it's opened. Say so up front, on every download button, so nobody is
+  // surprised and assumes the file is malware. The download itself is not
+  // blocked or delayed: this only adds the notice.
+  const REPO_URL = 'https://github.com/satvikydv/pointr';
+  let downloadNotice = null;
 
+  function closeDownloadNotice() {
+    if (!downloadNotice) return;
+    downloadNotice.remove();
+    downloadNotice = null;
+    document.removeEventListener('keydown', onNoticeKey);
+  }
+  function onNoticeKey(e) {
+    if (e.key === 'Escape') closeDownloadNotice();
+  }
+
+  function showDownloadNotice() {
+    if (downloadNotice) return;
+    downloadNotice = document.createElement('div');
+    downloadNotice.className = 'dl-notice-backdrop';
+    downloadNotice.innerHTML = `
+      <div class="dl-notice" role="dialog" aria-modal="true" aria-labelledby="dl-notice-title">
+        <div class="dl-notice-head">
+          <div class="dl-notice-check">&#10003;</div>
+          <h2 id="dl-notice-title">Your download has started</h2>
+        </div>
+        <p class="dl-notice-lead">Pointr isn't code-signed yet, so Windows will probably show a warning when you open the installer. That's expected for a new independent app. It doesn't mean the file is unsafe.</p>
+        <ol class="dl-notice-steps">
+          <li>If you see <strong>"Windows protected your PC"</strong>, click <strong>More info</strong>, then <strong>Run anyway</strong>.</li>
+          <li>If your browser says the file <strong>isn't commonly downloaded</strong>, choose <strong>Keep</strong>.</li>
+        </ol>
+        <p class="dl-notice-why">Code-signing certificates cost money, and a brand new app has no reputation with Windows SmartScreen yet. Pointr is open source, so you can read exactly what it does, and the installer is published on its GitHub release page.</p>
+        <div class="dl-notice-actions">
+          <a class="dl-notice-gh" href="${REPO_URL}" target="_blank" rel="noopener">
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+            View the source on GitHub
+          </a>
+          <button type="button" class="dl-notice-ok">Got it</button>
+        </div>
+      </div>`;
+    document.body.appendChild(downloadNotice);
+    downloadNotice.addEventListener('click', (e) => {
+      if (e.target === downloadNotice) closeDownloadNotice();
+    });
+    downloadNotice.querySelector('.dl-notice-ok').addEventListener('click', closeDownloadNotice);
+    downloadNotice.querySelector('.dl-notice-ok').focus();
+    document.addEventListener('keydown', onNoticeKey);
+  }
+
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest && e.target.closest('a[href*="releases/download"]');
+    if (link) showDownloadNotice();
+  });
+});
