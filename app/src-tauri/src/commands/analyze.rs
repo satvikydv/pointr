@@ -425,6 +425,9 @@ pub async fn process_direct(
     app: AppHandle,
     query: Option<String>,
     request_id: String,
+    // What the frontend knows that the server cannot, e.g. the walkthrough this
+    // question interrupts (see explainContextText in main.js).
+    extra_context: Option<String>,
     state: State<'_, Mutex<CaptureState>>,
 ) -> Result<AnalyzeResponse, String> {
     let (monitor, image_base64, cursor_norm, active_window_title, app_name, session_id, thread_id, session_duration_secs) = {
@@ -471,6 +474,7 @@ pub async fn process_direct(
         "query_text": query_text,
         "session_id": session_id,
         "thread_id": thread_id,
+        "extra_context": extra_context.unwrap_or_default(),
         "timestamp": timestamp,
         "gemini_api_key": gemini_api_key
     });

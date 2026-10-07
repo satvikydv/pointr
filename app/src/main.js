@@ -58,7 +58,7 @@ function showError(message, onDismissed) {
 /// of that is gone. Esc (global shortcut) or the 6 s timeout closes it; the
 /// close button is hidden since a click-through window can't receive the
 /// click anyway.
-async function showOverlayError(message) {
+async function showOverlayError(message, onDismissed = () => dismissOverlay()) {
     const appWindow = Window.getCurrent();
     loadingIndicator.classList.add('hidden');
     voicePill.classList.add('hidden');
@@ -69,7 +69,7 @@ async function showOverlayError(message) {
     await enableEscapeDismiss();
     showError(message, () => {
         errorClose.classList.remove('hidden');
-        dismissOverlay();
+        onDismissed();
     });
 }
 
@@ -252,7 +252,10 @@ listen('show-overlay-direct', async () => {
     if (closeTimer) clearTimeout(closeTimer);
     mode = 'direct';
     activeRequestId++; // invalidate anything still in flight from before
-    stopExplainSession();
+    // A question asked while an explanation is playing pauses it instead of
+    // ending it (see beginExplainInterrupt).
+    const interrupting = liveExplainSession();
+    if (interrupting) beginExplainInterrupt(); else stopExplainSession();
 
     img.style.display = 'none';
     selectionBox.style.display = 'none';
@@ -263,7 +266,7 @@ listen('show-overlay-direct', async () => {
     const oldTooltip = document.getElementById('answer-tooltip');
     if (oldTooltip) oldTooltip.remove();
     const oldMarker = document.getElementById('pointer-marker');
-    if (oldMarker) oldMarker.remove();
+    if (oldMarker && !interrupting) oldMarker.remove(); // the paused step's annotation stays
 
     const appWindow = Window.getCurrent();
 
@@ -317,14 +320,18 @@ function voiceBucket(ms) {
 }
 
 async function showVoiceError(message) {
-    await showOverlayError(message);
+    // A failed attempt to ask something mid-walkthrough leaves it paused and
+    // offers the resume, instead of ending it.
+    const session = liveExplainSession();
+    await showOverlayError(message, session ? () => offerExplainResume(session) : undefined);
 }
 
 listen('voice-listening', async () => {
     if (closeTimer) clearTimeout(closeTimer);
     mode = 'direct';
     activeRequestId++; // aborts anything in flight, same as the typed hotkey
-    stopExplainSession();
+    const interrupting = liveExplainSession();
+    if (interrupting) beginExplainInterrupt(); else stopExplainSession();
 
     img.style.display = 'none';
     selectionBox.style.display = 'none';
@@ -341,7 +348,7 @@ listen('voice-listening', async () => {
     const oldTooltip = document.getElementById('answer-tooltip');
     if (oldTooltip) oldTooltip.remove();
     const oldMarker = document.getElementById('pointer-marker');
-    if (oldMarker) oldMarker.remove();
+    if (oldMarker && !interrupting) oldMarker.remove(); // the paused step's annotation stays
 
     voiceText.textContent = 'Listening…';
     voiceMode.classList.add('hidden');
@@ -388,6 +395,11 @@ listen('voice-final', (event) => {
 
 listen('voice-cancelled', () => {
     voicePill.classList.add('hidden');
+    const session = liveExplainSession();
+    if (session) {
+        offerExplainResume(session);
+        return;
+    }
     dismissOverlay();
 });
 
@@ -409,12 +421,17 @@ directQueryInput.addEventListener('keydown', (e) => {
 });
 
 async function runDirectAnalysis(queryText, source = 'typed') {
-    const requestId = ++activeRequestId;
-    stopExplainSession();
-    const appWindow = Window.getCurrent();
-
     const agentMatch = queryText.trim().match(/^agent:\s*(.*)$/i);
     const explainMatch = queryText.trim().match(/^explain:\s*(.*)$/i);
+
+    // A plain question asked while an explanation is playing is a follow-up to
+    // it: no keyword needed, answered on its own, then the walkthrough can be
+    // resumed. "agent:" / "explain:" start something new and end the old one.
+    const followUp = !agentMatch && !explainMatch ? liveExplainSession() : null;
+
+    const requestId = ++activeRequestId;
+    if (followUp) followUp.pause(); else stopExplainSession();
+    const appWindow = Window.getCurrent();
 
     loadingLabel.textContent = agentMatch ? 'Queueing…' : (explainMatch ? 'Preparing…' : 'Thinking…');
     loadingIndicator.classList.remove('hidden');
@@ -430,16 +447,22 @@ async function runDirectAnalysis(queryText, source = 'typed') {
             // events), so playback starts on the first instead of after the
             // whole walkthrough has been generated.
             const session = createExplainSession({ topic, requestId });
+            session.streamId = String(requestId); // steps are matched to the request that asked for them
             explainSession = session;
             invoke('process_explain_stream', { topic, requestId: String(requestId) })
                 .then(() => session.finish())
                 .catch((e) => session.finish(e));
 
             await session.firstStep();
-            if (requestId !== activeRequestId) return; // superseded by a later press
+            if (session.stopped) return; // dismissed or replaced while it was being prepared
+
+            // A question asked before the first step arrived has taken over
+            // the screen (and paused this); the walkthrough just waits behind it.
+            const interrupted = requestId !== activeRequestId;
 
             if (session.steps.length === 0) {
                 if (explainSession === session) explainSession = null;
+                if (interrupted) return;
                 trackQueryOutcome('explain', 'exception', source);
                 loadingIndicator.classList.add('hidden');
                 await showOverlayError(`${session.streamError || 'The explanation came back empty.'}`);
@@ -447,10 +470,12 @@ async function runDirectAnalysis(queryText, source = 'typed') {
             }
             trackQueryOutcome('explain', 'ok', source);
 
-            loadingIndicator.classList.add('hidden');
-            await appWindow.show();
-            await appWindow.setAlwaysOnTop(true);
-            await appWindow.setFocus();
+            if (!interrupted) {
+                loadingIndicator.classList.add('hidden');
+                await appWindow.show();
+                await appWindow.setAlwaysOnTop(true);
+                await appWindow.setFocus();
+            }
 
             await playExplainSession(session);
             return;
@@ -466,7 +491,8 @@ async function runDirectAnalysis(queryText, source = 'typed') {
             ? await runAgentTask(agentTaskDescription, source)
             : await invoke('process_direct', {
                 query: queryText || null,
-                requestId: String(requestId)
+                requestId: String(requestId),
+                extraContext: followUp ? explainContextText(followUp) : null,
             });
         if (!agentMatch) trackQueryOutcome('direct', response.answer_text, source);
 
@@ -492,13 +518,13 @@ async function runDirectAnalysis(queryText, source = 'typed') {
         if (requestId !== activeRequestId) return; // could've been superseded during the confirm wait
 
         const rect = { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
-        renderResponse(response, rect);
+        renderResponse(response, rect, followUp);
     } catch (error) {
         if (requestId !== activeRequestId) return;
         if (!agentMatch) trackQueryOutcome(explainMatch ? 'explain' : 'direct', 'exception', source);
 
         console.error("Error in direct analysis:", error);
-        await showOverlayError(`${error}`);
+        await showOverlayError(`${error}`, followUp ? () => offerExplainResume(followUp) : undefined);
     }
 }
 
@@ -520,10 +546,113 @@ function stopExplainSession() {
     explainSession = null;
 }
 
+/// The walkthrough in progress, if it hasn't ended.
+function liveExplainSession() {
+    return explainSession && !explainSession.stopped && !explainSession.ended ? explainSession : null;
+}
+
+let explainHintTimer = null;
+
+/// The small pill at the top of the overlay. null hides it.
+function setExplainHint(text, autoHideMs = 0) {
+    const hint = document.getElementById('storyboard-hint');
+    clearTimeout(explainHintTimer);
+    if (!text) {
+        hint.classList.add('hidden');
+        return;
+    }
+    hint.firstElementChild.textContent = text;
+    hint.classList.remove('hidden');
+    if (autoHideMs) explainHintTimer = setTimeout(() => hint.classList.add('hidden'), autoHideMs);
+}
+
+// Asking something while an explanation plays (hold the voice hotkey, or the
+// typed one): the walkthrough pauses where it is, the question is answered on
+// its own like any other, and then Space or Enter picks the explanation back
+// up from the step that was interrupted. Esc ends everything.
+let explainResumeCleanup = null;
+
+function beginExplainInterrupt() {
+    cancelExplainResumeKey();
+    explainSession.pause(); // stops the narration, keeps the step
+    stopSpeakingIndicator();
+    invoke('stop_speech').catch(() => {}); // an earlier answer may still be speaking too
+    setExplainHint('Paused');
+}
+
+function cancelExplainResumeKey() {
+    if (explainResumeCleanup) explainResumeCleanup();
+}
+
+/// After a follow-up has been answered (or the attempt failed): show the
+/// resume prompt and wait for Space or Enter. The window has to take focus
+/// to receive the key, same as the confirm prompts.
+async function offerExplainResume(session) {
+    if (explainSession !== session || session.stopped) {
+        // The walkthrough ended while this was being answered: nothing to
+        // resume, so the answer closes like any other.
+        if (closeTimer) clearTimeout(closeTimer);
+        closeTimer = setTimeout(() => dismissOverlay(), 5000);
+        return;
+    }
+    cancelExplainResumeKey();
+    setExplainHint('Space or Enter to resume the explanation. Esc to stop');
+    const appWindow = Window.getCurrent();
+    await appWindow.setIgnoreCursorEvents(false);
+    await appWindow.setFocus();
+    if (explainSession !== session || session.stopped) return;
+
+    const onKey = (e) => {
+        if (e.key === ' ' || e.key === 'Enter') {
+            e.preventDefault();
+            resumeExplain(session);
+        }
+        // Esc is handled by the document-level handler (ends the walkthrough).
+    };
+    document.addEventListener('keydown', onKey);
+    explainResumeCleanup = () => {
+        document.removeEventListener('keydown', onKey);
+        explainResumeCleanup = null;
+    };
+}
+
+async function resumeExplain(session) {
+    cancelExplainResumeKey();
+    if (explainSession !== session || session.stopped) return;
+
+    // Clear the answer and whatever it pointed at; the replayed step redraws its own.
+    const tooltip = document.getElementById('answer-tooltip');
+    if (tooltip) tooltip.remove();
+    const marker = document.getElementById('pointer-marker');
+    if (marker) marker.remove();
+    stopSpeakingIndicator();
+    invoke('stop_speech').catch(() => {});
+
+    // The follow-up took over activeRequestId; the walkthrough owns it again now.
+    session.requestId = activeRequestId;
+    setExplainHint('Esc to stop', 2500);
+    await Window.getCurrent().setIgnoreCursorEvents(true);
+    session.resume();
+}
+
+/// What the model needs to know to answer a question asked mid-walkthrough.
+function explainContextText(session) {
+    const shown = session.steps.slice(0, session.index + 1);
+    const current = session.steps[session.index];
+    const lines = shown.map((step, i) => `${i + 1}. ${step.narration}`).join('\n');
+    return [
+        `The user is partway through a spoken, step-by-step walkthrough you gave them about "${session.topic}", over this same screen. The screenshot may show the walkthrough's own caption bar and annotations: ignore those, they are Pointr's interface.`,
+        `Steps so far:\n${lines}`,
+        current
+            ? `They interrupted during step ${session.index + 1} ("${current.narration}") to ask the question below. Answer it directly and briefly in light of the walkthrough; do not repeat the walkthrough.`
+            : '',
+    ].filter(Boolean).join('\n').slice(0, 3800);
+}
+
 listen('explain-step', (event) => {
     const { request_id, step } = event.payload;
     const session = explainSession;
-    if (!session || String(session.requestId) !== request_id) return;
+    if (!session || session.streamId !== request_id) return;
     session.push(step);
 });
 
@@ -531,7 +660,6 @@ async function playExplainSession(session) {
     const bar = document.getElementById('storyboard-bar');
     const progress = document.getElementById('storyboard-progress');
     const caption = document.getElementById('storyboard-caption');
-    const hint = document.getElementById('storyboard-hint');
 
     // One dot per step, added as steps arrive (the total isn't known until the
     // model finishes).
@@ -550,16 +678,14 @@ async function playExplainSession(session) {
     };
 
     bar.classList.remove('hidden');
-    hint.classList.remove('hidden');
-    const hintTimer = setTimeout(() => hint.classList.add('hidden'), 4200);
+    setExplainHint('Esc to stop', 4200);
 
     const outcome = await session.run({
         onStep: showStep,
         speak: (step) => speakStep(step.narration),
     });
 
-    clearTimeout(hintTimer);
-    hint.classList.add('hidden');
+    setExplainHint(null);
     bar.classList.add('hidden');
     clearStoryboardShapes();
     if (explainSession === session) explainSession = null;
@@ -983,7 +1109,7 @@ const AGENT_POLL_INTERVAL_MS = 1000;
 async function getConversationIds() {
     try {
         const ids = await invoke('get_conversation_ids');
-        if (ids.session_id) return { sessionId: ids.session_id, threadId: ids.thread_id || '' };
+        if (ids && ids.session_id) return { sessionId: ids.session_id, threadId: ids.thread_id || '' };
     } catch (e) {
         console.error('Failed to read conversation ids:', e);
     }
@@ -1867,11 +1993,12 @@ async function dismissOverlay() {
     // re-show the window with a stale answer.
     activeRequestId++;
     stopExplainSession();
+    cancelExplainResumeKey();
 
     const tooltip = document.getElementById('answer-tooltip');
     if (tooltip) tooltip.remove();
     document.getElementById('storyboard-bar').classList.add('hidden');
-    document.getElementById('storyboard-hint').classList.add('hidden');
+    setExplainHint(null);
     clearStoryboardShapes();
     document.getElementById('action-confirm-box').classList.add('hidden');
     document.getElementById('action-running-pill').classList.add('hidden');
@@ -1897,7 +2024,7 @@ async function dismissOverlay() {
 // thousands of px off-screen (silent, no error, just nothing visible).
 const clampUnit = (n) => Math.max(0, Math.min(1, Number(n) || 0));
 
-function renderResponse(response, rect) {
+function renderResponse(response, rect, explainFollowUp = null) {
     // Remove any leftover marker from a previous cycle
     const oldMarker = document.getElementById('pointer-marker');
     if (oldMarker) oldMarker.remove();
@@ -1944,9 +2071,22 @@ function renderResponse(response, rect) {
     // narration end (or its own generous fallback ceiling, see
     // startSpeakingIndicator) decides when a spoken answer dismisses.
     if (closeTimer) clearTimeout(closeTimer);
-    const wordCount = response.answer_text ? response.answer_text.split(/\s+/).length : 0;
-    const displayMs = Math.max(15000, (wordCount / 2.5) * 1000 + 4000);
-    closeTimer = setTimeout(() => dismissOverlay(), displayMs);
+    // A follow-up asked mid-walkthrough never auto-dismisses: the walkthrough
+    // is paused, and once the answer has been shown (and spoken) the user is
+    // offered the resume instead.
+    const afterAnswer = () => {
+        if (explainFollowUp) {
+            offerExplainResume(explainFollowUp);
+            return;
+        }
+        if (closeTimer) clearTimeout(closeTimer);
+        closeTimer = setTimeout(() => dismissOverlay(), 5000);
+    };
+    if (!explainFollowUp) {
+        const wordCount = response.answer_text ? response.answer_text.split(/\s+/).length : 0;
+        const displayMs = Math.max(15000, (wordCount / 2.5) * 1000 + 4000);
+        closeTimer = setTimeout(() => dismissOverlay(), displayMs);
+    }
 
     if (response.answer_text) {
         invoke('get_speech_enabled')
@@ -1959,17 +2099,18 @@ function renderResponse(response, rect) {
                     // short moment to glance at the text, then dismiss.
                     if (closeTimer) clearTimeout(closeTimer);
                     const header = document.querySelector('#answer-tooltip .answer-header');
-                    await startSpeakingIndicator(response.answer_text, () => {
-                        if (closeTimer) clearTimeout(closeTimer);
-                        closeTimer = setTimeout(() => dismissOverlay(), 5000);
-                    }, header);
+                    await startSpeakingIndicator(response.answer_text, afterAnswer, header);
                     return invoke('speak_text', { text: response.answer_text, voiceId: null });
                 }
+                if (explainFollowUp) afterAnswer(); // speech is off: offer the resume right away
             })
             .catch((e) => {
                 console.error("TTS failed:", e);
                 stopSpeakingIndicator();
+                if (explainFollowUp) afterAnswer();
             });
+    } else if (explainFollowUp) {
+        afterAnswer();
     }
 
     // Hide the selection box and toolbar so the user can see the result clearly
