@@ -6,8 +6,10 @@
 #   - every service's json-file log is size-capped and rotated, so whatever
 #     does get logged is bounded instead of growing forever.
 #   - redis persists nothing to disk (no RDB snapshots, no AOF): task
-#     results and rate-limit counters are memory-only, and Celery expires
-#     results after 5 minutes (backend/app/worker/celery_app.py).
+#     results, rate-limit counters and the short conversation memory
+#     (backend/app/services/session_memory.py, expires after 20 minutes idle)
+#     are memory-only, and Celery expires results after 5 minutes
+#     (backend/app/worker/celery_app.py).
 x-logging: &default-logging
   driver: json-file
   options:

@@ -6,7 +6,7 @@ from app.services.llm import api_key_for, get_llm
 from app.services.mcp_filesystem import run_agent_turn_with_filesystem_sync
 from app.services.github_mcp import run_agent_turn_with_github_sync
 from app.services.tavily_mcp import run_agent_turn_with_web_search_sync
-from app.services.session_memory import record_exchange
+from app.services.session_memory import format_history, get_history, record_exchange
 from app.config import settings
 
 
@@ -53,6 +53,7 @@ def run_agent_task(
     screenshot_base64: str = "", github_token: str = "",
     gemini_api_key: str = "", tavily_api_key: str = "",
     provider: str = "gemini", model: str = "", openai_api_key: str = "",
+    thread_id: str = "",
 ):
     """Runs an agent turn: task description, whatever's on the user's
     clipboard, and — since M6 — the current screenshot, so tasks like "draft
@@ -156,6 +157,13 @@ def run_agent_task(
         "a browser and searching.\n"
     )
 
+    # What was just asked, answered, explained or drafted in this conversation
+    # (shared with the API process through Redis), so "make that shorter" or
+    # "now put it in Notepad" resolves against it. Folded into every phase's
+    # prompt through the Task line.
+    history_text = format_history(get_history(thread_id, session_id))
+    history_block = f"{history_text}\n" if history_text else ""
+
     prompt = (
         "You are an agent completing a small task for the user, using their clipboard and current screen "
         "as context and optionally producing a new clipboard value.\n"
@@ -166,7 +174,7 @@ def run_agent_task(
         f"{multi_step_block}"
         f"{ACTION_VOCAB_BLOCK}"
         f"{clipboard_block}"
-        f"Task: {task_description}\n\n"
+        f"{history_block}Task: {task_description}\n\n"
         "Format your answer EXACTLY as JSON, no markdown fences:\n"
         "{\n"
         '  "answer_text": "a short human-readable summary of what you did or found",\n'
@@ -248,7 +256,7 @@ def run_agent_task(
                 f"{screen_block}"
                 f"{ACTION_VOCAB_BLOCK}"
                 f"{clipboard_block}"
-                f"Task: {task_description}\n\n"
+                f"{history_block}Task: {task_description}\n\n"
                 "Format your FINAL answer EXACTLY as JSON, no markdown fences:\n"
                 "{\n"
                 '  "answer_text": "...",\n'
@@ -292,7 +300,7 @@ def run_agent_task(
                 f"{screen_block}"
                 f"{ACTION_VOCAB_BLOCK}"
                 f"{clipboard_block}"
-                f"Task: {task_description}\n\n"
+                f"{history_block}Task: {task_description}\n\n"
                 "Format your FINAL answer EXACTLY as JSON, no markdown fences:\n"
                 "{\n"
                 '  "answer_text": "...",\n'
@@ -335,7 +343,7 @@ def run_agent_task(
                 f"{screen_block}"
                 f"{ACTION_VOCAB_BLOCK}"
                 f"{clipboard_block}"
-                f"Task: {task_description}\n\n"
+                f"{history_block}Task: {task_description}\n\n"
                 "Format your FINAL answer EXACTLY as JSON, no markdown fences:\n"
                 "{\n"
                 '  "answer_text": "...",\n'
@@ -371,7 +379,17 @@ def run_agent_task(
     # /api/agent/step (one action per fresh screenshot), not this task.
     multi_step_plan = plan if (needs_multi_step and plan) else None
 
-    record_exchange(session_id, f"agent: {task_description}", answer_text)
+    # What gets remembered for the next turn: the result, plus anything the
+    # user could refer back to that is not in it (the drafted text, the
+    # action that was proposed, the plan).
+    remembered = answer_text or ""
+    if isinstance(clipboard_write, str) and clipboard_write:
+        remembered += f"\nDrafted text: {clipboard_write}"
+    if proposed_action:
+        remembered += f"\nProposed action: {proposed_action.get('description', '')}"
+    if multi_step_plan:
+        remembered += "\nPlan: " + "; ".join(multi_step_plan)
+    record_exchange(thread_id, session_id, "agent", task_description, remembered)
 
     return {
         "status": "success",

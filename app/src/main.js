@@ -918,8 +918,23 @@ async function askTelemetryConsentIfNeeded() {
 const AGENT_POLL_MAX_ATTEMPTS = 60;
 const AGENT_POLL_INTERVAL_MS = 1000;
 
+/// Ids that tie agent work to the same conversation as the questions asked
+/// before it (backend session_memory.py): thread_id follows the user across
+/// apps for a few minutes, session_id is the foreground app's. Falls back to a
+/// throwaway session, as agent tasks always used to have, if nothing has been
+/// captured yet.
+async function getConversationIds() {
+    try {
+        const ids = await invoke('get_conversation_ids');
+        if (ids.session_id) return { sessionId: ids.session_id, threadId: ids.thread_id || '' };
+    } catch (e) {
+        console.error('Failed to read conversation ids:', e);
+    }
+    return { sessionId: crypto.randomUUID(), threadId: '' };
+}
+
 async function runAgentTask(taskDescription, source = 'typed') {
-    const sessionId = crypto.randomUUID();
+    const { sessionId, threadId } = await getConversationIds();
 
     let clipboardText = "";
     try {
@@ -977,6 +992,7 @@ async function runAgentTask(taskDescription, source = 'typed') {
         body: JSON.stringify({
             task_description: taskDescription,
             session_id: sessionId,
+            thread_id: threadId,
             clipboard_text: clipboardText,
             ...fields,
             github_token: githubToken,
@@ -1280,6 +1296,10 @@ async function runMultiStepLoop(taskDescription, plan, source = 'typed') {
     const permission = await getActionPermission();
     if (permission === 'off') return;
 
+    // The finished run is remembered under these, so the next question or task
+    // can refer back to what just happened.
+    const { sessionId, threadId } = await getConversationIds();
+
     const appWindow = Window.getCurrent();
     const box = document.getElementById('multistep-confirm-box');
     const title = document.getElementById('multistep-confirm-title');
@@ -1445,6 +1465,8 @@ async function runMultiStepLoop(taskDescription, plan, source = 'typed') {
                 headers: API_HEADERS,
                 body: JSON.stringify({
                     task_description: taskDescription,
+                    session_id: sessionId,
+                    thread_id: threadId,
                     plan,
                     completed_steps: completedSteps,
                     screenshot_base64: screenshotBase64,
@@ -1484,6 +1506,8 @@ async function runMultiStepLoop(taskDescription, plan, source = 'typed') {
                     headers: API_HEADERS,
                     body: JSON.stringify({
                         task_description: taskDescription,
+                        session_id: sessionId,
+                        thread_id: threadId,
                         plan,
                         completed_steps: completedSteps,
                         screenshot_base64: screenshotBase64,

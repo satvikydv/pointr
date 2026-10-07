@@ -4,6 +4,8 @@ from typing import Optional, Dict, Any, List
 class AgentTaskRequest(BaseModel):
     task_description: str
     session_id: str
+    # See AnalyzeRequest.thread_id.
+    thread_id: str = ""
     clipboard_text: str = ""
     screenshot_base64: str = ""
     # Staged upload ref, same as AnalyzeRequest.screenshot_ref.
@@ -29,6 +31,10 @@ class AgentTaskStatusResponse(BaseModel):
 
 class AgentStepRequest(BaseModel):
     task_description: str
+    # Lets a finished on-screen task be remembered (see session_memory), so
+    # the next question or task can refer back to what just happened.
+    session_id: str = ""
+    thread_id: str = ""
     plan: List[str] = []
     completed_steps: List[str] = []
     screenshot_base64: str

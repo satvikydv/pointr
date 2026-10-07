@@ -29,6 +29,14 @@ class AnalyzeRequest(BaseModel):
     session_duration_secs: float = 0.0
     query_text: str = Field(min_length=1, max_length=2000)
     session_id: str
+    # Conversation thread, which (unlike session_id, per foreground app)
+    # follows the user across apps for a few minutes, so "now do that in
+    # Notepad" can see the question asked in the browser. Empty from older
+    # clients: memory then falls back to session_id.
+    thread_id: str = Field(default="", max_length=64)
+    # What the client knows is happening right now that the server can't
+    # (e.g. the walkthrough the user just interrupted with this question).
+    extra_context: str = Field(default="", max_length=4000)
     timestamp: datetime
     # BYOK: the user's own Gemini API key, entered in Settings. Empty falls
     # back to the server's own key (settings.gemini_api_key), if any — kept

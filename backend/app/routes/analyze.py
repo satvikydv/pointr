@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from app.models.analyze import AnalyzeRequest, AnalyzeResponse, PointerTarget, StoryboardResponse, StoryboardStep
 from app.services.llm import get_llm
 from app.services import screenshot_stage
-from app.services.session_memory import build_session_context_block, record_exchange
+from app.services.session_memory import build_session_context_block, arecord_exchange
 from app.config import settings
 from app.rate_limit import rate_limit
 
@@ -61,7 +61,7 @@ async def analyze_screen(request: AnalyzeRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail="Invalid base64 image")
 
-    session_context = build_session_context_block(request)
+    session_context = await build_session_context_block(request)
 
     prompt = (
         f"The user's cursor is at normalized position x={request.cursor_position.x_norm:.2f}, "
@@ -101,7 +101,7 @@ async def analyze_screen(request: AnalyzeRequest):
                 confidence=pointer.get("confidence", "medium")
             )
 
-        record_exchange(request.session_id, request.query_text, answer_text)
+        await arecord_exchange(request.thread_id, request.session_id, "direct", request.query_text, answer_text)
 
         return AnalyzeResponse(
             answer_text=answer_text,
@@ -120,12 +120,12 @@ async def analyze_screen(request: AnalyzeRequest):
         )
 
 
-def _build_stream_prompt(request: AnalyzeRequest) -> str:
+async def _build_stream_prompt(request: AnalyzeRequest) -> str:
     # Plain prose instead of the strict-JSON contract used by /analyze-screen:
     # streaming partial JSON would show the user broken, half-typed syntax.
     # The optional pointer is instead a trailing line the client strips out
     # before displaying anything (see stream_analyze below).
-    session_context = build_session_context_block(request)
+    session_context = await build_session_context_block(request)
 
     return (
         f"The user's cursor is at normalized position x={request.cursor_position.x_norm:.2f}, "
@@ -155,7 +155,7 @@ def _clamp_unit(value) -> float:
 
 
 async def _stream_analyze_events(request: AnalyzeRequest, gemini):
-    prompt = _build_stream_prompt(request)
+    prompt = await _build_stream_prompt(request)
     image_bytes = base64.b64decode(request.screenshot_base64)
 
     full_text = ""
@@ -206,7 +206,7 @@ async def _stream_analyze_events(request: AnalyzeRequest, gemini):
         if remaining:
             yield json.dumps({"type": "chunk", "text": remaining}) + "\n"
 
-    record_exchange(request.session_id, request.query_text, answer_text)
+    await arecord_exchange(request.thread_id, request.session_id, "direct", request.query_text, answer_text)
 
     yield json.dumps({
         "type": "done",
@@ -243,7 +243,7 @@ async def analyze_explain(request: AnalyzeRequest):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid base64 image")
 
-    session_context = build_session_context_block(request)
+    session_context = await build_session_context_block(request)
 
     prompt = (
         f"Active window (reported by the OS, trust it over anything you infer from the image): '{request.active_window_title}'. "
@@ -329,7 +329,7 @@ async def analyze_explain(request: AnalyzeRequest):
         if not steps:
             steps = [StoryboardStep(narration="Sorry, I couldn't put together an explanation for that.")]
 
-        record_exchange(request.session_id, f"explain: {request.query_text}", " ".join(s.narration for s in steps))
+        await arecord_exchange(request.thread_id, request.session_id, "explain", request.query_text, " ".join(s.narration for s in steps))
 
         return StoryboardResponse(steps=steps, session_id=request.session_id)
 

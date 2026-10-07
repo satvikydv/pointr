@@ -85,6 +85,18 @@ pub fn get_active_window_title(state: State<'_, Mutex<CaptureState>>) -> Result<
     Ok(state.lock().unwrap().active_window_title.clone())
 }
 
+/// Ids for work the frontend sends itself (agent tasks), so it joins the same
+/// conversation as the questions asked through the Rust commands: `thread_id`
+/// follows the user across apps, `session_id` is the foreground app's.
+#[tauri::command]
+pub fn get_conversation_ids(state: State<'_, Mutex<CaptureState>>) -> serde_json::Value {
+    let state_lock = state.lock().unwrap();
+    serde_json::json!({
+        "session_id": state_lock.session_id,
+        "thread_id": state_lock.thread_id,
+    })
+}
+
 /// Adds the provider/model chosen in Settings (and the OpenAI key, only
 /// when OpenAI is the provider) to a request payload.
 fn add_llm_fields(app: &AppHandle, payload: &mut serde_json::Value) {
@@ -202,7 +214,7 @@ pub async fn process_crop(
     request_id: String,
     state: State<'_, Mutex<CaptureState>>,
 ) -> Result<AnalyzeResponse, String> {
-    let (monitor, image_base64, active_window_title, app_name, session_id, session_duration_secs) = {
+    let (monitor, image_base64, active_window_title, app_name, session_id, thread_id, session_duration_secs) = {
         let state_lock = state.lock().unwrap();
         if state_lock.image_bytes.is_empty() {
             return Err("No image captured".into());
@@ -215,6 +227,7 @@ pub async fn process_crop(
             state_lock.active_window_title.clone(),
             state_lock.app_name.clone(),
             state_lock.session_id.clone(),
+            state_lock.thread_id.clone(),
             state_lock.session_duration_secs,
         )
     };
@@ -247,6 +260,7 @@ pub async fn process_crop(
         "session_duration_secs": session_duration_secs,
         "query_text": query_text,
         "session_id": session_id,
+        "thread_id": thread_id,
         "timestamp": timestamp,
         "gemini_api_key": gemini_api_key
     });
@@ -267,7 +281,7 @@ pub async fn process_explain(
     topic: String,
     state: State<'_, Mutex<CaptureState>>,
 ) -> Result<StoryboardResponse, String> {
-    let (monitor, image_base64, cursor_norm, active_window_title, app_name, session_id, session_duration_secs) = {
+    let (monitor, image_base64, cursor_norm, active_window_title, app_name, session_id, thread_id, session_duration_secs) = {
         let state_lock = state.lock().unwrap();
         if state_lock.image_bytes.is_empty() {
             return Err("No image captured".into());
@@ -284,6 +298,7 @@ pub async fn process_explain(
             state_lock.active_window_title.clone(),
             state_lock.app_name.clone(),
             state_lock.session_id.clone(),
+            state_lock.thread_id.clone(),
             state_lock.session_duration_secs,
         )
     };
@@ -305,6 +320,7 @@ pub async fn process_explain(
         "session_duration_secs": session_duration_secs,
         "query_text": topic,
         "session_id": session_id,
+        "thread_id": thread_id,
         "timestamp": timestamp,
         "gemini_api_key": gemini_api_key
     });
@@ -333,7 +349,7 @@ pub async fn process_direct(
     request_id: String,
     state: State<'_, Mutex<CaptureState>>,
 ) -> Result<AnalyzeResponse, String> {
-    let (monitor, image_base64, cursor_norm, active_window_title, app_name, session_id, session_duration_secs) = {
+    let (monitor, image_base64, cursor_norm, active_window_title, app_name, session_id, thread_id, session_duration_secs) = {
         let state_lock = state.lock().unwrap();
         if state_lock.image_bytes.is_empty() {
             return Err("No image captured".into());
@@ -350,6 +366,7 @@ pub async fn process_direct(
             state_lock.active_window_title.clone(),
             state_lock.app_name.clone(),
             state_lock.session_id.clone(),
+            state_lock.thread_id.clone(),
             state_lock.session_duration_secs,
         )
     };
@@ -375,6 +392,7 @@ pub async fn process_direct(
         "session_duration_secs": session_duration_secs,
         "query_text": query_text,
         "session_id": session_id,
+        "thread_id": thread_id,
         "timestamp": timestamp,
         "gemini_api_key": gemini_api_key
     });

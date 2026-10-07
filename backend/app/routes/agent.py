@@ -10,6 +10,7 @@ from app.models.agent import (
 from app.worker.tasks import run_agent_task
 from app.services.llm import get_llm
 from app.rate_limit import rate_limit
+from app.services.session_memory import arecord_exchange
 from app.routes.analyze import resolve_screenshot
 
 router = APIRouter()
@@ -164,6 +165,7 @@ async def create_agent_task(request: AgentTaskRequest):
         request.screenshot_base64, request.github_token,
         request.gemini_api_key, request.tavily_api_key,
         request.provider, request.model, request.openai_api_key,
+        thread_id=request.thread_id,
     )
     return AgentTaskResponse(task_id=task.id)
 
@@ -242,6 +244,14 @@ async def agent_step(request: AgentStepRequest):
     # string anyway.
     ref_raw = parsed.get("ref")
     ref = str(ref_raw) if isinstance(ref_raw, (str, int)) else None
+
+    # A finished on-screen task is remembered, so the next question or task
+    # can refer back to what just happened ("now close it").
+    if action_type == "done" and (request.session_id or request.thread_id):
+        outcome = parsed.get("answer_text") if isinstance(parsed.get("answer_text"), str) else ""
+        if request.completed_steps:
+            outcome = (outcome + " Steps taken: " + "; ".join(request.completed_steps)).strip()
+        await arecord_exchange(request.thread_id, request.session_id, "steps", request.task_description, outcome)
 
     return AgentStepResponse(
         action_type=action_type,

@@ -14,6 +14,10 @@ pub struct CaptureState {
     pub active_window_title: String,
     pub app_name: String,
     pub session_id: String,
+    /// Conversation thread: unlike session_id (one per foreground app) it
+    /// follows the user across apps, so a follow-up or an agent task can
+    /// refer back to a question asked in another window. See SessionState.
+    pub thread_id: String,
     pub session_duration_secs: f64,
     /// HWND of the window that was foreground at capture time — restored
     /// before an agent action types into "the focused field", since by
@@ -32,6 +36,10 @@ struct AppSession {
 }
 
 const SESSION_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+/// A conversation thread ends after this long without a capture. Shorter
+/// than the per-app session timeout (and the backend's own expiry) because
+/// a follow-up is only meaningful soon after what it follows.
+const THREAD_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 /// Safety cap on distinct apps tracked at once — realistically dozens at
 /// most in a single run, but bounds memory if something churns through many.
 const MAX_TRACKED_APPS: usize = 50;
@@ -45,13 +53,29 @@ const MAX_TRACKED_APPS: usize = 50;
 /// a cold start (see session_memory.py).
 struct SessionState {
     sessions: std::collections::HashMap<String, AppSession>,
+    /// (thread id, when it was last used)
+    thread: Option<(String, std::time::Instant)>,
 }
 
 impl SessionState {
     fn new() -> Self {
         Self {
             sessions: std::collections::HashMap::new(),
+            thread: None,
         }
+    }
+
+    /// The current conversation thread id, starting a new one if the last
+    /// capture was more than THREAD_IDLE_TIMEOUT ago. Called on every capture.
+    fn thread(&mut self) -> String {
+        let now = std::time::Instant::now();
+        let live = matches!(&self.thread, Some((_, last)) if now.duration_since(*last) <= THREAD_IDLE_TIMEOUT);
+        if !live {
+            self.thread = Some((uuid::Uuid::new_v4().to_string(), now));
+        }
+        let entry = self.thread.as_mut().unwrap();
+        entry.1 = now;
+        entry.0.clone()
     }
 
     /// Returns (session_id, seconds since this app's session started).
@@ -120,6 +144,7 @@ fn trigger_capture(
         .map_err(|e| format!("Failed to encode capture: {}", e))?;
     let ctx = capture::context::get_foreground_app_context();
     let (session_id, session_duration_secs) = session.lock().unwrap().resolve(&ctx.app_name);
+    let thread_id = session.lock().unwrap().thread();
 
     {
         let mut state_lock = state.lock().unwrap();
@@ -129,6 +154,7 @@ fn trigger_capture(
         state_lock.active_window_title = ctx.describe();
         state_lock.app_name = ctx.app_name;
         state_lock.session_id = session_id;
+        state_lock.thread_id = thread_id;
         state_lock.session_duration_secs = session_duration_secs;
         state_lock.target_hwnd = ctx.hwnd;
     }
@@ -169,6 +195,7 @@ fn trigger_capture_direct(
     // itself instead of whatever the user was actually looking at.
     let ctx = capture::context::get_foreground_app_context();
     let (session_id, session_duration_secs) = session.lock().unwrap().resolve(&ctx.app_name);
+    let thread_id = session.lock().unwrap().thread();
 
     let cursor_px_x = (cursor_norm.0 * monitor.width_px as f32) as i64;
     let cursor_px_y = (cursor_norm.1 * monitor.height_px as f32) as i64;
@@ -189,6 +216,7 @@ fn trigger_capture_direct(
         state_lock.active_window_title = ctx.describe();
         state_lock.app_name = ctx.app_name;
         state_lock.session_id = session_id;
+        state_lock.thread_id = thread_id;
         state_lock.session_duration_secs = session_duration_secs;
         state_lock.target_hwnd = ctx.hwnd;
     }
@@ -277,6 +305,7 @@ pub fn run() {
             active_window_title: String::new(),
             app_name: String::new(),
             session_id: String::new(),
+            thread_id: String::new(),
             session_duration_secs: 0.0,
             target_hwnd: 0,
         }))
@@ -292,6 +321,7 @@ pub fn run() {
             commands::analyze::process_explain,
             commands::analyze::get_current_screenshot_base64,
             commands::analyze::get_active_window_title,
+            commands::analyze::get_conversation_ids,
             commands::analyze::capture_fresh_screenshot,
             commands::clipboard::read_clipboard,
             commands::clipboard::write_clipboard,
