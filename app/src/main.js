@@ -438,6 +438,9 @@ async function runDirectAnalysis(queryText, source = 'typed') {
     await appWindow.setIgnoreCursorEvents(true);
     await enableEscapeDismiss();
 
+    // The resume prompt is up while the answer is still coming, not only after it.
+    if (followUp) offerExplainResume(followUp);
+
     try {
         if (explainMatch) {
             const topic = explainMatch[1] || queryText;
@@ -570,7 +573,7 @@ function setExplainHint(text, autoHideMs = 0) {
 // typed one): the walkthrough pauses where it is, the question is answered on
 // its own like any other, and then Space or Enter picks the explanation back
 // up from the step that was interrupted. Esc ends everything.
-let explainResumeCleanup = null;
+let explainResumeSession = null;
 
 function beginExplainInterrupt() {
     cancelExplainResumeKey();
@@ -581,12 +584,17 @@ function beginExplainInterrupt() {
 }
 
 function cancelExplainResumeKey() {
-    if (explainResumeCleanup) explainResumeCleanup();
+    if (!explainResumeSession) return;
+    explainResumeSession = null;
+    invoke('disable_resume_keys').catch(() => {});
 }
 
-/// After a follow-up has been answered (or the attempt failed): show the
-/// resume prompt and wait for Space or Enter. The window has to take focus
-/// to receive the key, same as the confirm prompts.
+/// Shows the resume prompt and arms Space / Enter. Called as soon as a
+/// follow-up is sent, so it is on screen while the answer is still being
+/// generated and streamed; pressing the key then drops the answer and carries
+/// on. The keys are temporary global shortcuts (Rust enable_resume_keys), not
+/// window focus: switching the transparent overlay to interactive and
+/// focusing it while it was showing turned the whole overlay white.
 async function offerExplainResume(session) {
     if (explainSession !== session || session.stopped) {
         // The walkthrough ended while this was being answered: nothing to
@@ -595,43 +603,45 @@ async function offerExplainResume(session) {
         closeTimer = setTimeout(() => dismissOverlay(), 5000);
         return;
     }
-    cancelExplainResumeKey();
     setExplainHint('Space or Enter to resume the explanation. Esc to stop');
-    const appWindow = Window.getCurrent();
-    await appWindow.setIgnoreCursorEvents(false);
-    await appWindow.setFocus();
-    if (explainSession !== session || session.stopped) return;
-
-    const onKey = (e) => {
-        if (e.key === ' ' || e.key === 'Enter') {
-            e.preventDefault();
-            resumeExplain(session);
-        }
-        // Esc is handled by the document-level handler (ends the walkthrough).
-    };
-    document.addEventListener('keydown', onKey);
-    explainResumeCleanup = () => {
-        document.removeEventListener('keydown', onKey);
-        explainResumeCleanup = null;
-    };
+    if (explainResumeSession === session) return; // already armed
+    explainResumeSession = session;
+    try {
+        await invoke('enable_resume_keys');
+    } catch (e) {
+        // Another app owns Space or Enter globally. The DOM listener below
+        // still works if the overlay happens to have focus.
+        console.warn('enable_resume_keys failed:', e);
+    }
 }
+
+listen('explain-resume-key', () => {
+    if (explainResumeSession) resumeExplain(explainResumeSession);
+});
+
+document.addEventListener('keydown', (e) => {
+    if (explainResumeSession && (e.key === ' ' || e.key === 'Enter')) {
+        e.preventDefault();
+        resumeExplain(explainResumeSession);
+    }
+});
 
 async function resumeExplain(session) {
     cancelExplainResumeKey();
     if (explainSession !== session || session.stopped) return;
 
-    // Clear the answer and whatever it pointed at; the replayed step redraws its own.
+    // The walkthrough owns the screen again: a follow-up answer still being
+    // generated is dropped (new request id), and so is whatever it showed.
+    session.requestId = ++activeRequestId;
     const tooltip = document.getElementById('answer-tooltip');
     if (tooltip) tooltip.remove();
     const marker = document.getElementById('pointer-marker');
     if (marker) marker.remove();
+    loadingIndicator.classList.add('hidden');
     stopSpeakingIndicator();
     invoke('stop_speech').catch(() => {});
 
-    // The follow-up took over activeRequestId; the walkthrough owns it again now.
-    session.requestId = activeRequestId;
     setExplainHint('Esc to stop', 2500);
-    await Window.getCurrent().setIgnoreCursorEvents(true);
     session.resume();
 }
 

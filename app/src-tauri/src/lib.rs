@@ -268,6 +268,43 @@ fn enable_escape_dismiss(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|e| format!("Failed to register Escape: {}", e))
 }
 
+fn space_shortcut() -> tauri_plugin_global_shortcut::Shortcut {
+    use tauri_plugin_global_shortcut::{Code, Shortcut};
+    Shortcut::new(None, Code::Space)
+}
+
+fn enter_shortcut() -> tauri_plugin_global_shortcut::Shortcut {
+    use tauri_plugin_global_shortcut::{Code, Shortcut};
+    Shortcut::new(None, Code::Enter)
+}
+
+/// Space and Enter while a paused explanation is waiting to be resumed. Same
+/// mechanism as Escape above and for the same reason (the overlay is
+/// click-through and never takes focus; switching a transparent window to
+/// interactive and focusing it while it is already showing turned the whole
+/// overlay white). Registered only while the resume prompt is up, so they
+/// aren't swallowed from other apps the rest of the time.
+#[tauri::command]
+fn enable_resume_keys(app: tauri::AppHandle) -> Result<(), String> {
+    let keys = app.global_shortcut();
+    keys.register(space_shortcut())
+        .map_err(|e| format!("Failed to register Space: {}", e))?;
+    if let Err(e) = keys.register(enter_shortcut()) {
+        let _ = keys.unregister(space_shortcut());
+        return Err(format!("Failed to register Enter: {}", e));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn disable_resume_keys(app: tauri::AppHandle) -> Result<(), String> {
+    let keys = app.global_shortcut();
+    // Each is attempted regardless of the other; not being registered is fine.
+    let _ = keys.unregister(space_shortcut());
+    let _ = keys.unregister(enter_shortcut());
+    Ok(())
+}
+
 #[tauri::command]
 fn disable_escape_dismiss(app: tauri::AppHandle) -> Result<(), String> {
     app.global_shortcut()
@@ -382,7 +419,9 @@ pub fn run() {
             voice::set_voice_enabled,
             voice::set_stt_engine,
             enable_escape_dismiss,
-            disable_escape_dismiss
+            disable_escape_dismiss,
+            enable_resume_keys,
+            disable_resume_keys
         ])
         .setup(|app| {
             use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
@@ -391,6 +430,8 @@ pub fn run() {
             // Secondary: manual drag-to-crop flow, demoted behind an extra modifier.
             let region_select = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SHIFT), Code::Space);
             let escape = escape_shortcut();
+            let space = space_shortcut();
+            let enter = enter_shortcut();
 
             app.handle().plugin(
                 tauri_plugin_global_shortcut::Builder::new()
@@ -419,6 +460,10 @@ pub fn run() {
                             // enable_escape_dismiss) — just tell the frontend
                             // to run its existing dismiss path.
                             let _ = _app.emit("dismiss-overlay", ());
+                        } else if shortcut == &space || shortcut == &enter {
+                            // Only registered while a paused explanation is
+                            // waiting to be resumed (enable_resume_keys).
+                            let _ = _app.emit("explain-resume-key", ());
                         }
                     })
                     .build(),
