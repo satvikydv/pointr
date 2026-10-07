@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 
 class AgentTaskRequest(BaseModel):
@@ -6,6 +6,10 @@ class AgentTaskRequest(BaseModel):
     session_id: str
     # See AnalyzeRequest.thread_id.
     thread_id: str = ""
+    # The text Pointr typed for the user earlier, when this task revises it
+    # ("make it shorter"). Sent verbatim by the client, which typed it, rather
+    # than trusting the clipped copy in conversation memory.
+    previous_draft: str = Field(default="", max_length=8000)
     clipboard_text: str = ""
     screenshot_base64: str = ""
     # Staged upload ref, same as AnalyzeRequest.screenshot_ref.

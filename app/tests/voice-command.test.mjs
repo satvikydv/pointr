@@ -1,7 +1,7 @@
 // Run: node app/tests/voice-command.test.mjs
 // Transcripts in the first two blocks are real Parakeet output from
 // synthesized speech (US, UK and Indian English voices, two speeds).
-import { parseVoiceCommand as p, voiceToQuery as q } from '../src/voice-command.js';
+import { parseVoiceCommand as p, voiceToQuery as q, looksLikeDraftEdit } from '../src/voice-command.js';
 let fail = 0;
 const check = (input, mode, rest) => {
   const r = p(input);
@@ -59,6 +59,17 @@ check('Ex plain this graph', 'explain', 'this graph');
 for (const t of ['What does the agent config in this file do?','So what is this error?','Can you tell me what this is?','How do I explain this to my manager?','Agent','Agent?','Um, what is this?','The agent is failing, why?','Uh','','Okay so, uh, hmm, well, yeah, now, agent open notepad'])
   check(t, null);
 check('So what is this error?', null, 'So what is this error?');
+// Requests to revise the draft Pointr just typed
+for (const t of ['Make it shorter', 'make it shorter.', 'Shorter', 'a bit shorter', 'Make it a little more formal', 'More formal',
+  'Make it sound friendlier', 'Can you make it shorter?', 'Please rewrite that', 'Okay, shorten this', 'Uh, make it less formal',
+  'Rephrase the message', 'tighten the draft', 'Make it more polite', 'Keep it short', 'Remove the last sentence', 'Add a thank you at the end',
+  'add please to it', 'Take out the greeting', 'End it with best regards', 'Start with hi team', 'and make it funnier', 'Translate it'])
+  if (!looksLikeDraftEdit(t)) { fail++; console.log('FAIL should be a draft edit:', JSON.stringify(t)); }
+for (const t of ['Make this chart bigger', 'Make this window smaller', 'What is this?', 'Explain this', 'Why is it slow?',
+  'Is that shorter than the other one?', 'Shorter than what?', 'How do I make it work?', 'Make that button red', 'Fix this function',
+  'Remove the sidebar', 'Add a column to the table', 'Open notepad', '', 'Summarize this page', 'Rewrite this file in Rust',
+  'Keep this tab open and tell me the price', 'x'.repeat(200)])
+  if (looksLikeDraftEdit(t)) { fail++; console.log('FAIL should not be a draft edit:', JSON.stringify(t.slice(0, 50))); }
 // Query strings
 console.log(q('Uh, agent, open notepad.'), '|', q('Um, can you explain this chart?'), '|', q('What is this?'));
 console.log(fail ? fail + ' FAILED' : 'all passed');

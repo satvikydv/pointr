@@ -147,3 +147,31 @@ export function voiceToQuery(text) {
     const { mode, rest } = parseVoiceCommand(text);
     return mode ? `${mode}: ${rest}` : rest;
 }
+
+// A request to change the text Pointr just typed ("make it shorter", "more
+// formal", "remove the last sentence"), as opposed to a question. Only ever
+// consulted when a draft was typed moments ago in this same app (see
+// freshDraft in main.js), so it can be fairly loose; it is deliberately
+// narrow about WHAT is being edited: "it", "that", "this" or the draft itself,
+// so "make this chart bigger" stays a question.
+const LEAD = String.raw`^(?:(?:ok|okay|um|uh|so|now|and|actually|hey|please)[\s,]+)*(?:(?:can|could|would) you\s+)?(?:please\s+)?`;
+const THE_DRAFT = String.raw`(?:it|that|this|the (?:draft|reply|message|email|text|response|note))`;
+const DEGREE = String.raw`(?:(?:a bit|a little|a lot|slightly|much|way|just)\s+)?`;
+const QUALITY = String.raw`(?:shorter|longer|briefer|simpler|friendlier|politer|warmer|funnier|more (?:formal|casual|polite|direct|concise|friendly|professional|detailed|personal|positive)|less (?:formal|wordy|harsh|stiff))`;
+const DRAFT_EDIT_PATTERNS = [
+    // "make it shorter", "rewrite that", "shorten this", "tighten the draft"
+    new RegExp(LEAD + String.raw`(?:make|rewrite|reword|rephrase|shorten|lengthen|expand|trim|simplify|soften|polish|tweak|tighten|improve|redo|fix|translate)\s+${THE_DRAFT}\b(?!\s+(?:chart|graph|table|image|picture|window|screen|button|page|file|folder|code|function))`, 'i'),
+    // "keep it short" (but not "keep this tab open")
+    new RegExp(LEAD + String.raw`keep\s+(?:it|that|the (?:draft|reply|message|email))\s+(?:short|brief|concise|simple|casual|formal|polite|friendly|professional)\b`, 'i'),
+    // "shorter", "a bit more formal", "make it sound friendlier"
+    new RegExp(LEAD + String.raw`(?:(?:make\s+${THE_DRAFT}|and|but)\s+)?(?:sound\s+|read\s+|be\s+)?${DEGREE}${QUALITY}\s*[.!?]*$`, 'i'),
+    // "remove the last sentence", "add a thank you at the end", "end it with best regards"
+    new RegExp(LEAD + String.raw`(?:add|remove|delete|drop|cut|take out)\b.*\b(?:to it|from it|at the end|at the start|at the beginning|the last (?:sentence|line|paragraph)|the first (?:sentence|line|paragraph)|the greeting|the sign.?off)`, 'i'),
+    new RegExp(LEAD + String.raw`(?:start|begin|end|finish|sign off)\s+(?:it\s+)?with\b`, 'i'),
+];
+
+export function looksLikeDraftEdit(text) {
+    const t = (text || '').trim();
+    if (!t || t.length > 140) return false;
+    return DRAFT_EDIT_PATTERNS.some((re) => re.test(t));
+}

@@ -1,4 +1,4 @@
-import { parseVoiceCommand, voiceToQuery } from './voice-command.js';
+import { parseVoiceCommand, voiceToQuery, looksLikeDraftEdit } from './voice-command.js';
 import { createExplainSession } from './explain-session.js';
 
 const { listen } = window.__TAURI__.event;
@@ -429,11 +429,19 @@ async function runDirectAnalysis(queryText, source = 'typed') {
     // resumed. "agent:" / "explain:" start something new and end the old one.
     const followUp = !agentMatch && !explainMatch ? liveExplainSession() : null;
 
+    // "make it shorter" right after Pointr typed a draft in this app: a request
+    // to revise that draft, not a question about the screen. It runs as an
+    // agent task that gets the draft verbatim and replaces it in place.
+    const draft = !agentMatch && !explainMatch && !followUp && looksLikeDraftEdit(queryText)
+        ? await freshDraft()
+        : null;
+    const runsAsAgent = !!agentMatch || !!draft;
+
     const requestId = ++activeRequestId;
     if (followUp) followUp.pause(); else stopExplainSession();
     const appWindow = Window.getCurrent();
 
-    loadingLabel.textContent = agentMatch ? 'Queueing…' : (explainMatch ? 'Preparing…' : 'Thinking…');
+    loadingLabel.textContent = runsAsAgent ? 'Queueing…' : (explainMatch ? 'Preparing…' : 'Thinking…');
     loadingIndicator.classList.remove('hidden');
     await appWindow.setIgnoreCursorEvents(true);
     await enableEscapeDismiss();
@@ -484,20 +492,22 @@ async function runDirectAnalysis(queryText, source = 'typed') {
             return;
         }
 
-        const agentTaskDescription = agentMatch ? (agentMatch[1] || "Analyze this for agent actions") : null;
+        const agentTaskDescription = agentMatch
+            ? (agentMatch[1] || "Analyze this for agent actions")
+            : (draft ? queryText : null);
         // Fired here, when a question is actually sent — not on the hotkey
         // press, which only opens the overlay (it used to fire from Rust at
         // capture time, so it counted overlay opens, including cancelled
         // ones). agent: tasks report through their own agent_task_* events.
-        if (!agentMatch) captureTelemetry('direct_query_sent', { mode: 'direct', source });
-        const response = agentMatch
-            ? await runAgentTask(agentTaskDescription, source)
+        if (!runsAsAgent) captureTelemetry('direct_query_sent', { mode: 'direct', source });
+        const response = runsAsAgent
+            ? await runAgentTask(agentTaskDescription, source, draft ? draft.text : '')
             : await invoke('process_direct', {
                 query: queryText || null,
                 requestId: String(requestId),
                 extraContext: followUp ? explainContextText(followUp) : null,
             });
-        if (!agentMatch) trackQueryOutcome('direct', response.answer_text, source);
+        if (!runsAsAgent) trackQueryOutcome('direct', response.answer_text, source);
 
         if (requestId !== activeRequestId) return; // superseded by a later press
 
@@ -517,14 +527,14 @@ async function runDirectAnalysis(queryText, source = 'typed') {
             return;
         }
 
-        await confirmProposedActionIfAny(response.proposed_action);
+        await confirmProposedActionIfAny(response.proposed_action, draft);
         if (requestId !== activeRequestId) return; // could've been superseded during the confirm wait
 
         const rect = { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
         renderResponse(response, rect, followUp);
     } catch (error) {
         if (requestId !== activeRequestId) return;
-        if (!agentMatch) trackQueryOutcome(explainMatch ? 'explain' : 'direct', 'exception', source);
+        if (!runsAsAgent) trackQueryOutcome(explainMatch ? 'explain' : 'direct', 'exception', source);
 
         console.error("Error in direct analysis:", error);
         await showOverlayError(`${error}`, followUp ? () => offerExplainResume(followUp) : undefined);
@@ -1126,7 +1136,28 @@ async function getConversationIds() {
     return { sessionId: crypto.randomUUID(), threadId: '' };
 }
 
-async function runAgentTask(taskDescription, source = 'typed') {
+// The last text Pointr typed for the user (a drafted reply and the like), kept
+// so a following "make it shorter" can revise it. Memory-only, like everything
+// else here, and only trusted for DRAFT_REVISE_WINDOW_MS inside the same app.
+const DRAFT_REVISE_WINDOW_MS = 10 * 60 * 1000;
+const MIN_DRAFT_CHARS = 15;
+let lastDraft = null;
+
+async function rememberDraft(text) {
+    if (typeof text !== 'string' || text.length < MIN_DRAFT_CHARS) return;
+    const { sessionId } = await getConversationIds();
+    lastDraft = { text, sessionId, at: Date.now() };
+}
+
+/// The draft typed recently in the app the user is in now, or null.
+async function freshDraft() {
+    if (!lastDraft || Date.now() - lastDraft.at > DRAFT_REVISE_WINDOW_MS) return null;
+    const { sessionId } = await getConversationIds();
+    return sessionId === lastDraft.sessionId ? lastDraft : null;
+}
+
+// `previousDraft`: the text being revised (see freshDraft), sent verbatim.
+async function runAgentTask(taskDescription, source = 'typed', previousDraft = '') {
     const { sessionId, threadId } = await getConversationIds();
 
     let clipboardText = "";
@@ -1186,6 +1217,7 @@ async function runAgentTask(taskDescription, source = 'typed') {
             task_description: taskDescription,
             session_id: sessionId,
             thread_id: threadId,
+            previous_draft: previousDraft,
             clipboard_text: clipboardText,
             ...fields,
             github_token: githubToken,
@@ -1279,7 +1311,10 @@ async function waitForEnterOrEscape() {
 // state is click-through and a clickable Confirm/Cancel button would have
 // the exact same "can never be clicked" problem already hit elsewhere.
 // No-op if there's no proposed action (the common case).
-async function confirmProposedActionIfAny(action) {
+// `revising`: the draft being revised (see freshDraft), when this action is
+// the revised text. It then replaces the old draft in place (select all, then
+// type) instead of being typed after it.
+async function confirmProposedActionIfAny(action, revising = null) {
     if (!action) return;
 
     // 'off': skip silently, answer_text still shows normally.
@@ -1307,9 +1342,13 @@ async function confirmProposedActionIfAny(action) {
 
     // 'allow' skips the prompt entirely; the running pill below still says
     // what's happening, and Esc still dismisses.
+    const replacing = !!revising && action.action_type === 'type_text';
+
     if (permission === 'ask') {
         if (action.action_type === 'type_text') {
-            document.getElementById('action-confirm-type-title').textContent = target ? `Type into ${target}` : 'Type into the focused field';
+            document.getElementById('action-confirm-type-title').textContent = replacing
+                ? (target ? `Replace your draft in ${target}` : 'Replace your draft in the focused field')
+                : (target ? `Type into ${target}` : 'Type into the focused field');
             typeSection.classList.remove('hidden');
             openSection.classList.add('hidden');
         } else {
@@ -1344,12 +1383,16 @@ async function confirmProposedActionIfAny(action) {
     }
 
     document.getElementById('action-running-text').textContent =
-        action.action_type === 'type_text' ? `Typing into ${target || 'the focused field'}…` : `Opening ${action.app_name}…`;
+        action.action_type === 'type_text'
+            ? (replacing ? `Rewriting your draft in ${target || 'the focused field'}…` : `Typing into ${target || 'the focused field'}…`)
+            : `Opening ${action.app_name}…`;
     runningPill.classList.remove('hidden');
 
     try {
         if (action.action_type === 'type_text') {
-            await invoke('execute_type_text', { text: action.text });
+            await invoke('execute_type_text', { text: action.text, replaceExisting: replacing });
+            // So the next "make it shorter" revises this one.
+            await rememberDraft(action.text);
         } else if (action.action_type === 'open_app') {
             await invoke('execute_open_app', { appName: action.app_name });
         }

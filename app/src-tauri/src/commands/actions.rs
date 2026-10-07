@@ -151,6 +151,25 @@ mod type_text_tests {
         // of what was typed.
         assert_eq!(got.replace("\r\n", "\n"), DRAFT);
     }
+
+    /// Revising a draft: the second typing replaces the first instead of
+    /// landing after it.
+    #[test]
+    #[ignore]
+    fn replace_existing_swaps_the_whole_draft() {
+        let edit = TestEdit::new();
+        edit.pump(Duration::from_millis(200));
+        let mut enigo = Enigo::new(&Settings::default()).unwrap();
+        type_text(&mut enigo, DRAFT).unwrap();
+        edit.pump(Duration::from_millis(300));
+        assert_eq!(edit.text().replace("\r\n", "\n"), DRAFT);
+
+        let shorter = "Hi Jordan,\n\nReady Friday.\n\nBest,\nSatvik";
+        select_all(&mut enigo).unwrap();
+        type_text(&mut enigo, shorter).unwrap();
+        edit.pump(Duration::from_millis(300));
+        assert_eq!(edit.text().replace("\r\n", "\n"), shorter);
+    }
 }
 
 /// Types text into whatever currently has OS input focus — no coordinates,
@@ -171,10 +190,16 @@ mod type_text_tests {
 /// control that had it (e.g. a browser-hosted compose box); most apps
 /// remember their last-focused control when the window regains foreground
 /// focus, but it isn't guaranteed for every app.
+///
+/// `replace_existing` selects everything in the focused field first (Ctrl+A),
+/// so the typed text replaces what is there instead of landing after it. Used
+/// when revising a draft Pointr typed earlier ("make it shorter"): without it
+/// the shorter version would be appended under the long one.
 #[tauri::command]
 pub fn execute_type_text(
     text: String,
     restore_original_focus: Option<bool>,
+    replace_existing: Option<bool>,
     state: State<'_, Mutex<CaptureState>>,
 ) -> Result<(), String> {
     if restore_original_focus.unwrap_or(true) {
@@ -188,7 +213,27 @@ pub fn execute_type_text(
     }
 
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| format!("Failed to init input simulation: {}", e))?;
+    if replace_existing.unwrap_or(false) {
+        select_all(&mut enigo)?;
+    }
     type_text(&mut enigo, &text).map_err(|e| format!("Failed to type text: {}", e))
+}
+
+/// Ctrl+A, with Ctrl always released again (a Ctrl left held down would mangle
+/// every keystroke after it), then a short beat so the selection exists before
+/// the first typed character replaces it.
+fn select_all(enigo: &mut Enigo) -> Result<(), String> {
+    let (main_key, modifiers) = parse_key_combo("Ctrl+A")?;
+    for m in &modifiers {
+        enigo.key(*m, Direction::Press).map_err(|e| format!("Failed to press Ctrl: {}", e))?;
+    }
+    let result = enigo.key(main_key, Direction::Click).map_err(|e| format!("Failed to select all: {}", e));
+    for m in modifiers.iter().rev() {
+        let _ = enigo.key(*m, Direction::Release);
+    }
+    result?;
+    sleep(Duration::from_millis(80));
+    Ok(())
 }
 
 /// Opens an app via the Start menu search — Win key, type the name, Enter.

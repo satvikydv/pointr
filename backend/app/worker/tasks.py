@@ -10,6 +10,21 @@ from app.services.session_memory import format_history, get_history, record_exch
 from app.config import settings
 
 
+def revise_draft_block(previous_draft: str) -> str:
+    """Prompt text for a task that revises the text Pointr typed earlier.
+    The answer is a type_text action carrying the COMPLETE revised text: the
+    client replaces the old draft with it, so a fragment would delete the rest."""
+    return (
+        "The task below revises the text you drafted and typed for the user earlier. Here is that draft, "
+        "exactly as it was typed:\n\"\"\"\n" + previous_draft + "\n\"\"\"\n"
+        "Apply the requested change to it and return the COMPLETE revised text (not just the changed "
+        "part) as a type_text proposed_action, since the new text replaces the old draft. Keep "
+        "everything the user did not ask to change, including names, facts and sign-off. "
+        "Do not use needs_multi_step, needs_filesystem, needs_github or needs_web_search for this. "
+        "answer_text is one short sentence saying what you changed.\n"
+    )
+
+
 def _extract_json(raw: str) -> dict:
     cleaned = re.sub(r"```(?:json)?\n?", "", raw, flags=re.IGNORECASE).strip()
     return json.loads(cleaned)
@@ -53,7 +68,7 @@ def run_agent_task(
     screenshot_base64: str = "", github_token: str = "",
     gemini_api_key: str = "", tavily_api_key: str = "",
     provider: str = "gemini", model: str = "", openai_api_key: str = "",
-    thread_id: str = "",
+    thread_id: str = "", previous_draft: str = "",
 ):
     """Runs an agent turn: task description, whatever's on the user's
     clipboard, and — since M6 — the current screenshot, so tasks like "draft
@@ -163,6 +178,8 @@ def run_agent_task(
     # prompt through the Task line.
     history_text = format_history(get_history(thread_id, session_id))
     history_block = f"{history_text}\n" if history_text else ""
+    if previous_draft:
+        history_block += revise_draft_block(previous_draft)
 
     prompt = (
         "You are an agent completing a small task for the user, using their clipboard and current screen "
@@ -383,8 +400,11 @@ def run_agent_task(
     # user could refer back to that is not in it (the drafted text, the
     # action that was proposed, the plan).
     remembered = answer_text or ""
-    if isinstance(clipboard_write, str) and clipboard_write:
-        remembered += f"\nDrafted text: {clipboard_write}"
+    drafted = clipboard_write if isinstance(clipboard_write, str) and clipboard_write else ""
+    if not drafted and proposed_action and proposed_action.get("action_type") == "type_text":
+        drafted = proposed_action.get("text") or ""
+    if drafted:
+        remembered += f"\nDrafted text: {drafted}"
     if proposed_action:
         remembered += f"\nProposed action: {proposed_action.get('description', '')}"
     if multi_step_plan:

@@ -165,7 +165,7 @@ async def create_agent_task(request: AgentTaskRequest):
         request.screenshot_base64, request.github_token,
         request.gemini_api_key, request.tavily_api_key,
         request.provider, request.model, request.openai_api_key,
-        thread_id=request.thread_id,
+        thread_id=request.thread_id, previous_draft=request.previous_draft,
     )
     return AgentTaskResponse(task_id=task.id)
 
