@@ -1,4 +1,5 @@
 import { parseVoiceCommand, voiceToQuery } from './voice-command.js';
+import { createExplainSession } from './explain-session.js';
 
 const { listen } = window.__TAURI__.event;
 const { invoke } = window.__TAURI__.core;
@@ -193,6 +194,7 @@ listen('show-overlay', async (event) => {
     if (closeTimer) clearTimeout(closeTimer);
     mode = 'region';
     activeRequestId++;
+    stopExplainSession();
 
     const appWindow = Window.getCurrent();
     await appWindow.setIgnoreCursorEvents(false);
@@ -250,6 +252,7 @@ listen('show-overlay-direct', async () => {
     if (closeTimer) clearTimeout(closeTimer);
     mode = 'direct';
     activeRequestId++; // invalidate anything still in flight from before
+    stopExplainSession();
 
     img.style.display = 'none';
     selectionBox.style.display = 'none';
@@ -321,6 +324,7 @@ listen('voice-listening', async () => {
     if (closeTimer) clearTimeout(closeTimer);
     mode = 'direct';
     activeRequestId++; // aborts anything in flight, same as the typed hotkey
+    stopExplainSession();
 
     img.style.display = 'none';
     selectionBox.style.display = 'none';
@@ -406,6 +410,7 @@ directQueryInput.addEventListener('keydown', (e) => {
 
 async function runDirectAnalysis(queryText, source = 'typed') {
     const requestId = ++activeRequestId;
+    stopExplainSession();
     const appWindow = Window.getCurrent();
 
     const agentMatch = queryText.trim().match(/^agent:\s*(.*)$/i);
@@ -420,18 +425,34 @@ async function runDirectAnalysis(queryText, source = 'typed') {
         if (explainMatch) {
             const topic = explainMatch[1] || queryText;
             captureTelemetry('direct_query_sent', { mode: 'explain', source });
-            const storyboard = await invoke('process_explain', { topic });
-            trackQueryOutcome('explain', 'ok', source);
-            console.log('[explain] storyboard steps:', JSON.stringify(storyboard.steps, null, 2));
 
+            // Steps arrive one by one as the model writes them (explain-step
+            // events), so playback starts on the first instead of after the
+            // whole walkthrough has been generated.
+            const session = createExplainSession({ topic, requestId });
+            explainSession = session;
+            invoke('process_explain_stream', { topic, requestId: String(requestId) })
+                .then(() => session.finish())
+                .catch((e) => session.finish(e));
+
+            await session.firstStep();
             if (requestId !== activeRequestId) return; // superseded by a later press
+
+            if (session.steps.length === 0) {
+                if (explainSession === session) explainSession = null;
+                trackQueryOutcome('explain', 'exception', source);
+                loadingIndicator.classList.add('hidden');
+                await showOverlayError(`${session.streamError || 'The explanation came back empty.'}`);
+                return;
+            }
+            trackQueryOutcome('explain', 'ok', source);
 
             loadingIndicator.classList.add('hidden');
             await appWindow.show();
             await appWindow.setAlwaysOnTop(true);
             await appWindow.setFocus();
 
-            await playStoryboard(storyboard.steps, requestId);
+            await playExplainSession(session);
             return;
         }
 
@@ -481,59 +502,71 @@ async function runDirectAnalysis(queryText, source = 'typed') {
     }
 }
 
-// "explain: <topic>" storyboard playback — sequentially shows each step's
-// narration + optional annotation in a dedicated bottom caption bar (not the
-// normal answer bubble), waiting for that step's narration to actually
-// finish speaking (real tts-ended event, or the fallback estimate — see
-// startSpeakingIndicator) before advancing, rather than a fixed delay per
-// step. `requestId` guards against a dismiss/new-request superseding this
-// mid-playback (checked between every step, not just at the start).
-async function playStoryboard(steps, requestId) {
+// "explain: <topic>" walkthrough. The steps stream in while it plays: each is
+// shown in a dedicated bottom caption bar (not the normal answer bubble) with
+// its annotation, and the next one starts once this step's narration has
+// actually finished speaking (real tts-ended event, or the fallback estimate,
+// see startSpeakingIndicator) rather than after a fixed delay. If playback
+// catches up with the model it simply waits for the next step to arrive.
+// `requestId` guards against a dismiss/new request superseding the walkthrough
+// (checked between every step, not just at the start).
+let explainSession = null;
+
+/// Ends the walkthrough in progress, if any (dismiss, or a request that
+/// replaces it).
+function stopExplainSession() {
+    if (!explainSession) return;
+    explainSession.stop();
+    explainSession = null;
+}
+
+listen('explain-step', (event) => {
+    const { request_id, step } = event.payload;
+    const session = explainSession;
+    if (!session || String(session.requestId) !== request_id) return;
+    session.push(step);
+});
+
+async function playExplainSession(session) {
     const bar = document.getElementById('storyboard-bar');
     const progress = document.getElementById('storyboard-progress');
     const caption = document.getElementById('storyboard-caption');
     const hint = document.getElementById('storyboard-hint');
 
+    // One dot per step, added as steps arrive (the total isn't known until the
+    // model finishes).
     progress.innerHTML = '';
-    const dotEls = steps.map(() => {
-        const dot = document.createElement('div');
-        dot.className = 'storyboard-progress-dot';
-        progress.appendChild(dot);
-        return dot;
-    });
-    const setActiveDot = (activeIdx) => {
-        dotEls.forEach((dot, idx) => dot.classList.toggle('active', idx === activeIdx));
-    };
-
-    const endStoryboardUi = () => {
-        clearTimeout(hintTimer);
-        hint.classList.add('hidden');
-        bar.classList.add('hidden');
-        clearStoryboardShapes();
+    const dotEls = [];
+    const showStep = (step, idx) => {
+        while (dotEls.length < session.steps.length) {
+            const dot = document.createElement('div');
+            dot.className = 'storyboard-progress-dot';
+            progress.appendChild(dot);
+            dotEls.push(dot);
+        }
+        dotEls.forEach((dot, i) => dot.classList.toggle('active', i === idx));
+        caption.textContent = step.narration;
+        renderStoryboardShape(step);
     };
 
     bar.classList.remove('hidden');
     hint.classList.remove('hidden');
-    let hintTimer = setTimeout(() => hint.classList.add('hidden'), 4200);
+    const hintTimer = setTimeout(() => hint.classList.add('hidden'), 4200);
 
-    for (let i = 0; i < steps.length; i++) {
-        if (requestId !== activeRequestId) { endStoryboardUi(); return; }
-        const step = steps[i];
-
-        setActiveDot(i);
-        caption.textContent = step.narration;
-        renderStoryboardShape(step);
-
-        await speakStepAndWait(step.narration);
-    }
+    const outcome = await session.run({
+        onStep: showStep,
+        speak: (step) => speakStep(step.narration),
+    });
 
     clearTimeout(hintTimer);
     hint.classList.add('hidden');
-    if (requestId !== activeRequestId) { bar.classList.add('hidden'); clearStoryboardShapes(); return; }
-    clearStoryboardShapes();
     bar.classList.add('hidden');
-    if (closeTimer) clearTimeout(closeTimer);
-    closeTimer = setTimeout(() => dismissOverlay(), 5000);
+    clearStoryboardShapes();
+    if (explainSession === session) explainSession = null;
+    if (outcome === 'finished' && session.requestId === activeRequestId) {
+        if (closeTimer) clearTimeout(closeTimer);
+        closeTimer = setTimeout(() => dismissOverlay(), 5000);
+    }
 }
 
 function clearStoryboardShapes() {
@@ -644,22 +677,46 @@ function renderStoryboardShape(step) {
     }
 }
 
-// Resolves once this step's narration has finished (or a fixed pause, if
-// narration is off/fails) — the thing playStoryboard awaits between steps.
-function speakStepAndWait(text) {
-    return new Promise((resolve) => {
-        invoke('get_speech_enabled')
-            .then(async (enabled) => {
-                if (!enabled) {
-                    setTimeout(resolve, 1800);
-                    return;
-                }
-                const header = document.querySelector('#storyboard-bar .answer-header');
-                await startSpeakingIndicator(text, resolve, header);
-                invoke('speak_text', { text, voiceId: null }).catch(() => resolve());
-            })
-            .catch(() => setTimeout(resolve, 1800));
-    });
+// Speaks one walkthrough step. `done` resolves 'ended' once the narration has
+// finished (or after a fixed pause if narration is off or fails), or
+// 'cancelled' if cancel() was called first (pause / dismiss).
+function speakStep(text) {
+    let settle;
+    const done = new Promise((resolve) => { settle = resolve; });
+    let cancelled = false;
+    let pauseTimer = null;
+
+    const cancel = () => {
+        if (cancelled) return;
+        cancelled = true;
+        clearTimeout(pauseTimer);
+        stopSpeakingIndicator();
+        invoke('stop_speech').catch(() => {});
+        settle('cancelled');
+    };
+    const endAfterPause = () => {
+        if (!cancelled) pauseTimer = setTimeout(() => settle('ended'), 1800);
+    };
+
+    invoke('get_speech_enabled')
+        .then(async (enabled) => {
+            if (cancelled) return;
+            if (!enabled) {
+                endAfterPause();
+                return;
+            }
+            const header = document.querySelector('#storyboard-bar .answer-header');
+            await startSpeakingIndicator(text, () => settle('ended'), header);
+            // Cancelled while the listener was being attached: undo what that just set up.
+            if (cancelled) {
+                stopSpeakingIndicator();
+                return;
+            }
+            invoke('speak_text', { text, voiceId: null }).catch(() => settle('ended'));
+        })
+        .catch(endAfterPause);
+
+    return { done, cancel };
 }
 
 function resetSelection() {
@@ -1809,6 +1866,7 @@ async function dismissOverlay() {
     // still pass the requestId check (no *newer* request has started) and
     // re-show the window with a stale answer.
     activeRequestId++;
+    stopExplainSession();
 
     const tooltip = document.getElementById('answer-tooltip');
     if (tooltip) tooltip.remove();

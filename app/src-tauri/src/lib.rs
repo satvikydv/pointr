@@ -318,7 +318,7 @@ pub fn run() {
             trigger_capture,
             commands::analyze::process_crop,
             commands::analyze::process_direct,
-            commands::analyze::process_explain,
+            commands::analyze::process_explain_stream,
             commands::analyze::get_current_screenshot_base64,
             commands::analyze::get_active_window_title,
             commands::analyze::get_conversation_ids,

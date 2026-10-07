@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from fastapi.responses import StreamingResponse
 from app.models.analyze import AnalyzeRequest, AnalyzeResponse, PointerTarget, StoryboardResponse, StoryboardStep
 from app.services.llm import get_llm
+from app.services.step_stream import JsonObjectStream, expand_steps
 from app.services import screenshot_stage
 from app.services.session_memory import build_session_context_block, arecord_exchange
 from app.config import settings
@@ -230,22 +231,32 @@ async def analyze_screen_stream(request: AnalyzeRequest):
     )
 
 
-@router.post("/analyze-explain", response_model=StoryboardResponse, dependencies=[Depends(rate_limit)])
-async def analyze_explain(request: AnalyzeRequest):
-    """'explain: <topic>' mode — a short multi-step walkthrough (narration +
-    optional point-at-marker per step) instead of one answer, played back
-    sequentially by the client with TTS between steps. Non-streaming: the
-    client needs the whole step list up front to play it back in order."""
-    resolve_screenshot(request)
-    gemini = get_llm(request.provider, request.model, request.gemini_api_key, request.openai_api_key)
-    try:
-        image_bytes = base64.b64decode(request.screenshot_base64)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid base64 image")
+def _build_explain_prompt(request: AnalyzeRequest, session_context: str, streaming: bool) -> str:
+    if streaming:
+        output_format = (
+            "Respond with ONLY JSON Lines: one complete JSON object per step, each on its own line, in "
+            "order. No wrapper object, no array, no markdown fences, no commentary. Each step is sent to "
+            "the user the moment its line is finished, so write them one after another without pausing, "
+            "and keep step 1 very short (under 12 words) so it can be spoken right away. Example:\n"
+            '{"narration": "one short spoken sentence", "point": [300, 400]}\n'
+            '{"narration": "another step", "box_2d": [200, 150, 500, 600]}\n'
+            '{"narration": "another step", "line": [[300, 200], [450, 500]]}\n'
+            '{"narration": "a step with nothing to point at"}'
+        )
+    else:
+        output_format = (
+            "Respond with ONLY this JSON, no markdown fences, no extra commentary:\n"
+            "{\n"
+            '  "steps": [\n'
+            '    {"narration": "one short spoken sentence", "point": [300, 400]},\n'
+            '    {"narration": "another step", "box_2d": [200, 150, 500, 600]},\n'
+            '    {"narration": "another step", "line": [[300, 200], [450, 500]]},\n'
+            '    {"narration": "a step with nothing to point at"}\n'
+            "  ]\n"
+            "}"
+        )
 
-    session_context = await build_session_context_block(request)
-
-    prompt = (
+    return (
         f"Active window (reported by the OS, trust it over anything you infer from the image): '{request.active_window_title}'. "
         + (f"{session_context}\n" if session_context else "")
         + f"The user wants a short step-by-step visual walkthrough explaining: '{request.query_text}'. "
@@ -264,70 +275,92 @@ async def analyze_explain(request: AnalyzeRequest):
         "All coordinates are normalized to 0-1000 across the whole image (0 = top/left edge, 1000 = bottom/right edge), and every pair is written y first, then x — the vertical position comes first. "
         "Omit all three "
         "for a step that's genuinely about a general concept with nothing on screen to annotate.\n"
-        "Respond with ONLY this JSON, no markdown fences, no extra commentary:\n"
-        "{\n"
-        '  "steps": [\n'
-        '    {"narration": "one short spoken sentence", "point": [300, 400]},\n'
-        '    {"narration": "another step", "box_2d": [200, 150, 500, 600]},\n'
-        '    {"narration": "another step", "line": [[300, 200], [450, 500]]},\n'
-        '    {"narration": "a step with nothing to point at"}\n'
-        "  ]\n"
-        "}"
+        + output_format
     )
+
+
+def _normalize_step(raw_step) -> StoryboardStep | None:
+    """One model-written step to the client's shape, or None if it has no
+    narration. Shared by the streaming and the one-shot explain routes."""
+    if not isinstance(raw_step, dict):
+        return None
+    narration = str(raw_step.get("narration", "")).strip()
+    if not narration:
+        return None
+
+    # Gemini's actual trained grounding formats are [y, x] point and
+    # [ymin, xmin, ymax, xmax] box_2d, both on a 0-1000 scale (see
+    # Google's "Spatial understanding" docs) — not the x-first/
+    # 0.0-1.0 scheme originally guessed for point, which is almost
+    # certainly why every marker landed in the same corner regardless
+    # of image content (asking for a format the model wasn't trained
+    # to produce, rather than one it actually knows). "line" isn't a
+    # trained primitive at all — it's just two points reusing the
+    # same point mechanism, so expect it to be somewhat less
+    # reliable than point/box.
+    point = raw_step.get("point")
+    box = raw_step.get("box_2d")
+    line = raw_step.get("line")
+
+    shape = None
+    x_norm = y_norm = x2_norm = y2_norm = None
+
+    try:
+        if isinstance(box, list) and len(box) == 4:
+            shape = "box"
+            ymin, xmin, ymax, xmax = box
+            x_norm, y_norm = _clamp_unit(xmin / 1000), _clamp_unit(ymin / 1000)
+            x2_norm, y2_norm = _clamp_unit(xmax / 1000), _clamp_unit(ymax / 1000)
+        elif isinstance(line, list) and len(line) == 2:
+            shape = "line"
+            (y1, x1), (y2, x2) = line
+            x_norm, y_norm = _clamp_unit(x1 / 1000), _clamp_unit(y1 / 1000)
+            x2_norm, y2_norm = _clamp_unit(x2 / 1000), _clamp_unit(y2 / 1000)
+        elif isinstance(point, list) and len(point) == 2:
+            shape = "point"
+            x_norm, y_norm = _clamp_unit(point[1] / 1000), _clamp_unit(point[0] / 1000)
+    except (TypeError, ValueError):
+        # A malformed annotation (strings, wrong nesting) loses the marker,
+        # not the step: the narration is still worth speaking.
+        shape = x_norm = y_norm = x2_norm = y2_norm = None
+
+    return StoryboardStep(
+        narration=narration,
+        shape=shape,
+        x_norm=x_norm,
+        y_norm=y_norm,
+        x2_norm=x2_norm,
+        y2_norm=y2_norm,
+    )
+
+
+EXPLAIN_FALLBACK_NARRATION = "Sorry, I couldn't put together an explanation for that."
+EXPLAIN_ERROR_NARRATION = "Sorry, something went wrong putting that explanation together."
+
+
+@router.post("/analyze-explain", response_model=StoryboardResponse, dependencies=[Depends(rate_limit)])
+async def analyze_explain(request: AnalyzeRequest):
+    """'explain: <topic>' mode — a short multi-step walkthrough (narration +
+    optional point-at-marker per step) instead of one answer, played back
+    sequentially by the client with TTS between steps. Non-streaming: kept
+    for older desktop builds; current ones use /analyze-explain-stream."""
+    resolve_screenshot(request)
+    gemini = get_llm(request.provider, request.model, request.gemini_api_key, request.openai_api_key)
+    try:
+        image_bytes = base64.b64decode(request.screenshot_base64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 image")
+
+    prompt = _build_explain_prompt(request, await build_session_context_block(request), streaming=False)
 
     try:
         result_text = await gemini.analyze(image_bytes, prompt)
         cleaned = re.sub(r'```(?:json)?\n?', '', result_text, flags=re.IGNORECASE).strip()
         parsed = json.loads(cleaned)
 
-        steps = []
-        for raw_step in parsed.get("steps", []):
-            narration = raw_step.get("narration", "").strip()
-            if not narration:
-                continue
-
-            # Gemini's actual trained grounding formats are [y, x] point and
-            # [ymin, xmin, ymax, xmax] box_2d, both on a 0-1000 scale (see
-            # Google's "Spatial understanding" docs) — not the x-first/
-            # 0.0-1.0 scheme originally guessed for point, which is almost
-            # certainly why every marker landed in the same corner regardless
-            # of image content (asking for a format the model wasn't trained
-            # to produce, rather than one it actually knows). "line" isn't a
-            # trained primitive at all — it's just two points reusing the
-            # same point mechanism, so expect it to be somewhat less
-            # reliable than point/box.
-            point = raw_step.get("point")
-            box = raw_step.get("box_2d")
-            line = raw_step.get("line")
-
-            shape = None
-            x_norm = y_norm = x2_norm = y2_norm = None
-
-            if isinstance(box, list) and len(box) == 4:
-                shape = "box"
-                ymin, xmin, ymax, xmax = box
-                x_norm, y_norm = _clamp_unit(xmin / 1000), _clamp_unit(ymin / 1000)
-                x2_norm, y2_norm = _clamp_unit(xmax / 1000), _clamp_unit(ymax / 1000)
-            elif isinstance(line, list) and len(line) == 2:
-                shape = "line"
-                (y1, x1), (y2, x2) = line
-                x_norm, y_norm = _clamp_unit(x1 / 1000), _clamp_unit(y1 / 1000)
-                x2_norm, y2_norm = _clamp_unit(x2 / 1000), _clamp_unit(y2 / 1000)
-            elif isinstance(point, list) and len(point) == 2:
-                shape = "point"
-                x_norm, y_norm = _clamp_unit(point[1] / 1000), _clamp_unit(point[0] / 1000)
-
-            steps.append(StoryboardStep(
-                narration=narration,
-                shape=shape,
-                x_norm=x_norm,
-                y_norm=y_norm,
-                x2_norm=x2_norm,
-                y2_norm=y2_norm,
-            ))
-
+        steps = [s for s in (_normalize_step(r) for r in parsed.get("steps", [])) if s]
         if not steps:
-            steps = [StoryboardStep(narration="Sorry, I couldn't put together an explanation for that.")]
+            steps = [StoryboardStep(narration=EXPLAIN_FALLBACK_NARRATION)]
 
         await arecord_exchange(request.thread_id, request.session_id, "explain", request.query_text, " ".join(s.narration for s in steps))
 
@@ -337,6 +370,58 @@ async def analyze_explain(request: AnalyzeRequest):
         import traceback
         traceback.print_exc()
         return StoryboardResponse(
-            steps=[StoryboardStep(narration="Sorry, something went wrong putting that explanation together.")],
+            steps=[StoryboardStep(narration=EXPLAIN_ERROR_NARRATION)],
             session_id=request.session_id,
         )
+
+
+async def _stream_explain_events(request: AnalyzeRequest, gemini):
+    image_bytes = base64.b64decode(request.screenshot_base64)
+    prompt = _build_explain_prompt(request, await build_session_context_block(request), streaming=True)
+
+    parser = JsonObjectStream()
+    narrations: list[str] = []
+    failed = False
+
+    try:
+        async for piece in gemini.analyze_stream(image_bytes, prompt):
+            for obj in parser.feed(piece):
+                for raw_step in expand_steps(obj):
+                    step = _normalize_step(raw_step)
+                    if step is None:
+                        continue
+                    narrations.append(step.narration)
+                    yield json.dumps({"type": "step", "step": step.model_dump()}) + "\n"
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        failed = True
+
+    if not narrations:
+        # Nothing usable came back (model error text, no JSON at all, or the
+        # stream broke before the first step): one spoken apology, same as
+        # the one-shot route, so the client never ends up with an empty walkthrough.
+        message = EXPLAIN_ERROR_NARRATION if failed else EXPLAIN_FALLBACK_NARRATION
+        yield json.dumps({"type": "step", "step": StoryboardStep(narration=message).model_dump()}) + "\n"
+    else:
+        await arecord_exchange(request.thread_id, request.session_id, "explain", request.query_text, " ".join(narrations))
+
+    yield json.dumps({"type": "done", "count": max(1, len(narrations))}) + "\n"
+
+
+@router.post("/analyze-explain-stream", dependencies=[Depends(rate_limit)])
+async def analyze_explain_stream(request: AnalyzeRequest):
+    """Same walkthrough as /analyze-explain, but each step is sent as its own
+    NDJSON line the moment the model finishes it, so the client can start
+    speaking step 1 while the rest is still being written."""
+    resolve_screenshot(request)
+    gemini = get_llm(request.provider, request.model, request.gemini_api_key, request.openai_api_key)
+    try:
+        base64.b64decode(request.screenshot_base64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 image")
+
+    return StreamingResponse(
+        _stream_explain_events(request, gemini),
+        media_type="application/x-ndjson",
+    )

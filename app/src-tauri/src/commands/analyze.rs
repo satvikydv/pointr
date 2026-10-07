@@ -269,18 +269,20 @@ pub async fn process_crop(
     post_and_stream(&app, &request_id, payload, false).await
 }
 
-/// "explain: <topic>" mode — non-streaming, since the client needs the whole
-/// ordered step list up front to play it back sequentially (marker + TTS per
-/// step), not a growing block of text. Reuses the same capture state as the
-/// primary direct-ask flow (current full-monitor screenshot, real cursor
-/// position) — v1 is direct-hotkey only, not wired into the region-select
-/// toolbar.
+/// "explain: <topic>" mode. The backend sends each walkthrough step as its own
+/// NDJSON line the moment the model finishes writing it, and each one is
+/// forwarded to the frontend as an `explain-step` event (tagged with
+/// `request_id`, like `analyze-stream-chunk`), so the first sentence can be
+/// spoken while the rest is still being generated. Resolves with the number of
+/// steps once the stream ends. Reuses the same capture state as the direct-ask
+/// flow (current full-monitor screenshot, real cursor position).
 #[tauri::command]
-pub async fn process_explain(
+pub async fn process_explain_stream(
     app: AppHandle,
     topic: String,
+    request_id: String,
     state: State<'_, Mutex<CaptureState>>,
-) -> Result<StoryboardResponse, String> {
+) -> Result<u32, String> {
     let (monitor, image_base64, cursor_norm, active_window_title, app_name, session_id, thread_id, session_duration_secs) = {
         let state_lock = state.lock().unwrap();
         if state_lock.image_bytes.is_empty() {
@@ -326,17 +328,93 @@ pub async fn process_explain(
     });
     add_llm_fields(&app, &mut payload);
 
-    let url = format!("{}/api/analyze-explain", API_BASE_URL);
-    let res = crate::commands::stage::post_with_staged_screenshot(&app, &url, payload).await?;
+    println!("[{}] POST /api/analyze-explain-stream", request_id);
+    let url = format!("{}/api/analyze-explain-stream", API_BASE_URL);
+    let res = crate::commands::stage::post_with_staged_screenshot(&app, &url, payload.clone()).await?;
 
+    if res.status() == reqwest::StatusCode::NOT_FOUND {
+        // A server that predates the streaming route: fall back to the
+        // one-shot walkthrough and hand its steps over the same way.
+        println!("[{}] streaming route missing, using /api/analyze-explain", request_id);
+        return explain_one_shot(&app, &request_id, payload).await;
+    }
     if !res.status().is_success() {
         let err_text = res.text().await.unwrap_or_default();
         return Err(format!("Backend error: {}", err_text));
     }
 
-    res.json::<StoryboardResponse>()
+    let mut stream = res.bytes_stream();
+    let mut buffer = String::new();
+    let mut steps = 0u32;
+    let mut finished = false;
+
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(|e| format!("Stream read failed: {}", e))?;
+        buffer.push_str(&String::from_utf8_lossy(&bytes));
+
+        while let Some(pos) = buffer.find('\n') {
+            let line: String = buffer.drain(..=pos).collect();
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let event: serde_json::Value = match serde_json::from_str(line) {
+                Ok(v) => v,
+                Err(_) => continue, // tolerate a malformed line rather than aborting the stream
+            };
+            match event.get("type").and_then(|v| v.as_str()) {
+                Some("step") => {
+                    if let Some(step) = event.get("step") {
+                        steps += 1;
+                        emit_explain_step(&app, &request_id, step);
+                    }
+                }
+                Some("done") => finished = true,
+                _ => {}
+            }
+        }
+    }
+
+    println!("[{}] explain stream ended: {} step(s), finished={}", request_id, steps, finished);
+    if steps == 0 {
+        return Err("The explanation came back empty.".into());
+    }
+    Ok(steps)
+}
+
+fn emit_explain_step(app: &AppHandle, request_id: &str, step: &serde_json::Value) {
+    if let Err(e) = app.emit(
+        "explain-step",
+        serde_json::json!({ "request_id": request_id, "step": step }),
+    ) {
+        eprintln!("[{}] failed to emit explain-step: {}", request_id, e);
+    }
+}
+
+/// Non-streaming fallback for an older backend.
+async fn explain_one_shot(
+    app: &AppHandle,
+    request_id: &str,
+    payload: serde_json::Value,
+) -> Result<u32, String> {
+    let url = format!("{}/api/analyze-explain", API_BASE_URL);
+    let res = crate::commands::stage::post_with_staged_screenshot(app, &url, payload).await?;
+    if !res.status().is_success() {
+        let err_text = res.text().await.unwrap_or_default();
+        return Err(format!("Backend error: {}", err_text));
+    }
+    let storyboard = res
+        .json::<StoryboardResponse>()
         .await
-        .map_err(|e| format!("Failed to parse storyboard response: {}", e))
+        .map_err(|e| format!("Failed to parse storyboard response: {}", e))?;
+    let mut steps = 0u32;
+    for step in &storyboard.steps {
+        if let Ok(value) = serde_json::to_value(step) {
+            steps += 1;
+            emit_explain_step(app, request_id, &value);
+        }
+    }
+    Ok(steps)
 }
 
 /// Primary hotkey path: no rect, no crop. Sends the full monitor capture
