@@ -20,14 +20,6 @@
   <img src=".github/assets/pointr-loop.gif" alt="Hold Ctrl + Win and ask your screen anything: the Pointr orb opens into a voice pill, then the Pointr wordmark" width="800">
 </p>
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/pointr-flow-dark.gif">
-    <source media="(prefers-color-scheme: light)" srcset=".github/assets/pointr-flow-light.gif">
-    <img alt="See, explain, act: a pointer lands on a line, a box is drawn around one, and a field is filled in" src=".github/assets/pointr-flow-light.gif" width="560">
-  </picture>
-</p>
-
 ---
 
 ## What it does
@@ -80,17 +72,6 @@ By default the client build targets `http://localhost:8000` — set `POINTR_ENV=
 <p align="center">
   <img src=".github/assets/architecture.png" alt="Pointr architecture: the Tauri app on your PC sends a screenshot and question to a FastAPI relay, which calls Gemini or OpenAI with your own key and returns an answer plus coordinates" width="800">
 </p>
-
-```
-┌─────────────────────────┐        ┌──────────────────────────────┐
-│   Pointr (Tauri/Rust)    │  HTTP  │   FastAPI backend             │
-│   screen capture         │───────▶│   /api/analyze-*               │
-│   overlay UI             │◀───────│   /api/agent/*                 │
-│   OS actions (click/type)│ stream │   Celery worker (agent tasks)  │
-│   local browser driver   │        │   Redis (queue, short-lived)   │
-└─────────────────────────┘        └──────────────────────────────┘
-        Windows only                  Gemini / OpenAI, GitHub, Tavily
-```
 
 The backend is a relay, not a store: screenshots, queries and answers pass through per request and aren't retained. See [Privacy](https://www.pointr.duckdns.org/privacy.html) for exactly what's kept, for how long, and why.
 
