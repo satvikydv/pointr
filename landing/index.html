@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pointr - Ask your screen anything</title>
-<meta name="description" content="Pointr is a Windows overlay that sees what's on your screen, answers in place, and can act on your behalf - with your permission, every time.">
+<title>Pointr - Open-source AI screen assistant for Windows</title>
+<meta name="description" content="Pointr is a free, open-source AI assistant for Windows. Press a hotkey or just talk: it sees your screen, answers in place, and can click and type for you.">
+<link rel="icon" type="image/svg+xml" href="./favicon.svg">
 <link rel="canonical" href="https://www.pointr.duckdns.org/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Pointr">
-<meta property="og:title" content="Pointr - Ask your screen anything">
+<meta property="og:title" content="Pointr - Open-source AI screen assistant for Windows">
 <meta property="og:description" content="A Windows overlay that sees what's on your screen, answers in place, and acts on your behalf. Hold Ctrl + Win and just talk to it.">
 <meta property="og:url" content="https://www.pointr.duckdns.org/">
 <meta property="og:image" content="https://www.pointr.duckdns.org/og-image.png">
@@ -17,9 +18,26 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Pointr: ask your screen anything. A Windows overlay with push-to-talk voice.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Pointr - Ask your screen anything">
+<meta name="twitter:title" content="Pointr - Open-source AI screen assistant for Windows">
 <meta name="twitter:description" content="A Windows overlay that sees what's on your screen, answers in place, and acts on your behalf. Hold Ctrl + Win and just talk to it.">
 <meta name="twitter:image" content="https://www.pointr.duckdns.org/og-image.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Pointr",
+  "applicationCategory": "UtilitiesApplication",
+  "operatingSystem": "Windows 10, Windows 11",
+  "description": "Open-source AI assistant for Windows that sees your screen, answers in a click-through overlay, and can run confirmed multi-step desktop and browser actions.",
+  "url": "https://www.pointr.duckdns.org/",
+  "downloadUrl": "https://github.com/satvikydv/pointr/releases/latest",
+  "softwareVersion": "0.3.0",
+  "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+  "codeRepository": "https://github.com/satvikydv/pointr",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "author": { "@type": "Person", "name": "Satvik Yadav", "url": "https://github.com/satvikydv" }
+}
+</script>
 <link rel="stylesheet" href="./style.css">
 <script src="./analytics.js" defer></script>
 </head>
@@ -481,7 +499,7 @@
         <div class="footer-orb"></div>
         <div class="footer-tagline">Pointr - built for Windows.</div>
       </div>
-      <div class="footer-copy">© 2026 Pointr</div>
+      <nav class="footer-copy" aria-label="Footer"><a href="./setup.html">Setup guide</a> · <a href="./privacy.html">Privacy</a> · <a href="https://github.com/satvikydv/pointr" rel="noopener">GitHub</a> · © 2026 Pointr</nav>
     </div>
   </footer>
 
