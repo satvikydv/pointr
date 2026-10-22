@@ -2080,3 +2080,79 @@ a:hover {
 .footer-links a:focus-visible {
   color: #fff;
 }
+
+/* ==========================================
+   Scroll motion
+   Hidden states are gated on `.js`, which the inline script in <head> only
+   sets when the visitor hasn't asked for reduced motion.
+   ========================================== */
+.scroll-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 1000;
+  background: linear-gradient(90deg, #5B8CFF, #8fb4ff);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  pointer-events: none;
+}
+
+.js .reveal {
+  opacity: 0;
+  translate: 0 28px;
+  transition:
+    opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1) var(--reveal-delay, 0s),
+    translate 0.8s cubic-bezier(0.22, 1, 0.36, 1) var(--reveal-delay, 0s),
+    transform 0.3s ease;
+}
+
+.js .reveal.from-left { translate: -44px 0; }
+.js .reveal.from-right { translate: 44px 0; }
+
+.js .reveal.is-visible {
+  opacity: 1;
+  translate: 0 0;
+}
+
+@keyframes pointrHeroIn {
+  from { opacity: 0; translate: 0 22px; }
+  to { opacity: 1; translate: 0 0; }
+}
+
+.js .hero-in {
+  animation: pointrHeroIn 0.9s cubic-bezier(0.22, 1, 0.36, 1) var(--hero-delay, 0s) both;
+}
+
+/* Big feature numbers drift against the scroll for a bit of depth. */
+@keyframes pointrWatermarkDrift {
+  from { translate: 0 16px; }
+  to { translate: 0 -6px; }
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .feature-num-watermark {
+      animation: pointrWatermarkDrift linear both;
+      animation-timeline: view();
+    }
+  }
+}
+
+@media (max-width: 760px) {
+  .js .reveal.from-left,
+  .js .reveal.from-right {
+    translate: 0 28px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -61,9 +61,18 @@
   ]
 }
 </script>
+<script>
+(function(d){
+  if(!window.matchMedia||window.matchMedia('(prefers-reduced-motion: reduce)').matches||!('IntersectionObserver' in window))return;
+  d.classList.add('js');
+  setTimeout(function(){if(!window.__reveal)d.classList.remove('js');},3000);
+})(document.documentElement);
+</script>
+<script src="./reveal.js" defer></script>
 <script src="./analytics.js" defer></script>
 </head>
 <body>
+<div class="scroll-progress" aria-hidden="true"></div>
 
 <div class="bg-canvas">
 
@@ -153,10 +162,10 @@
         </div>
       </div>
 
-      <h1 class="hero-title">Ask your screen <span class="hero-gradient-text">anything.</span></h1>
-      <p class="hero-subtitle">Pointr is a Windows overlay that sees what's on your screen, answers in place, and can act on your behalf - with your permission, every time.</p>
+      <h1 class="hero-title hero-in" style="--hero-delay:.1s">Ask your screen <span class="hero-gradient-text">anything.</span></h1>
+      <p class="hero-subtitle hero-in" style="--hero-delay:.25s">Pointr is a Windows overlay that sees what's on your screen, answers in place, and can act on your behalf - with your permission, every time.</p>
 
-      <div class="cta-row">
+      <div class="cta-row hero-in" style="--hero-delay:.4s">
         <a href="https://github.com/satvikydv/pointr/releases/download/v0.3.0/Pointr_0.3.0_x64-setup.exe" class="cta-button">
           <div class="windows-grid-icon">
             <div></div><div></div><div></div><div></div>
@@ -167,8 +176,8 @@
           <svg viewBox="0 0 16 16" width="24" height="24" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
         </a>
       </div>
-      <div class="hero-hotkey">Hold Ctrl + <span class="win-key" role="img" aria-label="Windows key"><div></div><div></div><div></div><div></div></span> - speak, then let go</div>
-      <div class="hero-hotkey" style="margin-top:6px;">Ctrl + Alt + Space - anywhere on your screen</div>
+      <div class="hero-hotkey hero-in" style="--hero-delay:.55s">Hold Ctrl + <span class="win-key" role="img" aria-label="Windows key"><div></div><div></div><div></div><div></div></span> - speak, then let go</div>
+      <div class="hero-hotkey hero-in" style="margin-top:6px;--hero-delay:.65s">Ctrl + Alt + Space - anywhere on your screen</div>
     </section>
 
 
@@ -177,7 +186,7 @@
 
       <!-- Feature 01 -->
       <div class="feature-block">
-        <div class="feature-visual-col">
+        <div class="feature-visual-col reveal from-left">
           <div class="feature-card-1">
             <div style="position:relative;width:32px;height:32px;flex-shrink:0;">
               <div style="position:absolute;width:48px;height:48px;left:-8px;top:-8px;border-radius:50%;background:radial-gradient(circle,rgba(140,180,255,0.5),rgba(91,140,255,0.16) 45%,rgba(91,140,255,0) 70%);filter:blur(6px);animation:orbBloomBreathe 2.6s ease-in-out infinite;"></div>
@@ -189,7 +198,7 @@
             <div style="font-size:15px;color:rgba(255,255,255,0.7);font-weight:500;">How do I center a div in CSS?</div>
           </div>
         </div>
-        <div class="feature-info-col">
+        <div class="feature-info-col reveal from-right" style="--reveal-delay:.12s">
           <div class="feature-num-watermark">01</div>
           <div class="feature-label">01 - DIRECT ASK</div>
           <h2 class="feature-heading">Ask without switching windows</h2>
@@ -199,13 +208,13 @@
 
       <!-- Feature 02 -->
       <div class="feature-block reversed">
-        <div class="feature-info-col">
+        <div class="feature-info-col reveal from-left">
           <div class="feature-num-watermark">02</div>
           <div class="feature-label">02 - REGION SELECT</div>
           <h2 class="feature-heading">Draw a box, ask about exactly that</h2>
           <div class="feature-desc">Select any part of the screen - a chart, an error message, a paragraph - and ask a question scoped to just that region.</div>
         </div>
-        <div class="feature-visual-col">
+        <div class="feature-visual-col reveal from-right" style="--reveal-delay:.12s">
           <div class="feature-mock-window">
             <div class="mock-window-lines">
               <div style="width:140px;height:8px;border-radius:4px;background:rgba(255,255,255,0.12);margin-bottom:12px;"></div>
@@ -225,7 +234,7 @@
 
       <!-- Feature 03 -->
       <div class="feature-block">
-        <div class="feature-visual-col">
+        <div class="feature-visual-col reveal from-left">
           <div class="feature-card-3">
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
               <div style="position:relative;width:32px;height:32px;flex-shrink:0;">
@@ -249,7 +258,7 @@
             </div>
           </div>
         </div>
-        <div class="feature-info-col">
+        <div class="feature-info-col reveal from-right" style="--reveal-delay:.12s">
           <div class="feature-num-watermark">03</div>
           <div class="feature-label">03 - STORYBOARD EXPLANATIONS</div>
           <h2 class="feature-heading">Type "explain: …" and watch it unfold</h2>
@@ -259,13 +268,13 @@
 
       <!-- Feature 04: Autonomous Permissions -->
       <div class="feature-block gold reversed">
-        <div class="feature-info-col">
+        <div class="feature-info-col reveal from-left">
           <div class="feature-num-watermark">04</div>
           <div class="feature-label gold">04 - ACTION CONFIRM &amp; PERMISSIONS</div>
           <h2 class="feature-heading">You decide how much it can do on its own</h2>
           <div class="feature-desc">Pointr can type into a focused field or open an app for you. By default it shows exactly what it's about to do and waits for Enter - or switch to Always allow in Settings and it just gets on with it, Esc still stops any run.</div>
         </div>
-        <div class="feature-visual-col">
+        <div class="feature-visual-col reveal from-right" style="--reveal-delay:.12s">
           <!-- Interactive Permission Simulator -->
           <div class="perm-interactive-card">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
@@ -296,7 +305,7 @@
 
       <!-- Feature 05: Push-to-Talk Voice Flow -->
       <div class="feature-block">
-        <div class="feature-visual-col">
+        <div class="feature-visual-col reveal from-left">
           <!-- Interactive Voice Widget -->
           <div class="voice-interactive-card">
             <div class="voice-card-header">
@@ -352,7 +361,7 @@
             </button>
           </div>
         </div>
-        <div class="feature-info-col">
+        <div class="feature-info-col reveal from-right" style="--reveal-delay:.12s">
           <div class="feature-num-watermark">05</div>
           <div class="feature-label">05 - VOICE FLOWS</div>
           <h2 class="feature-heading">Hold a key, speak, let go</h2>
@@ -365,7 +374,7 @@
 
     <!-- Changelog Section -->
     <section id="changelog" class="changelog-section">
-      <div class="changelog-header">
+      <div class="changelog-header reveal">
         <h2 class="changelog-title">Changelog</h2>
         <div class="changelog-status">
           <div class="live-dot"></div>
@@ -379,7 +388,7 @@
             <div class="changelog-line"></div>
 
             <!-- v0.3.0 -->
-            <div class="changelog-item">
+            <div class="changelog-item reveal">
               <div class="changelog-dot active">
                 <div class="changelog-pulse"></div>
               </div>
@@ -398,7 +407,7 @@
             </div>
 
             <!-- v0.2.0 -->
-            <div class="changelog-item">
+            <div class="changelog-item reveal">
               <div class="changelog-dot"></div>
               <div class="changelog-meta">
                 <span class="changelog-version">v0.2.0</span>
@@ -414,7 +423,7 @@
             </div>
 
             <!-- v0.1.1 -->
-            <div class="changelog-item">
+            <div class="changelog-item reveal">
               <div class="changelog-dot"></div>
               <div class="changelog-meta">
                 <span class="changelog-version">v0.1.1</span>
@@ -429,7 +438,7 @@
             </div>
 
             <!-- v0.1.0 -->
-            <div class="changelog-item">
+            <div class="changelog-item reveal">
               <div class="changelog-dot"></div>
               <div class="changelog-meta">
                 <span class="changelog-version">v0.1.0</span>
@@ -443,7 +452,7 @@
             </div>
 
             <!-- v0.0.5 -->
-            <div class="changelog-item">
+            <div class="changelog-item reveal">
               <div class="changelog-dot"></div>
               <div class="changelog-meta">
                 <span class="changelog-version">v0.0.5</span>
@@ -456,7 +465,7 @@
             </div>
 
             <!-- v0.0.4 -->
-            <div class="changelog-item">
+            <div class="changelog-item reveal">
               <div class="changelog-dot"></div>
               <div class="changelog-meta">
                 <span class="changelog-version">v0.0.4</span>
@@ -469,7 +478,7 @@
             </div>
 
             <!-- v0.0.3 -->
-            <div class="changelog-item">
+            <div class="changelog-item reveal">
               <div class="changelog-dot"></div>
               <div class="changelog-meta">
                 <span class="changelog-version">v0.0.3</span>
@@ -482,7 +491,7 @@
             </div>
 
             <!-- v0.0.2 -->
-            <div class="changelog-item">
+            <div class="changelog-item reveal">
               <div class="changelog-dot"></div>
               <div class="changelog-meta">
                 <span class="changelog-version">v0.0.2</span>
@@ -495,7 +504,7 @@
             </div>
 
             <!-- v0.0.1 -->
-            <div class="changelog-item">
+            <div class="changelog-item reveal">
               <div class="changelog-dot"></div>
               <div class="changelog-meta">
                 <span class="changelog-version">v0.0.1</span>
