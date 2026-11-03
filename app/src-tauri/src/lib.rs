@@ -419,11 +419,10 @@ pub fn run() {
             }
 
             // Keep windows out of screen shares if the user turned that on.
-            // With it off, windows are left exactly as tauri.conf.json made
-            // them. The meeting panel is always kept out.
-            if commands::settings::stealth_enabled(app.handle()) {
-                stealth::apply_all(app.handle(), true);
-            }
+            // Windows that start hidden aren't touched until they're shown
+            // (see stealth.rs); with it off they are left exactly as
+            // tauri.conf.json made them. The meeting panel is always kept out.
+            stealth::init(app.handle());
             meeting::setup_panel(app.handle());
 
             // Push-to-talk (hold Ctrl+Win): its own keyboard hook, since

@@ -120,10 +120,10 @@ fn panel(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window(stealth::MEETING_WINDOW)
 }
 
-/// Run once at startup: click-through, top-centre of the primary monitor,
-/// excluded from capture, never takes focus. Click-through is set first
-/// because Tauri rewrites the window's extended style when it changes, which
-/// would drop the non-activating bits set after it.
+/// Run once at startup: click-through and top-centre of the primary monitor.
+/// It never takes focus (`focusable: false` in tauri.conf.json) and is
+/// always excluded from capture (`stealth::init` hooks it to be protected
+/// whenever it's shown).
 pub fn setup_panel(app: &AppHandle) {
     let Some(window) = panel(app) else { return };
     let _ = window.set_ignore_cursor_events(true);
@@ -134,8 +134,7 @@ pub fn setup_panel(app: &AppHandle) {
         let x = pos.x + (area.width as i32 - size.width as i32) / 2;
         let _ = window.set_position(tauri::PhysicalPosition::new(x, pos.y + margin));
     }
-    let protection = stealth::protect(&window, true);
-    stealth::make_non_activating(&window);
+    let protection = stealth::panel_protection();
     *PANEL_PROTECTION.lock().unwrap_or_else(|e| e.into_inner()) = Some(protection);
     if protection != Protection::Hidden {
         eprintln!("[meeting] panel capture protection: {:?}", protection);
