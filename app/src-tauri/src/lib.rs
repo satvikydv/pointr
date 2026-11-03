@@ -299,6 +299,7 @@ pub fn run() {
             commands::clipboard::write_clipboard,
             commands::tts::speak_text,
             commands::tts::stop_speech,
+            commands::tts::get_narration_allowed,
             commands::settings::list_voices,
             commands::settings::get_selected_voice,
             commands::settings::set_selected_voice,

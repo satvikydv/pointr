@@ -30,8 +30,14 @@ const githubTokenInput = document.getElementById('github-token-input');
 const btnGithubConnect = document.getElementById('btn-github-connect');
 const btnGithubDisconnect = document.getElementById('btn-github-disconnect');
 
+const speechHint = document.getElementById('speech-hint');
+const SPEECH_DEFAULT_HINT = speechHint.textContent;
+
 const state = {
+    // The saved "Read answers aloud" preference. While stealth is on it's
+    // kept but overridden: narration never plays (commands/tts.rs).
     audioOn: true,
+    stealthOn: false,
     // 'off' | 'ask' | 'allow' — replaced the old on/off OS actions toggle.
     actionPermission: 'ask',
     // Opt-in: mirrors the Rust default, and stays false if the real value
@@ -273,11 +279,17 @@ function voiceLabel(voice) {
 }
 
 function render() {
-    // Toggle switch
-    toggleTrack.style.background = state.audioOn ? '#5b8cff' : 'rgba(255,255,255,0.12)';
-    toggleTrack.style.borderColor = state.audioOn ? '#5b8cff' : 'rgba(255,255,255,0.16)';
-    toggleTrack.style.border = `1px solid ${state.audioOn ? '#5b8cff' : 'rgba(255,255,255,0.16)'}`;
-    toggleKnob.style.left = (state.audioOn ? 18 : 1) + 'px';
+    // Toggle switch: shows off, and can't be turned on, while stealth is on.
+    const speaking = state.audioOn && !state.stealthOn;
+    toggleTrack.style.background = speaking ? '#5b8cff' : 'rgba(255,255,255,0.12)';
+    toggleTrack.style.borderColor = speaking ? '#5b8cff' : 'rgba(255,255,255,0.16)';
+    toggleTrack.style.border = `1px solid ${speaking ? '#5b8cff' : 'rgba(255,255,255,0.16)'}`;
+    toggleKnob.style.left = (speaking ? 18 : 1) + 'px';
+    toggleTrack.style.opacity = state.stealthOn ? '0.45' : '1';
+    toggleTrack.style.cursor = state.stealthOn ? 'not-allowed' : 'pointer';
+    speechHint.textContent = state.stealthOn
+        ? 'Off while Pointr is hidden from screen sharing: speaking out loud would give it away. Turn that off to use narration again.'
+        : SPEECH_DEFAULT_HINT;
 
     for (const b of permissionButtons) {
         b.classList.toggle('active', b.dataset.permission === state.actionPermission);
@@ -287,9 +299,9 @@ function render() {
     telemetryToggleTrack.style.border = `1px solid ${state.telemetryOn ? '#5b8cff' : 'rgba(255,255,255,0.16)'}`;
     telemetryToggleKnob.style.left = (state.telemetryOn ? 18 : 1) + 'px';
 
-    // Voice section disabled look when audio is off
-    voiceSection.style.opacity = state.audioOn ? '1' : '0.45';
-    voiceSection.style.pointerEvents = state.audioOn ? 'auto' : 'none';
+    // Voice section disabled look when narration can't play
+    voiceSection.style.opacity = speaking ? '1' : '0.45';
+    voiceSection.style.pointerEvents = speaking ? 'auto' : 'none';
 
     // Trigger label + chevron
     const selected = state.voices.find((v) => v.id === state.selectedId);
@@ -366,6 +378,7 @@ document.addEventListener('click', (e) => {
 });
 
 toggleTrack.addEventListener('click', async () => {
+    if (state.stealthOn) return;
     state.audioOn = !state.audioOn;
     state.dropdownOpen = false;
     render();
@@ -534,7 +547,7 @@ telemetryToggleTrack.addEventListener('click', async () => {
 });
 
 btnTest.addEventListener('click', async () => {
-    if (!state.audioOn || state.isPlaying || !state.selectedId) return;
+    if (!state.audioOn || state.stealthOn || state.isPlaying || !state.selectedId) return;
     state.isPlaying = true;
     render();
     clearTimeout(playTimer);
@@ -623,6 +636,8 @@ const btnMeetingBriefSave = document.getElementById('btn-meeting-brief-save');
 
 function renderStealth(status) {
     const on = !!status.enabled;
+    state.stealthOn = on;
+    render(); // the narration toggle depends on this
     stealthToggleTrack.style.background = on ? '#5b8cff' : 'rgba(255,255,255,0.12)';
     stealthToggleTrack.style.border = `1px solid ${on ? '#5b8cff' : 'rgba(255,255,255,0.16)'}`;
     stealthToggleKnob.style.left = (on ? 18 : 1) + 'px';

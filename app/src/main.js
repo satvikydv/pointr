@@ -648,7 +648,7 @@ function renderStoryboardShape(step) {
 // narration is off/fails) — the thing playStoryboard awaits between steps.
 function speakStepAndWait(text) {
     return new Promise((resolve) => {
-        invoke('get_speech_enabled')
+        invoke('get_narration_allowed')
             .then(async (enabled) => {
                 if (!enabled) {
                     setTimeout(resolve, 1800);
@@ -1867,7 +1867,7 @@ function renderResponse(response, rect) {
     closeTimer = setTimeout(() => dismissOverlay(), displayMs);
 
     if (response.answer_text) {
-        invoke('get_speech_enabled')
+        invoke('get_narration_allowed')
             .then(async (enabled) => {
                 if (enabled) {
                     // Speech is about to play — the word-count estimate above

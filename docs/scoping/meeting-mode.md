@@ -22,7 +22,7 @@ Built:
 | Session control, transcriber thread, device-loss reconnect, PTT priority | `meeting/mod.rs` |
 | Answer: flush tail → POST → stream into panel; newer press cancels older | `meeting/answer.rs` |
 | Panel: always capture-excluded, non-activating, click-through, top-centre | `meeting.html`/`meeting.js`, `tauri.conf.json` window `meeting` |
-| TTS refused during a session | `commands/tts.rs` |
+| Narration (TTS) never plays while stealth is on or a meeting session runs, enforced in `speak_text` for every caller; turning stealth on stops anything mid-sentence; Settings shows "Read answers aloud" locked off | `commands/tts.rs` (`narration_blocked`), `stealth.rs`, `settings.js` |
 | Backend `POST /api/meeting/answer-stream` (text-only, stateless) | `backend/app/routes/meeting.py`, tests in `backend/tests/test_meeting.py` |
 | Meeting brief (free-text background) | Settings → Meeting mode |
 

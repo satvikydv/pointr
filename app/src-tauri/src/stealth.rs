@@ -175,6 +175,11 @@ pub fn get_stealth_status(app: AppHandle) -> Result<StealthStatus, String> {
 #[tauri::command]
 pub fn set_stealth_enabled(app: AppHandle, enabled: bool) -> Result<StealthStatus, String> {
     crate::commands::settings::persist_stealth_enabled(&app, enabled)?;
+    if enabled {
+        // Narration never plays in stealth mode (commands/tts.rs), and
+        // that includes anything already mid-sentence.
+        let _ = crate::commands::tts::stop_speech(app.state());
+    }
     let protection = apply_all(&app, enabled);
     Ok(StealthStatus { enabled, protection })
 }

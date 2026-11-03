@@ -255,6 +255,10 @@ pub(crate) fn persist_voice_enabled(app: &AppHandle, enabled: bool) -> Result<()
     save_settings(app, &settings)
 }
 
+pub(crate) fn speech_enabled(app: &AppHandle) -> bool {
+    load_settings(app).speech_enabled
+}
+
 pub(crate) fn stealth_enabled(app: &AppHandle) -> bool {
     load_settings(app).stealth_enabled
 }

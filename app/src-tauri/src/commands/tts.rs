@@ -67,6 +67,36 @@ fn ensure_winrt_initialized() {
     }
 }
 
+/// Why narration can't play right now, or None if it can. The one place
+/// this is decided: `speak_text` enforces it for every caller (overlay
+/// answers, `explain:` walkthroughs, the Settings preview), and the
+/// frontend asks `get_narration_allowed` so it never waits on speech that
+/// won't come.
+///
+/// - Stealth mode on: never. Pointr is hidden from screen shares, and
+///   speaking out loud would give it away to anyone listening.
+/// - A meeting session running: it would play into the call (and back into
+///   meeting mode's own loopback transcript).
+/// - The "Read answers aloud" setting off.
+pub(crate) fn narration_blocked(app: &AppHandle) -> Option<&'static str> {
+    if crate::commands::settings::stealth_enabled(app) {
+        Some("Narration is off while Pointr is hidden from screen sharing.")
+    } else if crate::meeting::is_active() {
+        Some("Narration is off during a meeting.")
+    } else if !crate::commands::settings::speech_enabled(app) {
+        Some("Read answers aloud is turned off.")
+    } else {
+        None
+    }
+}
+
+/// Whether narration would play right now: the setting, stealth mode and
+/// meeting mode combined. What the overlay checks before speaking.
+#[tauri::command]
+pub fn get_narration_allowed(app: AppHandle) -> bool {
+    narration_blocked(&app).is_none()
+}
+
 /// `voice_id` lets a caller (the Settings "Test" button) preview a voice
 /// immediately, before it's saved as the persisted choice — normal overlay
 /// narration omits it and gets whatever `select_voice` resolves to.
@@ -81,10 +111,8 @@ pub fn speak_text(
     if text.is_empty() {
         return Ok(());
     }
-    // In a meeting, narration would play into the call (and back into
-    // meeting mode's own loopback transcript).
-    if crate::meeting::is_active() {
-        return Ok(());
+    if let Some(reason) = narration_blocked(&app) {
+        return Err(reason.to_string());
     }
 
     ensure_winrt_initialized();
