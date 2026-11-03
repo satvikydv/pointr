@@ -360,6 +360,9 @@ pub fn run() {
             commands::settings::set_meeting_brief,
             meeting::get_meeting_status,
             meeting::toggle_meeting,
+            meeting::context::list_context_docs,
+            meeting::context::add_context_doc,
+            meeting::context::remove_context_doc,
             enable_escape_dismiss,
             disable_escape_dismiss
         ])

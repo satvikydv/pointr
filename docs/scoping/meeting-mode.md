@@ -25,6 +25,8 @@ Built:
 | Narration (TTS) never plays while stealth is on or a meeting session runs, enforced in `speak_text` for every caller; turning stealth on stops anything mid-sentence; Settings shows "Read answers aloud" locked off | `commands/tts.rs` (`narration_blocked`), `stealth.rs`, `settings.js` |
 | Backend `POST /api/meeting/answer-stream` (text-only, stateless) | `backend/app/routes/meeting.py`, tests in `backend/tests/test_meeting.py` |
 | Meeting brief (free-text background) | Settings → Meeting mode |
+| Documents as context (resume, write-ups, notes; PDF/.docx/.txt/.md). Text extracted once (PDF/Word by the backend's `/api/meeting/extract-text`, which keeps nothing; text files locally), stored in local app data, re-adding a name replaces it. Up to 20 docs, 60k chars each; 60k chars total sent per answer, later docs cut | `meeting/context.rs`, `meeting/doc_text.rs` (unit tested), Settings → Documents for answers, `routes/meeting.py` |
+| Answer prompt: documents are the source of truth about the user; anything they don't cover is answered from best practice and sound reasoning, never "I don't have that information" or placeholders. Strict read-aloud format (Q line, 1-3 sentences, ≤4 bullets), one fenced code block for coding questions. Stable parts (instructions, background, documents) first so providers can cache the prefix; transcript last | `routes/meeting.py`, rendering in `meeting.js` |
 
 Hotkeys: `Ctrl+Alt+M` start/end (also in the tray menu). If another app owns it, `Ctrl+Alt+Shift+M`, then `Ctrl+Alt+Shift+K`, is used instead; the tray, Settings and panel show the active one. During a session only: `Ctrl+Alt+Enter` answer, `Ctrl+Alt+H` hide/show panel, `Ctrl+Alt+Up/Down` scroll.
 
