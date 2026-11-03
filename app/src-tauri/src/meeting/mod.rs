@@ -153,7 +153,7 @@ fn show_panel(app: &AppHandle) {
 
 fn hide_panel(app: &AppHandle) {
     if let Some(window) = panel(app) {
-        let _ = window.hide();
+        stealth::hide(&window);
         PANEL_VISIBLE.store(false, Ordering::SeqCst);
     }
 }

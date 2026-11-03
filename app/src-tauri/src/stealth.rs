@@ -39,7 +39,7 @@ use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DestroyWindow, GetWindowDisplayAffinity, IsWindowVisible, SetWindowDisplayAffinity,
-    ShowWindow, SW_SHOWNOACTIVATE, SWP_SHOWWINDOW, WDA_EXCLUDEFROMCAPTURE, WDA_MONITOR, WDA_NONE,
+    ShowWindow, SW_HIDE, SW_SHOWNOACTIVATE, SWP_SHOWWINDOW, WDA_EXCLUDEFROMCAPTURE, WDA_MONITOR, WDA_NONE,
     WINDOWPOS, WINDOW_DISPLAY_AFFINITY, WINDOW_EX_STYLE, WM_SHOWWINDOW, WM_WINDOWPOSCHANGING, WS_POPUP,
 };
 
@@ -222,6 +222,17 @@ pub fn show_without_focus(window: &WebviewWindow) {
     if let Some(hwnd) = hwnd_of(window) {
         unsafe {
             let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        }
+    }
+}
+
+/// The counterpart of `show_without_focus`. tao hides a window only when its
+/// own visible flag changes, and a raw `ShowWindow` never sets that flag, so
+/// `WebviewWindow::hide` would do nothing for a window shown that way.
+pub fn hide(window: &WebviewWindow) {
+    if let Some(hwnd) = hwnd_of(window) {
+        unsafe {
+            let _ = ShowWindow(hwnd, SW_HIDE);
         }
     }
 }
