@@ -15,22 +15,26 @@ Built:
 
 | Piece | Where |
 |---|---|
-| Stealth toggle: `WDA_EXCLUDEFROMCAPTURE` with read-back, `WDA_MONITOR` fallback, hidden from taskbar/Alt-Tab while on | `src-tauri/src/stealth.rs`, Settings → "Hide Pointr from screen sharing" |
+| Stealth toggle: `WDA_EXCLUDEFROMCAPTURE` with read-back, `WDA_MONITOR` fallback, hidden from the taskbar while on. Hidden windows are never touched; affinity is applied to visible windows and, via a subclass, just before a window is shown (see the module docs) | `src-tauri/src/stealth.rs`, Settings → "Hide Pointr from screen sharing" |
 | Loopback capture of the default output device | `voice/audio.rs` (`Source::System`, `Recorder::start_from`) |
 | Continuous phrase cutting with drain, stall-as-pause for silent loopback | `meeting/chunker.rs` (unit tested) |
 | In-memory transcript, 15 min kept, last 4 min / 8k chars sent | `meeting/transcript.rs` (unit tested) |
 | Session control, transcriber thread, device-loss reconnect, PTT priority | `meeting/mod.rs` |
 | Answer: flush tail → POST → stream into panel; newer press cancels older | `meeting/answer.rs` |
-| Panel: always capture-excluded, non-activating, click-through, top-centre | `meeting.html`/`meeting.js`, `tauri.conf.json` window `meeting` |
+| Panel: always capture-excluded, non-activating (`focusable: false`), click-through, top-centre | `meeting.html`/`meeting.js`, `tauri.conf.json` window `meeting` |
 | Narration (TTS) never plays while stealth is on or a meeting session runs, enforced in `speak_text` for every caller; turning stealth on stops anything mid-sentence; Settings shows "Read answers aloud" locked off | `commands/tts.rs` (`narration_blocked`), `stealth.rs`, `settings.js` |
 | Backend `POST /api/meeting/answer-stream` (text-only, stateless) | `backend/app/routes/meeting.py`, tests in `backend/tests/test_meeting.py` |
 | Meeting brief (free-text background) | Settings → Meeting mode |
 
-Hotkeys: `Ctrl+Alt+M` start/end (also in the tray menu). During a session only: `Ctrl+Alt+Enter` answer, `Ctrl+Alt+H` hide/show panel, `Ctrl+Alt+Up/Down` scroll.
+Hotkeys: `Ctrl+Alt+M` start/end (also in the tray menu). If another app owns it, `Ctrl+Alt+Shift+M`, then `Ctrl+Alt+Shift+K`, is used instead; the tray, Settings and panel show the active one. During a session only: `Ctrl+Alt+Enter` answer, `Ctrl+Alt+H` hide/show panel, `Ctrl+Alt+Up/Down` scroll.
+
+Known gap: if the call plays through a device that isn't the Windows default output, nothing is heard (no device picker yet).
 
 Not built yet: output-device picker (uses the Windows default), per-process loopback, panel move/resize, speculative answering, follow-ups by voice, telemetry, privacy-page update.
 
-How it was checked: the Rust crate type-checks and passes clippy against the Windows target (`x86_64-pc-windows-gnu`, cross-checked from Linux); the pure modules' unit tests pass; backend route tests pass. **Not yet run on a real Windows machine.** Everything below still needs a manual pass there: the capture-exclusion matrix (Zoom / Teams / Meet in Chrome and Edge / OBS / Snipping Tool), loopback on speakers vs. Bluetooth headset, and real answer latency.
+How it was checked: the Rust crate type-checks and passes clippy against the Windows target (`x86_64-pc-windows-gnu`, cross-checked from Linux); the pure modules' unit tests pass; backend route tests pass. **First run on real Windows (Windows 11 22621, 125% scaling):** the white-box bug below was found and fixed; capture exclusion was confirmed against a GDI screen capture only; meeting start/stop, loopback, on-device transcription and a streamed answer worked for one spoken phrase through the default device. Still needs a manual pass: the capture-exclusion matrix (Zoom / Teams / Meet in Chrome and Edge / OBS / Snipping Tool), loopback on speakers vs. Bluetooth headset, and real answer latency.
+
+**Windows lesson, white boxes:** calling `SetWindowDisplayAffinity` (even with `WDA_NONE`) on a window that has never been shown makes DWM draw it as a blank white rectangle at its default position, and it stays until the app exits. Settings, History and the overlay all start hidden, so toggling stealth hit all of them. `GetWindowDisplayAffinity` also reads 0 for a window that is hidden, while Windows puts the old value back when it is shown, so the hook writes unconditionally.
 
 To try it: Settings → Voice set up (local model downloaded, or OpenAI key), an LLM key connected, optionally the meeting background filled in → join a call → `Ctrl+Alt+M` → when asked something, `Ctrl+Alt+Enter`. Debug builds (`npm run tauri dev`) log flush time and time to first token as `[meeting] answer N: ...`.
 
