@@ -26,7 +26,7 @@ Built:
 | Backend `POST /api/meeting/answer-stream` (text-only, stateless) | `backend/app/routes/meeting.py`, tests in `backend/tests/test_meeting.py` |
 | Meeting brief (free-text background) | Settings → Meeting mode |
 
-Hotkeys: `Ctrl+Alt+M` start/end (also in the tray menu). If another app owns it, `Ctrl+Alt+Shift+M`, then `Ctrl+Alt+Shift+K`, is used instead; the tray, Settings and panel show the active one. During a session only: `Ctrl+Alt+Enter` answer, `Ctrl+Alt+H` hide/show panel, `Ctrl+Alt+Up/Down` scroll.
+Hotkeys: `Ctrl+Alt+L` start/end (also in the tray menu). If another app owns it, `Ctrl+Alt+J`, then `Ctrl+Alt+M`, is used instead (`Ctrl+Alt+M` is taken by ParakeetAI on the test machine); the tray, Settings and panel show the active one. During a session only: `Ctrl+Alt+Enter` answer, `Ctrl+Alt+H` hide/show panel, `Ctrl+Alt+Up/Down` scroll.
 
 Known gap: if the call plays through a device that isn't the Windows default output, nothing is heard (no device picker yet).
 
@@ -36,7 +36,7 @@ How it was checked: the Rust crate type-checks and passes clippy against the Win
 
 **Windows lesson, white boxes:** calling `SetWindowDisplayAffinity` (even with `WDA_NONE`) on a window that has never been shown makes DWM draw it as a blank white rectangle at its default position, and it stays until the app exits. Settings, History and the overlay all start hidden, so toggling stealth hit all of them. `GetWindowDisplayAffinity` also reads 0 for a window that is hidden, while Windows puts the old value back when it is shown, so the hook writes unconditionally.
 
-To try it: Settings → Voice set up (local model downloaded, or OpenAI key), an LLM key connected, optionally the meeting background filled in → join a call → `Ctrl+Alt+M` → when asked something, `Ctrl+Alt+Enter`. Debug builds (`npm run tauri dev`) log flush time and time to first token as `[meeting] answer N: ...`.
+To try it: Settings → Voice set up (local model downloaded, or OpenAI key), an LLM key connected, optionally the meeting background filled in → join a call → `Ctrl+Alt+L` → when asked something, `Ctrl+Alt+Enter`. Debug builds (`npm run tauri dev`) log flush time and time to first token as `[meeting] answer N: ...`.
 
 ---
 
@@ -123,10 +123,10 @@ Estimate: **1–2 days** including a manual test matrix (Zoom, Teams, Meet in Ch
 
 So the copilot runs as an explicit **meeting session**:
 
-1. **Start meeting** (hotkey `Ctrl+Alt+M`, or tray). A small status pill confirms it's listening (only you see it, since it's stealth).
+1. **Start meeting** (hotkey `Ctrl+Alt+L`, or tray). A small status pill confirms it's listening (only you see it, since it's stealth).
 2. While the session runs, system audio and mic are transcribed continuously into an in-memory transcript (last ~10 min, RAM only, never written to disk).
 3. **Answer now** (`Ctrl+Alt+Enter`): the transcript tail is flushed, sent with the user's meeting brief, and the answer streams into the panel. You don't wait for any audio recording at press time, because it has already happened.
-4. **End meeting** (`Ctrl+Alt+M` again): mic and loopback close, and the transcript is dropped from memory.
+4. **End meeting** (`Ctrl+Alt+L` again): mic and loopback close, and the transcript is dropped from memory.
 
 Push-to-talk (Ctrl+Win) keeps working inside a session for follow-ups like "shorter", "give me an example" or "what about edge cases".
 

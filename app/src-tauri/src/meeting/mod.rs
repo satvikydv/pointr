@@ -1,7 +1,7 @@
 //! Meeting mode (experimental): a running transcript of the call, and one
 //! hotkey that answers the question just asked.
 //!
-//! 1. Ctrl+Alt+M starts a session (or the first free fallback key, see
+//! 1. Ctrl+Alt+L starts a session (or the first free fallback key, see
 //!    `TOGGLE_CANDIDATES`). System audio (what the other people in
 //!    the call say, via loopback of the default output device) is recorded
 //!    and transcribed phrase by phrase, on-device by default, into an
@@ -13,7 +13,7 @@
 //!    the model's time to first token.
 //! 3. The answer shows in a small panel at the top of the screen that is
 //!    always excluded from screen capture and never takes focus.
-//! 4. Ctrl+Alt+M again ends the session: audio closes, the transcript is
+//! 4. The same key again ends the session: audio closes, the transcript is
 //!    dropped. Nothing is written to disk at any point.
 //!
 //! While a session runs, Ctrl+Alt+H hides or shows the panel and
@@ -177,12 +177,14 @@ pub enum Action {
 const CTRL_ALT: Modifiers = Modifiers::CONTROL.union(Modifiers::ALT);
 
 /// Keys tried, in order, for starting and ending a session: another app
-/// (a call or recording tool, say) may already own the first. Ctrl+Shift+M
-/// is left out on purpose, since Teams uses it to mute.
+/// (a call or recording tool, say) may already own the first. All three
+/// keys, so it stays easy to press mid-call. Ctrl+Alt+M is no longer first
+/// because ParakeetAI takes it; Ctrl+Shift+M is left out on purpose, since
+/// Teams uses it to mute.
 const TOGGLE_CANDIDATES: [(Modifiers, Code, &str); 3] = [
+    (CTRL_ALT, Code::KeyL, "Ctrl+Alt+L"),
+    (CTRL_ALT, Code::KeyJ, "Ctrl+Alt+J"),
     (CTRL_ALT, Code::KeyM, "Ctrl+Alt+M"),
-    (CTRL_ALT.union(Modifiers::SHIFT), Code::KeyM, "Ctrl+Alt+Shift+M"),
-    (CTRL_ALT.union(Modifiers::SHIFT), Code::KeyK, "Ctrl+Alt+Shift+K"),
 ];
 
 /// The candidate that registered, if any; what `action_for` matches against.
