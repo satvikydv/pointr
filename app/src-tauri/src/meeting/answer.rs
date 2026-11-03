@@ -132,6 +132,7 @@ fn payload(app: &AppHandle, lines: &[Line]) -> serde_json::Value {
     let mut body = serde_json::json!({
         "transcript": transcript,
         "brief": crate::commands::settings::meeting_brief(app),
+        "documents": super::context::for_request(app),
         "gemini_api_key": crate::commands::settings::get_gemini_key_for_request(app.clone()).unwrap_or_default(),
     });
     if let (Some(target), serde_json::Value::Object(fields)) =

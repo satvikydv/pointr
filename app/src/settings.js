@@ -674,7 +674,93 @@ btnMeetingBriefSave.addEventListener('click', async () => {
     setTimeout(() => { meetingBriefStatus.textContent = ''; }, 2000);
 });
 
+// Documents for meeting answers (Rust: meeting/context.rs).
+const docsList = document.getElementById('docs-list');
+const docsStatus = document.getElementById('docs-status');
+const docsFile = document.getElementById('docs-file');
+const btnDocsAdd = document.getElementById('btn-docs-add');
+const MAX_DOC_FILE_BYTES = 15 * 1024 * 1024;
+
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function renderDocs(result) {
+    const { docs, total_chars: total, budget_chars: budget } = result;
+    docsList.innerHTML = docs.map((d) => `
+        <div class="doc-row">
+          <div class="doc-name" title="${escapeHtml(d.name)}">${escapeHtml(d.name)}</div>
+          <div class="doc-meta${d.truncated ? ' doc-warn' : ''}"
+               title="${d.truncated ? 'Very long, so only the start was kept' : ''}">${d.words.toLocaleString()} words${d.truncated ? ' (start only)' : ''}</div>
+          <button class="doc-remove" data-id="${escapeHtml(d.id)}" title="Remove">&times;</button>
+        </div>`).join('');
+    if (total > budget) {
+        docsStatus.innerHTML = '<span class="doc-warn">More text than one answer can use: the last documents are cut short.</span>';
+    } else {
+        docsStatus.textContent = docs.length ? `${docs.length} document${docs.length === 1 ? '' : 's'}` : 'None added yet';
+    }
+}
+
+async function loadDocs() {
+    try {
+        renderDocs(await invoke('list_context_docs'));
+    } catch (e) {
+        console.error('Failed to load documents:', e);
+        docsStatus.textContent = 'Couldn\u2019t load documents';
+    }
+}
+
+// Bytes to base64 in slices: String.fromCharCode on a whole multi-MB
+// file at once overflows the call stack.
+function toBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(binary);
+}
+
+btnDocsAdd.addEventListener('click', () => docsFile.click());
+
+docsFile.addEventListener('change', async () => {
+    const files = Array.from(docsFile.files || []);
+    docsFile.value = ''; // so picking the same file again still fires
+    const failures = [];
+    btnDocsAdd.disabled = true;
+    for (const file of files) {
+        docsStatus.textContent = `Reading ${file.name}\u2026`;
+        if (file.size > MAX_DOC_FILE_BYTES) {
+            failures.push(`${file.name} is larger than 15 MB.`);
+            continue;
+        }
+        try {
+            const dataBase64 = toBase64(await file.arrayBuffer());
+            await invoke('add_context_doc', { name: file.name, dataBase64 });
+        } catch (e) {
+            failures.push(String(e));
+        }
+    }
+    btnDocsAdd.disabled = false;
+    await loadDocs();
+    if (failures.length) {
+        docsStatus.innerHTML = `<span class="doc-warn">${escapeHtml(failures.join(' '))}</span>`;
+    }
+});
+
+docsList.addEventListener('click', async (e) => {
+    const button = e.target.closest('.doc-remove');
+    if (!button) return;
+    try {
+        await invoke('remove_context_doc', { id: button.dataset.id });
+    } catch (err) {
+        console.error('Failed to remove document:', err);
+    }
+    await loadDocs();
+});
+
 async function loadStealthAndMeeting() {
+    loadDocs();
     try {
         renderStealth(await invoke('get_stealth_status'));
     } catch (e) {

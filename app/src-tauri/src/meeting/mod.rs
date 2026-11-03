@@ -24,6 +24,8 @@
 
 pub mod answer;
 pub mod chunker;
+pub mod context;
+pub mod doc_text;
 pub mod transcript;
 
 use std::collections::VecDeque;

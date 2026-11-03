@@ -5,7 +5,10 @@ overridden, so this runs without any services:
     cd backend && python -m pytest tests
 """
 
+import base64
+import io
 import json
+import zipfile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,6 +16,7 @@ from fastapi.testclient import TestClient
 from app import main
 from app.models.meeting import MeetingAnswerRequest
 from app.rate_limit import rate_limit
+from app.security import verify_client_key
 from app.routes import meeting
 
 
@@ -42,6 +46,7 @@ def client(monkeypatch):
 
     monkeypatch.setattr(meeting, "get_llm", fake_get_llm)
     main.app.dependency_overrides[rate_limit] = _no_limit
+    main.app.dependency_overrides[verify_client_key] = _no_limit
     try:
         yield TestClient(main.app), fake, seen
     finally:
@@ -89,6 +94,110 @@ def test_prompt_without_brief_and_trims_oldest():
     long_lines = [{"t": float(i), "text": "x" * 1500} for i in range(20)]
     request = MeetingAnswerRequest(transcript=long_lines + [{"t": 999.0, "text": "Any questions?"}])
     prompt = meeting.build_prompt(request)
-    assert "(none given)" in prompt
+    assert "Background the user wrote:\n(none)" in prompt
+    assert "The user's documents:\n(none)" in prompt
     assert "[16:39] Any questions?" in prompt, "the newest line is always kept"
     assert prompt.count("x" * 1500) < 20, "oldest lines dropped past MAX_TRANSCRIPT_CHARS"
+
+
+# ---------------------------------------------------------------------
+# Documents as context
+# ---------------------------------------------------------------------
+
+
+def test_documents_go_in_the_prompt_before_the_transcript():
+    request = MeetingAnswerRequest(
+        transcript=[{"t": 5.0, "text": "Tell me about your last project."}],
+        documents=[
+            {"name": "resume.pdf", "text": "Built Pointr, a Tauri screen assistant."},
+            {"name": "", "text": "Led the move from REST polling to SSE."},
+        ],
+    )
+    prompt = meeting.build_prompt(request)
+    assert '<document name="resume.pdf">\nBuilt Pointr, a Tauri screen assistant.\n</document>' in prompt
+    assert '<document name="Document 2">' in prompt
+    # Stable parts first, transcript last, so providers can cache the prefix.
+    assert prompt.index("<document") < prompt.index("[00:05] Tell me about your last project.")
+    assert prompt.rstrip().endswith("[00:05] Tell me about your last project.")
+
+
+def test_prompt_never_asks_for_missing_context():
+    prompt = meeting.build_prompt(MeetingAnswerRequest(transcript=[{"t": 1.0, "text": "Why Rust?"}]))
+    assert "Never say or imply that information is missing" in prompt
+    assert "placeholder" not in prompt.replace("Never use placeholders", "")
+
+
+def test_documents_are_cut_to_the_budget():
+    big = "a" * (meeting.MAX_DOCUMENTS_CHARS - 100)
+    request = MeetingAnswerRequest(
+        transcript=[{"t": 1.0, "text": "Hi"}],
+        documents=[{"name": "one", "text": big}, {"name": "two", "text": "b" * 5000}, {"name": "three", "text": "c" * 10}],
+    )
+    block = meeting._documents_block(request)
+    assert block.count("a") >= len(big)
+    assert '<document name="two">' in block and "[…]" in block, "the one crossing the budget is cut short"
+    assert '<document name="three">' not in block, "nothing after the budget is spent"
+
+
+def _docx(paragraphs):
+    ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    body = "".join(f'<w:p><w:r><w:t xml:space="preserve">{p}</w:t></w:r></w:p>' for p in paragraphs)
+    xml = f'<?xml version="1.0"?><w:document xmlns:w="{ns}"><w:body>{body}</w:body></w:document>'
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("word/document.xml", xml)
+    return buf.getvalue()
+
+
+def _pdf(text):
+    """A minimal one-page PDF showing `text` in Helvetica."""
+    stream = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode()
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+        b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    out = io.BytesIO()
+    out.write(b"%PDF-1.4\n")
+    offsets = []
+    for i, body in enumerate(objects, start=1):
+        offsets.append(out.tell())
+        out.write(f"{i} 0 obj\n".encode() + body + b"\nendobj\n")
+    xref = out.tell()
+    out.write(f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode())
+    for off in offsets:
+        out.write(f"{off:010d} 00000 n \n".encode())
+    out.write(f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode())
+    return out.getvalue()
+
+
+def _extract(http, filename, data):
+    return http.post(
+        "/api/meeting/extract-text",
+        json={"filename": filename, "data_base64": base64.b64encode(data).decode()},
+    )
+
+
+def test_extracts_docx(client):
+    http, _, _ = client
+    res = _extract(http, "Resume.DOCX", _docx(["Satvik Yadav", "", "", "", "Built Pointr"]))
+    assert res.status_code == 200
+    assert res.json()["text"] == "Satvik Yadav\n\nBuilt Pointr", "blank-line runs collapse to one"
+
+
+def test_extracts_pdf(client):
+    http, _, _ = client
+    res = _extract(http, "resume.pdf", _pdf("Senior engineer, Rust and Python"))
+    assert res.status_code == 200, res.text
+    assert "Senior engineer, Rust and Python" in res.json()["text"]
+
+
+def test_extract_rejects_unsupported_empty_and_garbage(client):
+    http, _, _ = client
+    assert _extract(http, "photo.png", b"\x89PNG").status_code == 415
+    assert _extract(http, "empty.docx", _docx([])).status_code == 422
+    assert _extract(http, "broken.docx", b"not a zip").status_code == 422
+    bad = http.post("/api/meeting/extract-text", json={"filename": "a.pdf", "data_base64": "%%%"})
+    assert bad.status_code == 400

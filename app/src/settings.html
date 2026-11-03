@@ -372,6 +372,42 @@
         cursor: pointer;
         text-decoration: underline;
       }
+      .doc-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 10px;
+        margin-bottom: 6px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
+      }
+      .doc-name {
+        flex: 1;
+        min-width: 0;
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.88);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .doc-meta {
+        font-size: 11.5px;
+        color: rgba(255, 255, 255, 0.4);
+        flex-shrink: 0;
+      }
+      .doc-remove {
+        flex-shrink: 0;
+        background: transparent;
+        border: none;
+        color: rgba(255, 255, 255, 0.4);
+        font-size: 16px;
+        line-height: 1;
+        cursor: pointer;
+        padding: 0 2px;
+      }
+      .doc-remove:hover { color: rgba(255, 255, 255, 0.85); }
+      .doc-warn { color: rgba(242, 184, 75, 0.85); }
       .btn-key-disconnect:hover {
         color: rgba(255, 255, 255, 0.75);
       }
@@ -522,6 +558,15 @@
           <div class="toggle-hint" id="meeting-brief-status" style="margin-top:0;"></div>
           <button id="btn-meeting-brief-save" class="btn-key-connect" style="height:32px;">Save background</button>
         </div>
+
+        <div class="section-label" style="margin-top:16px;">Documents for answers</div>
+        <div id="docs-list"></div>
+        <div class="key-row" style="justify-content:space-between;align-items:center;">
+          <div class="toggle-hint" id="docs-status" style="margin-top:0;"></div>
+          <button id="btn-docs-add" class="btn-key-connect" style="height:32px;">Add files</button>
+        </div>
+        <input type="file" id="docs-file" multiple accept=".pdf,.docx,.txt,.md,.markdown" hidden />
+        <div class="toggle-hint">Your resume, project write-ups, notes on work you've done: PDF, Word (.docx), text or Markdown. Answers use them for anything about you, and fall back on general expertise for the rest. The text is stored on this computer and sent only with meeting answers. Adding a file with the same name replaces it.</div>
 
         <div class="divider"></div>
 

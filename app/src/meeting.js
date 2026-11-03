@@ -19,22 +19,45 @@ function escapeHtml(s) {
     return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-// [placeholder]s the model leaves for details it doesn't know.
+// `code` spans, and **bold** in case the model adds it anyway (shown as
+// plain emphasis, never as literal asterisks).
 function inline(s) {
-    return escapeHtml(s).replace(/\[([^\]]{1,60})\]/g, '<span class="ph">[$1]</span>');
+    return escapeHtml(s)
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
 }
 
-// The route's format: "Q: ..." line, answer sentences, "- " bullets.
+// The route's format: "Q: ..." line, answer sentences, "- " bullets, and
+// for coding questions one ``` fenced block. Works on a partial answer
+// too (an unclosed fence while it streams).
 function renderAnswer(text) {
     const out = [];
     let bullets = [];
+    let code = null; // lines of the open fenced block
     const flushBullets = () => {
         if (bullets.length) {
             out.push('<ul>' + bullets.map((b) => `<li>${inline(b)}</li>`).join('') + '</ul>');
             bullets = [];
         }
     };
+    const flushCode = () => {
+        out.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`);
+        code = null;
+    };
     for (const raw of text.split('\n')) {
+        if (/^\s*```/.test(raw)) {
+            if (code) {
+                flushCode();
+            } else {
+                flushBullets();
+                code = [];
+            }
+            continue;
+        }
+        if (code) {
+            code.push(raw.replace(/\s+$/, '')); // keep indentation
+            continue;
+        }
         const line = raw.trim();
         if (!line) continue;
         if (/^q:/i.test(line)) {
@@ -48,6 +71,7 @@ function renderAnswer(text) {
         }
     }
     flushBullets();
+    if (code) flushCode();
     return out.join('');
 }
 
