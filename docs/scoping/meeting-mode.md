@@ -16,7 +16,7 @@ Built:
 | Piece | Where |
 |---|---|
 | Stealth toggle: `WDA_EXCLUDEFROMCAPTURE` with read-back, `WDA_MONITOR` fallback, hidden from the taskbar while on. Hidden windows are never touched; affinity is applied to visible windows and, via a subclass, just before a window is shown (see the module docs) | `src-tauri/src/stealth.rs`, Settings → "Hide Pointr from screen sharing" |
-| Loopback capture of the default output device | `voice/audio.rs` (`Source::System`, `Recorder::start_from`) |
+| Loopback capture of **every active output device** at once (speakers, wired/USB headsets, both Bluetooth endpoints), rescanned every 3 s so a headset plugged in mid-call is picked up; a device whose stream dies is reopened; phrases echoed on two devices within 4 s are dropped | `voice/audio.rs` (`output_devices`, `Source::Output`), `meeting/mod.rs` (`Input`, `sync_inputs`), `meeting/transcript.rs` |
 | Continuous phrase cutting with drain, stall-as-pause for silent loopback | `meeting/chunker.rs` (unit tested) |
 | In-memory transcript, 15 min kept, last 4 min / 8k chars sent | `meeting/transcript.rs` (unit tested) |
 | Session control, transcriber thread, device-loss reconnect, PTT priority | `meeting/mod.rs` |
@@ -30,7 +30,7 @@ Built:
 
 Hotkeys: `Ctrl+Alt+L` start/end (also in the tray menu). If another app owns it, `Ctrl+Alt+J`, then `Ctrl+Alt+M`, is used instead (`Ctrl+Alt+M` is taken by ParakeetAI on the test machine); the tray, Settings and panel show the active one. During a session only: `Ctrl+Alt+Enter` answer, `Ctrl+Alt+H` hide/show panel, `Ctrl+Alt+Up/Down` scroll.
 
-Known gap: if the call plays through a device that isn't the Windows default output, nothing is heard (no device picker yet).
+Fixed gap: a call playing on a device that isn't the Windows default (typically a Bluetooth headset's hands-free "Headset" endpoint, which call apps use as the communications device) used to be missed. Every active output is now listened to. Still possible later: a device picker as a manual override, and per-app capture (Windows 11) to leave out music and notification sounds.
 
 Not built yet: output-device picker (uses the Windows default), per-process loopback, panel move/resize, speculative answering, follow-ups by voice, telemetry, privacy-page update.
 

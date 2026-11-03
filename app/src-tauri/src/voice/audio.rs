@@ -1,8 +1,9 @@
 //! Audio capture. Push-to-talk records the microphone, opened only while
 //! the key is held and closed the moment it's released. Meeting mode
-//! records system audio instead (WASAPI loopback of the default output
-//! device: what the other people in the call say), only while a meeting
-//! session is running.
+//! records system audio instead (WASAPI loopback of output devices: what
+//! the other people in the call say), only while a meeting session is
+//! running. It listens to every active output device at once, since a call
+//! often plays on one that isn't the Windows default (see meeting/mod.rs).
 //!
 //! The cpal stream lives on its own thread for its whole life, because a
 //! stream isn't guaranteed to be movable between threads on every backend.
@@ -19,12 +20,38 @@ use super::segment;
 
 pub type SharedAudio = Arc<Mutex<Vec<f32>>>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Source {
     /// The default microphone.
     Mic,
     /// Whatever the default output device is playing (loopback).
     System,
+    /// Whatever one specific output device is playing (loopback), by the
+    /// id from `output_devices`.
+    Output(String),
+}
+
+/// An active output device: speakers, headphones, a Bluetooth headset's
+/// "Headphones" and "Headset" endpoints, a monitor's HDMI audio, ...
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutputDevice {
+    /// Stable across runs and reconnects; what `Source::Output` takes.
+    pub id: String,
+    /// What Windows calls it, for logs and messages.
+    pub name: String,
+}
+
+/// Every output device Windows currently reports as active (plugged in and
+/// enabled). Empty if none, or if enumeration fails.
+pub fn output_devices() -> Vec<OutputDevice> {
+    let host = cpal::default_host();
+    let Ok(devices) = host.output_devices() else { return Vec::new() };
+    devices
+        .filter_map(|d| {
+            let id = d.id().ok()?.to_string();
+            Some(OutputDevice { id, name: d.to_string() })
+        })
+        .collect()
 }
 
 pub struct Recorder {
@@ -60,6 +87,7 @@ impl Recorder {
         let failed_flag = failed.clone();
         let cap = cap_seconds * segment::TARGET_RATE as usize;
 
+        let is_mic = source == Source::Mic;
         let thread = std::thread::spawn(move || {
             let stream = match open_stream(source, buf, cap, failed_flag) {
                 Ok(s) => s,
@@ -69,7 +97,7 @@ impl Recorder {
                 }
             };
             if let Err(e) = stream.play() {
-                let error = if source == Source::Mic { mic_error(&e.to_string()) } else { system_audio_error(&e.to_string()) };
+                let error = if is_mic { mic_error(&e.to_string()) } else { system_audio_error(&e.to_string()) };
                 let _ = ready_tx.send(Err(error));
                 return;
             }
@@ -136,6 +164,17 @@ fn open_stream(source: Source, buf: SharedAudio, cap: usize, failed: Arc<AtomicB
             let device = host
                 .default_output_device()
                 .ok_or_else(|| "No audio output device found, so there's no meeting audio to listen to.".to_string())?;
+            let supported = device.default_output_config().map_err(|e| system_audio_error(&e.to_string()))?;
+            (device, supported, system_audio_error)
+        }
+        Source::Output(id) => {
+            // Looked up here, on the stream's own thread, rather than handed
+            // over: a device handle isn't guaranteed to move between threads.
+            let device = host
+                .output_devices()
+                .map_err(|e| system_audio_error(&e.to_string()))?
+                .find(|d| d.id().map(|i| i.to_string() == id).unwrap_or(false))
+                .ok_or_else(|| "That audio output device is no longer connected.".to_string())?;
             let supported = device.default_output_config().map_err(|e| system_audio_error(&e.to_string()))?;
             (device, supported, system_audio_error)
         }

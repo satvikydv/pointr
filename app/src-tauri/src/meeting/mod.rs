@@ -3,7 +3,8 @@
 //!
 //! 1. Ctrl+Alt+L starts a session (or the first free fallback key, see
 //!    `TOGGLE_CANDIDATES`). System audio (what the other people in
-//!    the call say, via loopback of the default output device) is recorded
+//!    the call say, via loopback of every active output device, since a
+//!    call often plays on a headset that isn't the default) is recorded
 //!    and transcribed phrase by phrase, on-device by default, into an
 //!    in-memory transcript. The user's own mic is not recorded.
 //! 2. Ctrl+Alt+Enter: whatever has been said since the last pause is
@@ -28,7 +29,7 @@ pub mod context;
 pub mod doc_text;
 pub mod transcript;
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
@@ -55,9 +56,11 @@ const STALL: Duration = Duration::from_millis(600);
 /// far behind; past it, new audio is dropped rather than memory growing.
 const BUFFER_SECONDS: usize = 120;
 
-/// How long to wait before retrying when the output device can't be opened
-/// (e.g. while switching headsets).
-const REOPEN_DELAY: Duration = Duration::from_secs(2);
+/// How often to check for output devices plugged in or removed mid-session.
+const RESCAN: Duration = Duration::from_secs(3);
+
+/// How long before retrying a device that failed to open.
+const OPEN_RETRY: Duration = Duration::from_secs(30);
 
 /// Minimum spacing between non-fatal transcription error toasts.
 const ERROR_COOLDOWN: Duration = Duration::from_secs(15);
@@ -323,10 +326,20 @@ pub fn start(app: &AppHandle) {
         Ok(e) => e,
         Err(message) => return fail_to_start(app, format!("Meeting mode needs speech-to-text. {}", message)),
     };
-    let recorder = match audio::Recorder::start_from(audio::Source::System, BUFFER_SECONDS) {
-        Ok(r) => r,
-        Err(message) => return fail_to_start(app, message),
-    };
+    // Every active output, not just the Windows default: a call often plays
+    // on a headset (Bluetooth "Headset", a USB headset, the device picked in
+    // the meeting app) while the default stays on the speakers. Silent
+    // devices cost next to nothing: there's no speech to transcribe.
+    let mut inputs = Vec::new();
+    let mut open_failures = HashMap::new();
+    let error = sync_inputs(&mut inputs, &mut open_failures);
+    if inputs.is_empty() {
+        let message = match error {
+            Some(e) => format!("Couldn't listen to this computer's audio output. ({})", e),
+            None => "No audio output device is connected, so there's no meeting audio to listen to.".to_string(),
+        };
+        return fail_to_start(app, message);
+    }
 
     voice::warm_up(app);
     let _ = crate::commands::tts::stop_speech(app.state());
@@ -338,7 +351,7 @@ pub fn start(app: &AppHandle) {
         let transcript = transcript.clone();
         std::thread::Builder::new()
             .name("pointr-meeting".into())
-            .spawn(move || transcriber(app, engine, recorder, transcript, rx))
+            .spawn(move || transcriber(app, engine, inputs, open_failures, transcript, rx))
             .expect("failed to spawn meeting transcriber")
     };
 
@@ -394,25 +407,95 @@ fn spawn_transcription(app: &AppHandle, engine: &voice::Engine, piece: Vec<f32>)
     })
 }
 
-/// Runs for the length of a session: cuts finished phrases out of the
-/// system-audio buffer, transcribes them in order, and appends them to the
-/// transcript. A `Flush` forces out everything recorded so far and replies
-/// once it's all in the transcript.
+/// One output device being listened to.
+struct Input {
+    device: audio::OutputDevice,
+    recorder: audio::Recorder,
+    chunker: Chunker,
+    last_len: usize,
+    last_growth: Instant,
+}
+
+impl Input {
+    fn open(device: audio::OutputDevice) -> Result<Self, String> {
+        let recorder = audio::Recorder::start_from(audio::Source::Output(device.id.clone()), BUFFER_SECONDS)?;
+        Ok(Self { device, recorder, chunker: Chunker::new(), last_len: 0, last_growth: Instant::now() })
+    }
+
+    /// Finished phrases from this device (with `flush`, or once its audio
+    /// has stalled, the unfinished tail too), and its current loudness.
+    fn take(&mut self, flush: bool) -> (Vec<Vec<f32>>, f32) {
+        let mut buf = self.recorder.audio.lock().unwrap_or_else(|e| e.into_inner());
+        let len = buf.len();
+        if len != self.last_len {
+            self.last_growth = Instant::now();
+        }
+        let stalled = self.last_growth.elapsed() >= STALL;
+        let level = if stalled { 0.0 } else { segment::rms(&buf[len.saturating_sub(1600)..]) };
+        let pieces = self.chunker.take(&mut buf, flush || stalled);
+        self.last_len = buf.len();
+        (pieces, level)
+    }
+}
+
+/// Brings the set of devices listened to in line with what's plugged in:
+/// drops devices that were removed or whose stream died, opens new ones.
+/// A device that fails to open isn't retried for OPEN_RETRY, so one broken
+/// endpoint doesn't spam the log every rescan. Returns the first open error.
+fn sync_inputs(inputs: &mut Vec<Input>, open_failures: &mut HashMap<String, Instant>) -> Option<String> {
+    let devices = audio::output_devices();
+    inputs.retain(|i| {
+        let keep = !i.recorder.failed.load(Ordering::SeqCst) && devices.iter().any(|d| d.id == i.device.id);
+        if !keep && cfg!(debug_assertions) {
+            eprintln!("[meeting] stopped listening to {}", i.device.name);
+        }
+        keep
+    });
+    let mut first_error = None;
+    for device in devices {
+        if inputs.iter().any(|i| i.device.id == device.id)
+            || open_failures.get(&device.id).is_some_and(|at| at.elapsed() < OPEN_RETRY)
+        {
+            continue;
+        }
+        match Input::open(device.clone()) {
+            Ok(input) => {
+                open_failures.remove(&device.id);
+                if cfg!(debug_assertions) {
+                    eprintln!("[meeting] listening to {}", device.name);
+                }
+                inputs.push(input);
+            }
+            Err(e) => {
+                eprintln!("[meeting] couldn't listen to {}: {}", device.name, e);
+                open_failures.insert(device.id.clone(), Instant::now());
+                first_error.get_or_insert(format!("{}: {}", device.name, e));
+            }
+        }
+    }
+    first_error
+}
+
+/// Runs for the length of a session: cuts finished phrases out of every
+/// output device's audio, transcribes them in order, and appends them to
+/// the transcript. Every few seconds it checks for devices plugged in or
+/// removed, so a headset connected mid-call is picked up. A `Flush` forces
+/// out everything recorded so far and replies once it's all in the
+/// transcript.
 fn transcriber(
     app: AppHandle,
     engine: voice::Engine,
-    recorder: audio::Recorder,
+    mut inputs: Vec<Input>,
+    mut open_failures: HashMap<String, Instant>,
     transcript: Arc<Mutex<Transcript>>,
     rx: Receiver<Ctrl>,
 ) {
     let started = Instant::now();
-    let mut recorder = Some(recorder);
-    let mut chunker = Chunker::new();
     let mut pending: VecDeque<(f64, Pending)> = VecDeque::new();
     let mut waiters: Vec<Sender<()>> = Vec::new();
-    let mut last_len = 0usize;
-    let mut last_growth = Instant::now();
     let mut last_error: Option<Instant> = None;
+    let mut last_scan = Instant::now();
+    let mut listening = true; // start() only spawns this with at least one device open
 
     let finish = |t: f64, handle: Pending, last_error: &mut Option<Instant>| match handle.join() {
         Ok(Ok(text)) => {
@@ -442,53 +525,29 @@ fn transcriber(
             Err(RecvTimeoutError::Timeout) => {}
         }
 
-        // The stream died (device unplugged, stream invalidated): open
-        // whatever the default output is now. A change of default device
-        // doesn't land here; cpal moves the stream over by itself.
-        if recorder.as_ref().is_none_or(|r| r.failed.load(Ordering::SeqCst)) {
-            if recorder.take().is_some() {
-                emit_state(&app, "reconnecting", None);
-            }
-            match audio::Recorder::start_from(audio::Source::System, BUFFER_SECONDS) {
-                Ok(r) => {
-                    recorder = Some(r);
-                    chunker.reset();
-                    last_len = 0;
-                    last_growth = Instant::now();
-                    emit_state(&app, "listening", None);
-                }
-                Err(e) => {
-                    emit_state(&app, "reconnecting", Some(e));
-                    for w in waiters.drain(..) {
-                        let _ = w.send(());
-                    }
-                    if let Ok(Ctrl::Stop) | Err(RecvTimeoutError::Disconnected) = rx.recv_timeout(REOPEN_DELAY) {
-                        break;
-                    }
-                    continue;
-                }
+        if last_scan.elapsed() >= RESCAN || inputs.iter().any(|i| i.recorder.failed.load(Ordering::SeqCst)) {
+            last_scan = Instant::now();
+            let error = sync_inputs(&mut inputs, &mut open_failures);
+            if inputs.is_empty() && listening {
+                listening = false;
+                let message = error.unwrap_or_else(|| "No audio output device is connected.".to_string());
+                emit_state(&app, "reconnecting", Some(message));
+            } else if !inputs.is_empty() && !listening {
+                listening = true;
+                emit_state(&app, "listening", None);
             }
         }
-        let Some(rec) = recorder.as_ref() else { continue };
 
         let now = started.elapsed().as_secs_f64();
-        let pieces = {
-            let mut buf = rec.audio.lock().unwrap_or_else(|e| e.into_inner());
-            let len = buf.len();
-            if len != last_len {
-                last_growth = Instant::now();
+        let mut level: f32 = 0.0;
+        for input in inputs.iter_mut() {
+            let (pieces, input_level) = input.take(flush);
+            level = level.max(input_level);
+            for piece in pieces {
+                pending.push_back((now, spawn_transcription(&app, &engine, piece)));
             }
-            let stalled = last_growth.elapsed() >= STALL;
-            let level = if stalled { 0.0 } else { segment::rms(&buf[len.saturating_sub(1600)..]) };
-            let _ = app.emit_to(stealth::MEETING_WINDOW, "meeting-level", Level { level });
-
-            let pieces = chunker.take(&mut buf, flush || stalled);
-            last_len = buf.len();
-            pieces
-        };
-        for piece in pieces {
-            pending.push_back((now, spawn_transcription(&app, &engine, piece)));
         }
+        let _ = app.emit_to(stealth::MEETING_WINDOW, "meeting-level", Level { level });
 
         // Add finished phrases in spoken order; on a flush, wait for all.
         while pending.front().is_some_and(|(_, h)| h.is_finished() || !waiters.is_empty()) {
@@ -499,7 +558,7 @@ fn transcriber(
             let _ = w.send(());
         }
     }
-    // Recorder closes on drop; anything still transcribing is discarded.
+    // Recorders close on drop; anything still transcribing is discarded.
 }
 
 // ---------------------------------------------------------------------

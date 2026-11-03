@@ -104,7 +104,7 @@ pub fn answer_now(app: &AppHandle) {
             fail(
                 &app,
                 id,
-                "Nothing heard from the meeting yet. Meeting mode listens to this computer's audio output, so check the call is playing through the default speakers or headset.",
+                "Nothing heard from the meeting yet. Meeting mode listens to everything this computer plays, on every speaker and headset, so check the call's audio is actually playing (not muted).",
             );
             return;
         }

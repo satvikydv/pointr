@@ -17,6 +17,23 @@ pub struct Line {
 /// minutes (see `recent`); this bounds memory over a long call.
 pub const KEEP_SECS: f64 = 15.0 * 60.0;
 
+/// Meeting mode listens to every output device at once, so if Windows plays
+/// the same audio on two of them, the same phrase arrives twice. A phrase
+/// matching one already heard within this many seconds is that echo.
+pub const DUPLICATE_SECS: f64 = 4.0;
+
+/// Case, punctuation and spacing ignored, so two transcriptions of the same
+/// audio compare equal.
+fn comparable(text: &str) -> String {
+    text.chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .flat_map(char::to_lowercase)
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[derive(Debug, Default)]
 pub struct Transcript {
     lines: VecDeque<Line>,
@@ -28,10 +45,21 @@ impl Transcript {
     }
 
     /// Appends a phrase. Blank text (silence the model returned nothing
-    /// for) is ignored. Returns whether a line was added.
+    /// for) and an echo of a phrase just heard on another device (see
+    /// DUPLICATE_SECS) are ignored. Returns whether a line was added.
     pub fn push(&mut self, t: f64, text: &str) -> bool {
         let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
         if text.is_empty() {
+            return false;
+        }
+        let key = comparable(&text);
+        let echo = self
+            .lines
+            .iter()
+            .rev()
+            .take_while(|l| (t - l.t).abs() <= DUPLICATE_SECS)
+            .any(|l| comparable(&l.text) == key);
+        if echo {
             return false;
         }
         self.lines.push_back(Line { t, text });
@@ -119,6 +147,16 @@ mod tests {
         let r = t.recent(60.0, 3);
         assert_eq!(r.len(), 1);
         assert_eq!(r[0].text, "cccccccccc");
+    }
+
+    #[test]
+    fn echo_from_a_second_device_is_dropped() {
+        let mut t = Transcript::new();
+        assert!(t.push(10.0, "So, what's your plan?"));
+        assert!(!t.push(10.4, "so what's your plan"), "same words, moments apart: an echo");
+        assert!(t.push(10.5, "And the timeline?"));
+        assert!(t.push(10.0 + DUPLICATE_SECS + 1.0, "So, what's your plan?"), "asked again later: kept");
+        assert_eq!(t.len(), 3);
     }
 
     #[test]
