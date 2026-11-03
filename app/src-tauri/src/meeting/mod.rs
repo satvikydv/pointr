@@ -144,13 +144,30 @@ pub fn setup_panel(app: &AppHandle) {
     }
 }
 
+/// The only way the panel is ever shown (hotkey, session start, an answer
+/// arriving), so the stealth guarantee lives here: it is not shown at all if
+/// this Windows build can't keep it out of capture, and right after showing
+/// it is checked and put straight back if its affinity isn't applied. The
+/// show hook in stealth.rs applies it before the window becomes visible, so
+/// the check is a second line of defence, not the first.
 fn show_panel(app: &AppHandle) {
-    if let Some(window) = panel(app) {
-        stealth::show_without_focus(&window);
-        PANEL_VISIBLE.store(true, Ordering::SeqCst);
+    let Some(window) = panel(app) else { return };
+    if stealth::panel_protection() == Protection::Failed {
+        eprintln!("[meeting] panel not shown: this Windows build can't keep it out of screen capture");
+        return;
     }
+    stealth::show_without_focus(&window);
+    if !stealth::is_protected(&window) {
+        stealth::hide(&window);
+        PANEL_VISIBLE.store(false, Ordering::SeqCst);
+        eprintln!("[meeting] panel hidden again: its capture protection wasn't applied");
+        return;
+    }
+    PANEL_VISIBLE.store(true, Ordering::SeqCst);
 }
 
+/// Only hides the window. The session (audio, transcript, hotkeys) is
+/// untouched; `stop` is what ends it.
 fn hide_panel(app: &AppHandle) {
     if let Some(window) = panel(app) {
         stealth::hide(&window);

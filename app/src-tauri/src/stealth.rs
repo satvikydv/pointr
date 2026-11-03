@@ -226,6 +226,15 @@ pub fn show_without_focus(window: &WebviewWindow) {
     }
 }
 
+/// Whether a showing window is out of capture right now (excluded, or
+/// black-boxed on old Windows). Only meaningful for a visible window: a
+/// hidden one reads 0 whatever it will show with.
+pub fn is_protected(window: &WebviewWindow) -> bool {
+    hwnd_of(window)
+        .and_then(read_affinity)
+        .is_some_and(|a| a == WDA_EXCLUDEFROMCAPTURE.0 || a == WDA_MONITOR.0)
+}
+
 /// The counterpart of `show_without_focus`. tao hides a window only when its
 /// own visible flag changes, and a raw `ShowWindow` never sets that flag, so
 /// `WebviewWindow::hide` would do nothing for a window shown that way.
