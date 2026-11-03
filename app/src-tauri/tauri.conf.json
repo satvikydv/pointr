@@ -59,6 +59,22 @@
         "skipTaskbar": false,
         "transparent": true,
         "decorations": false
+      },
+      {
+        "title": "Pointr Meeting",
+        "label": "meeting",
+        "url": "meeting.html",
+        "width": 480,
+        "height": 260,
+        "resizable": false,
+        "visible": false,
+        "focus": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "transparent": true,
+        "decorations": false,
+        "shadow": false,
+        "contentProtected": true
       }
     ],
     "security": {

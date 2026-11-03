@@ -3,7 +3,7 @@ import time
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import analyze, agent
+from app.routes import analyze, agent, meeting
 from app.security import verify_client_key
 
 app = FastAPI(title="Pointr API")
@@ -14,6 +14,7 @@ _TIMED_PATHS = {
     "/api/analyze-screen-stream",
     "/api/agent/task",
     "/api/agent/step",
+    "/api/meeting/answer-stream",
 }
 
 
@@ -55,6 +56,7 @@ app.add_middleware(
 
 app.include_router(analyze.router, prefix="/api", dependencies=[Depends(verify_client_key)])
 app.include_router(agent.router, prefix="/api/agent", dependencies=[Depends(verify_client_key)])
+app.include_router(meeting.router, prefix="/api/meeting", dependencies=[Depends(verify_client_key)])
 
 @app.get("/health")
 def health():

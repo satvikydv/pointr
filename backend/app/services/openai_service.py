@@ -84,7 +84,7 @@ class OpenAIService:
             traceback.print_exc()
             return _error_text(e)
 
-    async def analyze_stream(self, image_bytes: bytes, prompt: str):
+    async def analyze_stream(self, image_bytes: bytes | None, prompt: str):
         if not self.async_client:
             yield _NO_KEY
             return

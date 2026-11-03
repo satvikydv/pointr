@@ -611,7 +611,69 @@ btnGithubDisconnect.addEventListener('click', async () => {
     render();
 });
 
+// Stealth (hide from screen sharing) and the meeting-mode brief. Kept
+// apart from `state`/render(): neither affects anything else on the page.
+const stealthToggleTrack = document.getElementById('stealth-toggle-track');
+const stealthToggleKnob = document.getElementById('stealth-toggle-knob');
+const stealthHint = document.getElementById('stealth-hint');
+const STEALTH_DEFAULT_HINT = stealthHint.textContent;
+const meetingBriefInput = document.getElementById('meeting-brief-input');
+const meetingBriefStatus = document.getElementById('meeting-brief-status');
+const btnMeetingBriefSave = document.getElementById('btn-meeting-brief-save');
+
+function renderStealth(status) {
+    const on = !!status.enabled;
+    stealthToggleTrack.style.background = on ? '#5b8cff' : 'rgba(255,255,255,0.12)';
+    stealthToggleTrack.style.border = `1px solid ${on ? '#5b8cff' : 'rgba(255,255,255,0.16)'}`;
+    stealthToggleKnob.style.left = (on ? 18 : 1) + 'px';
+    stealthToggleTrack.dataset.on = on ? '1' : '';
+    if (on && status.protection === 'black_box') {
+        stealthHint.textContent = 'This version of Windows can\u2019t hide windows from screen shares; Pointr shows as a black box instead. Windows 10 2004 or later hides it fully.';
+    } else if (on && status.protection === 'failed') {
+        stealthHint.textContent = 'Windows refused to hide Pointr\u2019s windows, so they will appear in screen shares.';
+    } else {
+        stealthHint.textContent = STEALTH_DEFAULT_HINT;
+    }
+}
+
+stealthToggleTrack.addEventListener('click', async () => {
+    const enabled = !stealthToggleTrack.dataset.on;
+    renderStealth({ enabled, protection: 'hidden' });
+    try {
+        renderStealth(await invoke('set_stealth_enabled', { enabled }));
+    } catch (e) {
+        console.error('Failed to set stealth:', e);
+        renderStealth({ enabled: !enabled });
+    }
+});
+
+btnMeetingBriefSave.addEventListener('click', async () => {
+    try {
+        await invoke('set_meeting_brief', { brief: meetingBriefInput.value });
+        meetingBriefStatus.textContent = 'Saved';
+    } catch (e) {
+        console.error('Failed to save meeting brief:', e);
+        meetingBriefStatus.textContent = 'Couldn\u2019t save';
+    }
+    setTimeout(() => { meetingBriefStatus.textContent = ''; }, 2000);
+});
+
+async function loadStealthAndMeeting() {
+    try {
+        renderStealth(await invoke('get_stealth_status'));
+    } catch (e) {
+        console.error('Failed to load stealth status:', e);
+    }
+    try {
+        meetingBriefInput.value = await invoke('get_meeting_brief');
+    } catch (e) {
+        console.error('Failed to load meeting brief:', e);
+    }
+}
+
 async function init() {
+    loadStealthAndMeeting();
+
     try {
         state.voices = await invoke('list_voices');
     } catch (e) {

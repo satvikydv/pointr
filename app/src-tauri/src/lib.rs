@@ -2,6 +2,8 @@ pub mod api_config;
 pub mod capture;
 pub mod overlay;
 pub mod commands;
+pub mod meeting;
+pub mod stealth;
 pub mod voice;
 
 use std::sync::Mutex;
@@ -351,6 +353,12 @@ pub fn run() {
             voice::download_voice_model,
             voice::set_voice_enabled,
             voice::set_stt_engine,
+            stealth::get_stealth_status,
+            stealth::set_stealth_enabled,
+            commands::settings::get_meeting_brief,
+            commands::settings::set_meeting_brief,
+            meeting::get_meeting_status,
+            meeting::toggle_meeting,
             enable_escape_dismiss,
             disable_escape_dismiss
         ])
@@ -389,6 +397,13 @@ pub fn run() {
                             // enable_escape_dismiss) — just tell the frontend
                             // to run its existing dismiss path.
                             let _ = _app.emit("dismiss-overlay", ());
+                        } else if let Some(action) = meeting::action_for(shortcut) {
+                            // Not inline: the plugin calls this handler while
+                            // holding its shortcut table's lock, and starting or
+                            // ending a meeting registers/unregisters shortcuts,
+                            // which takes that same lock (a deadlock if run here).
+                            let app = _app.clone();
+                            std::thread::spawn(move || meeting::handle(&app, action));
                         }
                     })
                     .build(),
@@ -396,6 +411,16 @@ pub fn run() {
 
             app.global_shortcut().register(primary)?;
             app.global_shortcut().register(region_select)?;
+            // Meeting mode on/off. Its other keys are registered only while
+            // a meeting session runs (see meeting/mod.rs).
+            if let Err(e) = app.global_shortcut().register(meeting::toggle_shortcut()) {
+                eprintln!("[meeting] couldn't register Ctrl+Alt+M: {}", e);
+            }
+
+            // Keep windows out of screen shares if the user turned that on;
+            // the meeting panel is always kept out.
+            stealth::apply_all(app.handle(), commands::settings::stealth_enabled(app.handle()));
+            meeting::setup_panel(app.handle());
 
             // Push-to-talk (hold Ctrl+Win): its own keyboard hook, since
             // the shortcut plugin can't register a modifiers-only hold.
@@ -409,8 +434,9 @@ pub fn run() {
 
             let settings_item = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
             let history_item = MenuItem::with_id(app, "history", "Agent History...", true, None::<&str>)?;
+            let meeting_item = MenuItem::with_id(app, "meeting", "Start/stop meeting mode (Ctrl+Alt+M)", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit Pointr", true, None::<&str>)?;
-            let tray_menu = Menu::with_items(app, &[&settings_item, &history_item, &quit_item])?;
+            let tray_menu = Menu::with_items(app, &[&settings_item, &history_item, &meeting_item, &quit_item])?;
 
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -422,6 +448,7 @@ pub fn run() {
                             let _ = win.set_focus();
                         }
                     }
+                    "meeting" => meeting::toggle(app),
                     "history" => {
                         if let Some(win) = app.get_webview_window("history") {
                             let _ = win.show();

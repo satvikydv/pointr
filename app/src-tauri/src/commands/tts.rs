@@ -81,6 +81,11 @@ pub fn speak_text(
     if text.is_empty() {
         return Ok(());
     }
+    // In a meeting, narration would play into the call (and back into
+    // meeting mode's own loopback transcript).
+    if crate::meeting::is_active() {
+        return Ok(());
+    }
 
     ensure_winrt_initialized();
 

@@ -78,8 +78,9 @@ fn with_engine<T>(app: &AppHandle, f: impl FnOnce(&mut ParakeetModel) -> T) -> R
 }
 
 /// Which speech-to-text engine a press uses, fixed when the press starts.
+/// Meeting mode (meeting/mod.rs) uses the same engines.
 #[derive(Clone)]
-enum Engine {
+pub(crate) enum Engine {
     Local,
     OpenAi { api_key: String },
 }
@@ -93,13 +94,31 @@ impl Engine {
     }
 }
 
-fn transcribe(app: &AppHandle, engine: &Engine, samples: &[f32]) -> Result<String, String> {
+pub(crate) fn transcribe(app: &AppHandle, engine: &Engine, samples: &[f32]) -> Result<String, String> {
     match engine {
         Engine::Local => with_engine(app, |m| m.transcribe_with(samples, &ParakeetParams::default()))?
             .map(|r| r.text.trim().to_string())
             .map_err(|e| format!("Transcription failed: {}", e)),
         Engine::OpenAi { api_key } => remote::transcribe(api_key, samples),
     }
+}
+
+/// Set for the length of a push-to-talk press. Meeting mode's background
+/// transcriber shares the one on-device model and waits while this is set,
+/// so a question asked by voice isn't stuck behind meeting audio.
+pub(crate) static PTT_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Loads the on-device model in the background if that's the engine in
+/// use, regardless of the push-to-talk toggle (meeting mode needs it too).
+pub(crate) fn warm_up(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        if matches!(resolve_engine(&app), Ok(Engine::Local)) {
+            if let Err(e) = with_engine(&app, |_| ()) {
+                eprintln!("[voice] warm-up failed: {}", e);
+            }
+        }
+    });
 }
 
 /// Loads the model in the background if it's installed and voice is on,
@@ -149,7 +168,7 @@ fn emit_error(app: &AppHandle, message: impl Into<String>) {
 /// The engine for a new press, or why a press can't record right now.
 /// Checked before the mic opens, so an unusable press never flashes the
 /// Windows mic indicator.
-fn resolve_engine(app: &AppHandle) -> Result<Engine, String> {
+pub(crate) fn resolve_engine(app: &AppHandle) -> Result<Engine, String> {
     if crate::commands::settings::stt_engine(app) == "openai" {
         let api_key = crate::commands::settings::get_openai_key_for_request(app).unwrap_or_default();
         if api_key.is_empty() {
@@ -287,6 +306,7 @@ impl Session {
         // Talking over the previous answer's narration means "new question".
         let _ = crate::commands::tts::stop_speech(app.state());
         crate::capture_for_voice(app)?;
+        PTT_ACTIVE.store(true, Ordering::SeqCst);
 
         let stopping = Arc::new(AtomicBool::new(false));
         let cancelled = Arc::new(AtomicBool::new(false));
@@ -303,6 +323,14 @@ impl Session {
 
     fn finish(self, released: bool) {
         let released_at = Instant::now();
+        // Cleared on every exit path; meeting transcription resumes after.
+        struct ClearOnDrop;
+        impl Drop for ClearOnDrop {
+            fn drop(&mut self) {
+                PTT_ACTIVE.store(false, Ordering::SeqCst);
+            }
+        }
+        let _clear = ClearOnDrop;
         if !released {
             self.cancelled.store(true, Ordering::SeqCst);
             drop(self.recorder);
@@ -450,8 +478,9 @@ pub fn set_voice_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
     crate::commands::settings::persist_voice_enabled(&app, enabled)?;
     if enabled {
         preload(&app);
-    } else {
-        // Frees the ~1 GB the loaded model holds.
+    } else if !crate::meeting::is_active() {
+        // Frees the ~1 GB the loaded model holds (unless a meeting is
+        // still transcribing with it).
         *ENGINE.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
     Ok(())
@@ -462,6 +491,9 @@ pub fn set_stt_engine(app: AppHandle, engine: String) -> Result<(), String> {
     crate::commands::settings::set_stt_engine(app.clone(), engine.clone())?;
     if engine == "local" {
         preload(&app);
+        if crate::meeting::is_active() {
+            warm_up(&app);
+        }
     } else {
         // Not needed while transcribing with OpenAI; frees ~1 GB.
         *ENGINE.lock().unwrap_or_else(|e| e.into_inner()) = None;

@@ -137,6 +137,7 @@
       }
       #toggle-track,
       #voice-toggle-track,
+      #stealth-toggle-track,
       #telemetry-toggle-track {
         width: 38px;
         height: 22px;
@@ -148,6 +149,7 @@
       }
       #toggle-knob,
       #voice-toggle-knob,
+      #stealth-toggle-knob,
       #telemetry-toggle-knob {
         position: absolute;
         top: 1px;
@@ -322,6 +324,13 @@
         color: rgba(255, 255, 255, 0.92);
         font-family: 'Consolas', 'Segoe UI Mono', monospace;
       }
+      .brief-input {
+        width: 100%;
+        min-height: 72px;
+        resize: vertical;
+        font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+        line-height: 1.4;
+      }
       .key-input::placeholder {
         color: rgba(255, 255, 255, 0.3);
         font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
@@ -493,6 +502,26 @@
         </div>
         <div id="voice-progress" class="voice-progress hidden"><div id="voice-progress-bar"></div></div>
         <div class="toggle-hint" id="voice-hint"></div>
+
+        <div class="divider"></div>
+
+        <div class="toggle-row">
+          <div class="toggle-title">Hide Pointr from screen sharing</div>
+          <div id="stealth-toggle-track">
+            <div id="stealth-toggle-knob"></div>
+          </div>
+        </div>
+        <div class="toggle-hint" id="stealth-hint">Pointr's windows stay visible to you but don't appear in screen shares, recordings or screenshots. Your mouse pointer and the tray icon still do.</div>
+
+        <div class="divider"></div>
+
+        <div class="section-label">Meeting mode (experimental)</div>
+        <div class="toggle-hint" style="margin-top:0;margin-bottom:8px;">Ctrl+Alt+M starts listening to this computer's audio output (what others in the call say; not your mic). Ctrl+Alt+Enter suggests an answer to what was just asked. Speech-to-text uses the Voice setting above. Nothing is saved: the transcript is dropped when the meeting ends. Check that everyone in the meeting is OK with it being transcribed.</div>
+        <textarea id="meeting-brief-input" class="key-input brief-input" placeholder="Background for answers, e.g. your role, who the meeting is with, things to mention" spellcheck="false"></textarea>
+        <div class="key-row" style="margin-top:8px;justify-content:space-between;align-items:center;">
+          <div class="toggle-hint" id="meeting-brief-status" style="margin-top:0;"></div>
+          <button id="btn-meeting-brief-save" class="btn-key-connect" style="height:32px;">Save background</button>
+        </div>
 
         <div class="divider"></div>
 

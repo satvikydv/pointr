@@ -81,6 +81,15 @@ struct PersistedSettings {
     /// be grouped, and clearing settings.json resets it entirely.
     #[serde(default)]
     install_id: Option<String>,
+    /// Keep Pointr's windows out of screen shares and recordings (see
+    /// stealth.rs). Off by default.
+    #[serde(default)]
+    stealth_enabled: bool,
+    /// Free-text background for meeting answers (role, who the meeting is
+    /// with, notes). Stays on this machine except as part of a meeting
+    /// answer request.
+    #[serde(default)]
+    meeting_brief: Option<String>,
 }
 
 fn default_speech_enabled() -> bool {
@@ -114,6 +123,8 @@ impl Default for PersistedSettings {
             telemetry_enabled: false,
             telemetry_prompt_shown: false,
             install_id: None,
+            stealth_enabled: false,
+            meeting_brief: None,
         }
     }
 }
@@ -242,6 +253,37 @@ pub(crate) fn persist_voice_enabled(app: &AppHandle, enabled: bool) -> Result<()
     let mut settings = load_settings(app);
     settings.voice_enabled = enabled;
     save_settings(app, &settings)
+}
+
+pub(crate) fn stealth_enabled(app: &AppHandle) -> bool {
+    load_settings(app).stealth_enabled
+}
+
+/// Persists the toggle only; stealth::set_stealth_enabled applies it.
+pub(crate) fn persist_stealth_enabled(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = load_settings(app);
+    settings.stealth_enabled = enabled;
+    save_settings(app, &settings)
+}
+
+/// Longest brief kept: it rides along with every meeting answer request.
+pub const MEETING_BRIEF_MAX_CHARS: usize = 4000;
+
+pub(crate) fn meeting_brief(app: &AppHandle) -> String {
+    load_settings(app).meeting_brief.unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn get_meeting_brief(app: AppHandle) -> Result<String, String> {
+    Ok(meeting_brief(&app))
+}
+
+#[tauri::command]
+pub fn set_meeting_brief(app: AppHandle, brief: String) -> Result<(), String> {
+    let brief: String = brief.trim().chars().take(MEETING_BRIEF_MAX_CHARS).collect();
+    let mut settings = load_settings(&app);
+    settings.meeting_brief = if brief.is_empty() { None } else { Some(brief) };
+    save_settings(&app, &settings)
 }
 
 pub const STT_ENGINES: [&str; 2] = ["local", "openai"];

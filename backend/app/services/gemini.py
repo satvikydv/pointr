@@ -99,21 +99,24 @@ class GeminiService:
             traceback.print_exc()
             return f"Error communicating with Gemini: {str(e)}"
 
-    async def analyze_stream(self, image_bytes: bytes, prompt: str):
+    async def analyze_stream(self, image_bytes: bytes | None, prompt: str):
         """Yields the answer as it's generated, instead of waiting for the
         full response. Used by the streaming route so the overlay can show
-        real answer text growing live instead of a static loading spinner."""
+        real answer text growing live instead of a static loading spinner.
+        `image_bytes` may be None for a text-only request (meeting answers)."""
         if not self.client:
             yield "Gemini API key not configured."
             return
 
         start = time.monotonic()
         try:
-            image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/png")
-            print(f"[gemini] calling generate_content_stream, image={len(image_bytes)} bytes, model={self.model}")
+            contents = [prompt]
+            if image_bytes:
+                contents.append(types.Part.from_bytes(data=image_bytes, mime_type="image/png"))
+            print(f"[gemini] calling generate_content_stream, image={len(image_bytes or b'')} bytes, model={self.model}")
             response_stream = await self.client.aio.models.generate_content_stream(
                 model=self.model,
-                contents=[prompt, image_part],
+                contents=contents,
             )
             print(f"[gemini] generate_content_stream returned after {time.monotonic() - start:.2f}s")
 

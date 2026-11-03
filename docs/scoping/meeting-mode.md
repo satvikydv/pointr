@@ -1,7 +1,40 @@
 # Scope: Stealth overlay + Meeting copilot
 
-Status: **exploration / scoping only**. No code changes yet.
+Status: **experimental, on this branch only, not for release.**
 Branch: `claude/jolly-goldberg-ncov7s`
+
+## Implementation status
+
+Decisions taken after the first draft of this doc:
+- Running transcript with an "answer now" hotkey (not record-while-held).
+- **System audio only.** The user's mic isn't transcribed (we only need the question).
+- No screenshot in meeting answers for now.
+- Stays on this branch; not shipped.
+
+Built:
+
+| Piece | Where |
+|---|---|
+| Stealth toggle: `WDA_EXCLUDEFROMCAPTURE` with read-back, `WDA_MONITOR` fallback, hidden from taskbar/Alt-Tab while on | `src-tauri/src/stealth.rs`, Settings → "Hide Pointr from screen sharing" |
+| Loopback capture of the default output device | `voice/audio.rs` (`Source::System`, `Recorder::start_from`) |
+| Continuous phrase cutting with drain, stall-as-pause for silent loopback | `meeting/chunker.rs` (unit tested) |
+| In-memory transcript, 15 min kept, last 4 min / 8k chars sent | `meeting/transcript.rs` (unit tested) |
+| Session control, transcriber thread, device-loss reconnect, PTT priority | `meeting/mod.rs` |
+| Answer: flush tail → POST → stream into panel; newer press cancels older | `meeting/answer.rs` |
+| Panel: always capture-excluded, non-activating, click-through, top-centre | `meeting.html`/`meeting.js`, `tauri.conf.json` window `meeting` |
+| TTS refused during a session | `commands/tts.rs` |
+| Backend `POST /api/meeting/answer-stream` (text-only, stateless) | `backend/app/routes/meeting.py`, tests in `backend/tests/test_meeting.py` |
+| Meeting brief (free-text background) | Settings → Meeting mode |
+
+Hotkeys: `Ctrl+Alt+M` start/end (also in the tray menu). During a session only: `Ctrl+Alt+Enter` answer, `Ctrl+Alt+H` hide/show panel, `Ctrl+Alt+Up/Down` scroll.
+
+Not built yet: output-device picker (uses the Windows default), per-process loopback, panel move/resize, speculative answering, follow-ups by voice, telemetry, privacy-page update.
+
+How it was checked: the Rust crate type-checks and passes clippy against the Windows target (`x86_64-pc-windows-gnu`, cross-checked from Linux); the pure modules' unit tests pass; backend route tests pass. **Not yet run on a real Windows machine.** Everything below still needs a manual pass there: the capture-exclusion matrix (Zoom / Teams / Meet in Chrome and Edge / OBS / Snipping Tool), loopback on speakers vs. Bluetooth headset, and real answer latency.
+
+To try it: Settings → Voice set up (local model downloaded, or OpenAI key), an LLM key connected, optionally the meeting background filled in → join a call → `Ctrl+Alt+M` → when asked something, `Ctrl+Alt+Enter`. Debug builds (`npm run tauri dev`) log flush time and time to first token as `[meeting] answer N: ...`.
+
+---
 
 Two features that ship well together but should be built and toggled separately:
 
