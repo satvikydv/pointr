@@ -139,7 +139,11 @@ pub fn apply_all(app: &AppHandle, enabled: bool) -> Protection {
         if label == "main" {
             reported = result;
         }
-        if TASKBAR_WINDOWS.contains(&label) {
+        // Only put a window back on the taskbar if it's showing: adding a
+        // hidden window gives it a taskbar button, and clicking that shows
+        // a window that was meant to stay hidden. A hidden one gets its
+        // button back by itself the next time it's shown.
+        if TASKBAR_WINDOWS.contains(&label) && (enabled || window.is_visible().unwrap_or(false)) {
             let _ = window.set_skip_taskbar(enabled);
         }
         set_ex_style(&window, WS_EX_TOOLWINDOW.0, enabled);

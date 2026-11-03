@@ -418,9 +418,12 @@ pub fn run() {
                 eprintln!("[meeting] couldn't register Ctrl+Alt+M: {}", e);
             }
 
-            // Keep windows out of screen shares if the user turned that on;
-            // the meeting panel is always kept out.
-            stealth::apply_all(app.handle(), commands::settings::stealth_enabled(app.handle()));
+            // Keep windows out of screen shares if the user turned that on.
+            // With it off, windows are left exactly as tauri.conf.json made
+            // them. The meeting panel is always kept out.
+            if commands::settings::stealth_enabled(app.handle()) {
+                stealth::apply_all(app.handle(), true);
+            }
             meeting::setup_panel(app.handle());
 
             // Push-to-talk (hold Ctrl+Win): its own keyboard hook, since
