@@ -412,10 +412,13 @@ pub fn run() {
 
             app.global_shortcut().register(primary)?;
             app.global_shortcut().register(region_select)?;
-            // Meeting mode on/off. Its other keys are registered only while
-            // a meeting session runs (see meeting/mod.rs).
-            if let Err(e) = app.global_shortcut().register(meeting::toggle_shortcut()) {
-                eprintln!("[meeting] couldn't register Ctrl+Alt+M: {}", e);
+            // Meeting mode on/off: the first free key of a short list, in
+            // case another app already owns Ctrl+Alt+M. Its other keys are
+            // registered only while a meeting session runs (see
+            // meeting/mod.rs).
+            let meeting_key = meeting::register_toggle(app.handle());
+            if meeting_key.is_none() {
+                eprintln!("[meeting] no free shortcut for meeting mode; use the tray menu");
             }
 
             // Keep windows out of screen shares if the user turned that on.
@@ -437,7 +440,11 @@ pub fn run() {
 
             let settings_item = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
             let history_item = MenuItem::with_id(app, "history", "Agent History...", true, None::<&str>)?;
-            let meeting_item = MenuItem::with_id(app, "meeting", "Start/stop meeting mode (Ctrl+Alt+M)", true, None::<&str>)?;
+            let meeting_label = match meeting_key {
+                Some(key) => format!("Start/stop meeting mode ({})", key),
+                None => "Start/stop meeting mode".to_string(),
+            };
+            let meeting_item = MenuItem::with_id(app, "meeting", meeting_label, true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit Pointr", true, None::<&str>)?;
             let tray_menu = Menu::with_items(app, &[&settings_item, &history_item, &meeting_item, &quit_item])?;
 

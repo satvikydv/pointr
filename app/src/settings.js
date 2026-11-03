@@ -630,6 +630,7 @@ const stealthToggleTrack = document.getElementById('stealth-toggle-track');
 const stealthToggleKnob = document.getElementById('stealth-toggle-knob');
 const stealthHint = document.getElementById('stealth-hint');
 const STEALTH_DEFAULT_HINT = stealthHint.textContent;
+const meetingHintLead = document.getElementById('meeting-hint-lead');
 const meetingBriefInput = document.getElementById('meeting-brief-input');
 const meetingBriefStatus = document.getElementById('meeting-brief-status');
 const btnMeetingBriefSave = document.getElementById('btn-meeting-brief-save');
@@ -678,6 +679,15 @@ async function loadStealthAndMeeting() {
         renderStealth(await invoke('get_stealth_status'));
     } catch (e) {
         console.error('Failed to load stealth status:', e);
+    }
+    try {
+        // The meeting key is the first free one of a few, so ask which.
+        const meeting = await invoke('get_meeting_status');
+        meetingHintLead.textContent = meeting.toggle_key
+            ? `${meeting.toggle_key} starts listening`
+            : 'Meeting mode (start it from the tray menu, since no keyboard shortcut was free) listens';
+    } catch (e) {
+        console.error('Failed to load meeting status:', e);
     }
     try {
         meetingBriefInput.value = await invoke('get_meeting_brief');

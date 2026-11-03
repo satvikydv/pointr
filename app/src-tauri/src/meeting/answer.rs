@@ -75,7 +75,11 @@ pub fn answer_now(app: &AppHandle) {
     let _ = app.emit("meeting-answer-start", Start { id });
 
     let Some((ctrl, transcript)) = super::session_handles() else {
-        fail(app, id, "Meeting mode isn't running. Press Ctrl+Alt+M to start it.");
+        let message = match super::toggle_key() {
+            Some(key) => format!("Meeting mode isn't running. Press {} to start it.", key),
+            None => "Meeting mode isn't running. Start it from the tray menu.".to_string(),
+        };
+        fail(app, id, &message);
         return;
     };
 

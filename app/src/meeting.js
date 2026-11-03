@@ -143,6 +143,7 @@ listen('meeting-scroll', ({ payload }) => {
 invoke('get_meeting_status')
     .then((status) => {
         showProtection(status.protection);
+        document.getElementById('end-key').textContent = status.toggle_key || 'tray menu';
         if (status.active) setState('listening', 'Listening');
     })
     .catch((e) => console.error('get_meeting_status failed:', e));

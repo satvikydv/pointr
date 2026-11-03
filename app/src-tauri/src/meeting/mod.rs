@@ -1,7 +1,8 @@
 //! Meeting mode (experimental): a running transcript of the call, and one
 //! hotkey that answers the question just asked.
 //!
-//! 1. Ctrl+Alt+M starts a session. System audio (what the other people in
+//! 1. Ctrl+Alt+M starts a session (or the first free fallback key, see
+//!    `TOGGLE_CANDIDATES`). System audio (what the other people in
 //!    the call say, via loopback of the default output device) is recorded
 //!    and transcribed phrase by phrase, on-device by default, into an
 //!    in-memory transcript. The user's own mic is not recorded.
@@ -175,9 +176,40 @@ pub enum Action {
 
 const CTRL_ALT: Modifiers = Modifiers::CONTROL.union(Modifiers::ALT);
 
-/// Registered for the life of the app.
-pub fn toggle_shortcut() -> Shortcut {
-    Shortcut::new(Some(CTRL_ALT), Code::KeyM)
+/// Keys tried, in order, for starting and ending a session: another app
+/// (a call or recording tool, say) may already own the first. Ctrl+Shift+M
+/// is left out on purpose, since Teams uses it to mute.
+const TOGGLE_CANDIDATES: [(Modifiers, Code, &str); 3] = [
+    (CTRL_ALT, Code::KeyM, "Ctrl+Alt+M"),
+    (CTRL_ALT.union(Modifiers::SHIFT), Code::KeyM, "Ctrl+Alt+Shift+M"),
+    (CTRL_ALT.union(Modifiers::SHIFT), Code::KeyK, "Ctrl+Alt+Shift+K"),
+];
+
+/// The candidate that registered, if any; what `action_for` matches against.
+static TOGGLE: Mutex<Option<(Shortcut, &'static str)>> = Mutex::new(None);
+
+/// Registers the first free toggle key, for the life of the app, and returns
+/// its name. Run once at startup, before anything that shows the name.
+pub fn register_toggle(app: &AppHandle) -> Option<&'static str> {
+    for (modifiers, code, label) in TOGGLE_CANDIDATES {
+        let shortcut = Shortcut::new(Some(modifiers), code);
+        match app.global_shortcut().register(shortcut) {
+            Ok(()) => {
+                *TOGGLE.lock().unwrap_or_else(|e| e.into_inner()) = Some((shortcut, label));
+                if cfg!(debug_assertions) {
+                    eprintln!("[meeting] toggle key: {}", label);
+                }
+                return Some(label);
+            }
+            Err(e) => eprintln!("[meeting] couldn't register {}: {}", label, e),
+        }
+    }
+    None
+}
+
+/// The key that starts and ends a session, or None if every candidate was taken.
+pub fn toggle_key() -> Option<&'static str> {
+    TOGGLE.lock().unwrap_or_else(|e| e.into_inner()).map(|(_, label)| label)
 }
 
 /// Registered only while a session runs.
@@ -191,7 +223,7 @@ fn session_shortcuts() -> [(Shortcut, Action); 4] {
 }
 
 pub fn action_for(shortcut: &Shortcut) -> Option<Action> {
-    if shortcut == &toggle_shortcut() {
+    if TOGGLE.lock().unwrap_or_else(|e| e.into_inner()).is_some_and(|(s, _)| &s == shortcut) {
         return Some(Action::Toggle);
     }
     session_shortcuts().into_iter().find(|(s, _)| s == shortcut).map(|(_, a)| a)
@@ -223,7 +255,7 @@ fn register_session_shortcuts(app: &AppHandle) {
                 Action::Answer => "Ctrl+Alt+Enter",
                 Action::TogglePanel => "Ctrl+Alt+H",
                 Action::Scroll(_) => "Ctrl+Alt+Up/Down",
-                Action::Toggle => "Ctrl+Alt+M",
+                Action::Toggle => "the meeting key",
             });
         }
     }
@@ -459,6 +491,9 @@ pub struct MeetingStatus {
     /// The panel's capture protection, as set at startup.
     protection: Option<Protection>,
     lines: usize,
+    /// The key that starts and ends a session, for the UI to show. None if
+    /// no candidate could be registered (the tray menu still works).
+    toggle_key: Option<&'static str>,
 }
 
 #[tauri::command]
@@ -470,6 +505,7 @@ pub fn get_meeting_status() -> MeetingStatus {
         active: is_active(),
         protection: *PANEL_PROTECTION.lock().unwrap_or_else(|e| e.into_inner()),
         lines,
+        toggle_key: toggle_key(),
     }
 }
 
