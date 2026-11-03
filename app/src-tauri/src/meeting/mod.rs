@@ -390,8 +390,9 @@ fn transcriber(
             Err(RecvTimeoutError::Timeout) => {}
         }
 
-        // The device went away (unplugged, default output changed): open
-        // whatever the default output is now.
+        // The stream died (device unplugged, stream invalidated): open
+        // whatever the default output is now. A change of default device
+        // doesn't land here; cpal moves the stream over by itself.
         if recorder.as_ref().is_none_or(|r| r.failed.load(Ordering::SeqCst)) {
             if recorder.take().is_some() {
                 emit_state(&app, "reconnecting", None);

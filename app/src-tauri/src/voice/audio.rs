@@ -31,9 +31,9 @@ pub struct Recorder {
     stop_tx: mpsc::Sender<()>,
     thread: Option<std::thread::JoinHandle<()>>,
     pub audio: SharedAudio,
-    /// Set when the stream reports an error after it started, e.g. the
-    /// device was unplugged or the default device changed. The stream is
-    /// dead from then on; a long-running caller should start a new one.
+    /// Set when the stream reports an error it can't recover from, e.g. the
+    /// device was unplugged (see `is_fatal`). The stream is dead from then
+    /// on; a long-running caller should start a new one.
     pub failed: Arc<AtomicBool>,
 }
 
@@ -155,6 +155,21 @@ fn open_stream(source: Source, buf: SharedAudio, cap: usize, failed: Arc<AtomicB
     stream.map_err(|e| error(&e))
 }
 
+/// Whether a stream error means the stream is dead and has to be reopened.
+/// The rest are reported while the stream carries on:
+/// - Xrun: a gap in the data. WASAPI flags one on loopback every time
+///   playback starts or stops, so it's routine during a meeting, and at
+///   worst one phrase loses a few milliseconds.
+/// - DeviceChanged: the default device changed and cpal already moved the
+///   stream over to the new one.
+/// - RealtimeDenied: audio still flows, just without a priority boost.
+fn is_fatal(kind: cpal::ErrorKind) -> bool {
+    !matches!(
+        kind,
+        cpal::ErrorKind::Xrun | cpal::ErrorKind::DeviceChanged | cpal::ErrorKind::RealtimeDenied
+    )
+}
+
 fn build<T>(
     device: &cpal::Device,
     config: cpal::StreamConfig,
@@ -183,8 +198,12 @@ where
                 b.extend_from_slice(&resampled[..resampled.len().min(room)]);
             },
             move |e| {
-                eprintln!("[voice] audio stream error: {}", e);
-                failed.store(true, Ordering::SeqCst);
+                if is_fatal(e.kind()) {
+                    eprintln!("[voice] audio stream stopped: {}", e);
+                    failed.store(true, Ordering::SeqCst);
+                } else if cfg!(debug_assertions) && e.kind() != cpal::ErrorKind::Xrun {
+                    eprintln!("[voice] audio stream notice: {}", e);
+                }
             },
             None,
         )
