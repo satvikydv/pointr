@@ -443,9 +443,12 @@ pub fn run() {
 
             let settings_item = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
             let history_item = MenuItem::with_id(app, "history", "Agent History...", true, None::<&str>)?;
+            // Worded as a generic "assistant" on purpose: if someone sees the
+            // tray menu opened on a shared screen, it shouldn't say what this
+            // is for.
             let meeting_label = match meeting_key {
-                Some(key) => format!("Start/stop meeting mode ({})", key),
-                None => "Start/stop meeting mode".to_string(),
+                Some(key) => format!("Start/stop assistant ({})", key),
+                None => "Start/stop assistant".to_string(),
             };
             let meeting_item = MenuItem::with_id(app, "meeting", meeting_label, true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit Pointr", true, None::<&str>)?;
