@@ -84,6 +84,32 @@ class OpenAIService:
             traceback.print_exc()
             return _error_text(e)
 
+    async def analyze_images_stream(self, images: list[bytes], prompt: str):
+        """Like analyze_stream, with any number of screenshots (meeting
+        mode's coding solver)."""
+        if not self.async_client:
+            yield _NO_KEY
+            return
+        content = [{"type": "input_text", "text": prompt}] + [
+            {
+                "type": "input_image",
+                "image_url": f"data:image/png;base64,{base64.b64encode(img).decode('ascii')}",
+                "detail": "high",
+            }
+            for img in images
+        ]
+        try:
+            stream = await self.async_client.responses.create(
+                model=self.model, input=[{"role": "user", "content": content}], store=False, stream=True,
+            )
+            async for event in stream:
+                if event.type == "response.output_text.delta" and event.delta:
+                    yield event.delta
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield _error_text(e)
+
     async def analyze_stream(self, image_bytes: bytes | None, prompt: str):
         if not self.async_client:
             yield _NO_KEY

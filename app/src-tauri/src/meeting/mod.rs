@@ -25,6 +25,8 @@
 
 pub mod answer;
 pub mod chunker;
+pub mod code;
+pub mod code_util;
 pub mod context;
 pub mod doc_text;
 pub mod transcript;
@@ -362,6 +364,7 @@ pub fn start(app: &AppHandle) {
     show_panel(app);
     emit_state(app, "listening", None);
     register_session_shortcuts(app);
+    code::register(app);
     if cfg!(debug_assertions) {
         eprintln!("[meeting] session started");
     }
@@ -372,6 +375,8 @@ pub fn stop(app: &AppHandle) {
     ACTIVE.store(false, Ordering::SeqCst);
     answer::cancel();
     unregister_session_shortcuts(app);
+    code::unregister(app);
+    code::reset(app);
     hide_panel(app);
     emit_state(app, "stopped", None);
 

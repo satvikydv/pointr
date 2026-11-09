@@ -76,6 +76,23 @@
         "decorations": false,
         "shadow": false,
         "contentProtected": true
+      },
+      {
+        "title": "Pointr Code",
+        "label": "code",
+        "url": "code.html",
+        "width": 640,
+        "height": 800,
+        "resizable": false,
+        "visible": false,
+        "focus": false,
+        "focusable": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "transparent": true,
+        "decorations": false,
+        "shadow": false,
+        "contentProtected": true
       }
     ],
     "security": {

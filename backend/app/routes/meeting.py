@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 
-from app.models.meeting import ExtractTextRequest, MeetingAnswerRequest
+from app.models.meeting import CodeSolveRequest, ExtractTextRequest, MeetingAnswerRequest
 from app.rate_limit import rate_limit
 from app.services.llm import get_llm
 
@@ -129,6 +129,95 @@ async def _stream_answer(request: MeetingAnswerRequest, llm):
 async def answer_stream(request: MeetingAnswerRequest):
     llm = get_llm(request.provider, request.model, request.gemini_api_key, request.openai_api_key)
     return StreamingResponse(_stream_answer(request, llm), media_type="application/x-ndjson")
+
+
+# ---------------------------------------------------------------------
+# Coding questions shown on screen
+# ---------------------------------------------------------------------
+
+_CODE_INSTRUCTIONS = """You are the user's real-time coding-interview assistant. The screenshot shows their screen right now: usually a coding problem, in a shared screen inside a meeting app or on a coding site, possibly with an editor that already has a function signature, a class stub, or the user's own partial code. Solve it so the user can explain the idea and write the code themselves.
+
+How to solve:
+- Read the screenshot carefully: the problem statement, examples, constraints, input/output format, and anything already typed in the editor.
+- Keep the exact function signature, class and method names from any stub on screen. If the user has partial code, build on it rather than starting over, unless it's wrong.
+- Language: if the editor or stub on screen is in a specific language, or the problem names one (a SQL question, "implement in Java"), use that. Otherwise use {language}.
+- Give the solution an interviewer expects: correct first, at the optimal or expected time complexity, clean and idiomatic, complete and runnable, no placeholders, only the comments an interviewer would expect. Mention the brute-force idea in one line of the approach when it helps the explanation.
+- Constraints said out loud in the transcript below count as part of the problem.
+- If part of the problem is cut off or blurry, assume the standard version of that problem and say so in the Problem line. Never say you can't see or don't have enough information.
+- If the screen shows no coding problem, use the transcript; if there's none there either, write "### Problem" with "(no coding question found on screen)" and one line of advice.
+
+Format, exactly, with these headings:
+Language: <the language used> (<why: "from the editor", "the problem asks for it", or "your preference">)
+
+### Problem
+<what is being asked, in one line>
+
+### Approach
+<2-4 short lines in the first person that the user can say out loud while starting to code: the idea, the data structure, why it works>
+
+### Code
+```<fence tag: python, javascript, typescript, java, cpp, csharp, go, rust, kotlin, swift, sql>
+<the complete solution>
+```
+
+### Complexity
+- Time: <O(...)>, <why in a few words>
+- Space: <O(...)>, <why in a few words>
+
+### Edge cases
+- <3-5 short bullets: inputs to mention or test>
+
+No other text before or after."""
+
+
+def build_code_prompt(request: CodeSolveRequest) -> str:
+    prompt = _CODE_INSTRUCTIONS.replace("{language}", request.language.strip() or "Python")
+    brief = request.brief.strip()
+    if brief:
+        prompt += f"\n\nBackground the user wrote:\n{brief}"
+    lines = [f"[{_format_time(l.t)}] {l.text.strip()}" for l in request.transcript if l.text.strip()]
+    prompt += "\n\nRecent transcript of what the other people in the meeting said:\n" + ("\n".join(lines) or "(nothing)")
+    previous = request.previous_solution.strip()
+    if previous:
+        prompt += f"""
+
+The user pressed again, so revise this earlier solution of yours. Account for anything new on screen (a different or changed problem, new code in the editor) or in the transcript (a new constraint, "now optimise it", a follow-up). If nothing changed, fix any mistake and improve it. Give the full updated answer in the same format.
+<previous_solution>
+{previous}
+</previous_solution>"""
+    return prompt
+
+
+async def _stream_code(request: CodeSolveRequest, images: list[bytes], llm):
+    started = time.monotonic()
+    first_ms = None
+    full_text = ""
+    async for piece in llm.analyze_images_stream(images, build_code_prompt(request)):
+        if not piece:
+            continue
+        if first_ms is None:
+            first_ms = round((time.monotonic() - started) * 1000, 1)
+        full_text += piece
+        yield json.dumps({"type": "chunk", "text": piece}) + "\n"
+    print(json.dumps({
+        "event": "meeting_code",
+        "model": getattr(llm, "model", ""),
+        "screenshots": len(images),
+        "revising": bool(request.previous_solution.strip()),
+        "first_token_ms": first_ms,
+        "duration_ms": round((time.monotonic() - started) * 1000, 1),
+    }), flush=True)
+    yield json.dumps({"type": "done", "answer_text": full_text.strip()}) + "\n"
+
+
+@router.post("/code-stream", dependencies=[Depends(rate_limit)])
+async def code_stream(request: CodeSolveRequest):
+    try:
+        images = [base64.b64decode(s, validate=True) for s in request.screenshots]
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid screenshot data.")
+    llm = get_llm(request.provider, request.model, request.gemini_api_key, request.openai_api_key)
+    return StreamingResponse(_stream_code(request, images, llm), media_type="application/x-ndjson")
 
 
 # ---------------------------------------------------------------------

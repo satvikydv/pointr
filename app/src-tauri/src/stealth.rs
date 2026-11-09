@@ -45,7 +45,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 /// Every window the app creates. Windows that get created later must be
 /// hooked with `watch` themselves.
-const WINDOWS: [&str; 5] = ["splash", "main", "settings", "history", "meeting"];
+const WINDOWS: [&str; 6] = ["splash", "main", "settings", "history", "meeting", "code"];
 
 /// Windows that show in the taskbar normally (per tauri.conf.json) and are
 /// pulled out of it only while stealth is on.
@@ -54,6 +54,10 @@ const TASKBAR_WINDOWS: [&str; 2] = ["settings", "history"];
 /// Always protected regardless of the setting: it only exists for meetings.
 pub const MEETING_WINDOW: &str = "meeting";
 
+/// The coding-solution panel (meeting/code.rs): always protected too, for
+/// the same reason.
+pub const CODE_WINDOW: &str = "code";
+
 const SUBCLASS_ID: usize = 0x504F_4E54;
 
 /// The setting as last applied. Read by the show hook on whatever thread
@@ -61,6 +65,8 @@ const SUBCLASS_ID: usize = 0x504F_4E54;
 static DESIRED: AtomicBool = AtomicBool::new(false);
 /// The meeting panel's HWND (0 until known): protected whatever `DESIRED` says.
 static PANEL: AtomicIsize = AtomicIsize::new(0);
+/// The code panel's HWND (0 until known): likewise always protected.
+static CODE_PANEL: AtomicIsize = AtomicIsize::new(0);
 /// What this Windows build can do, found out once.
 static SUPPORT: OnceLock<Protection> = OnceLock::new();
 
@@ -119,7 +125,8 @@ fn support() -> Protection {
 /// What a window's affinity should be right now, or None if it can't be
 /// protected on this Windows build.
 fn wanted(hwnd: HWND) -> Option<WINDOW_DISPLAY_AFFINITY> {
-    if DESIRED.load(Ordering::SeqCst) || hwnd.0 as isize == PANEL.load(Ordering::SeqCst) {
+    let always = hwnd.0 as isize == PANEL.load(Ordering::SeqCst) || hwnd.0 as isize == CODE_PANEL.load(Ordering::SeqCst);
+    if DESIRED.load(Ordering::SeqCst) || always {
         match support() {
             Protection::Hidden => Some(WDA_EXCLUDEFROMCAPTURE),
             Protection::BlackBox => Some(WDA_MONITOR),
@@ -190,6 +197,9 @@ pub fn init(app: &AppHandle) {
     if let Some(hwnd) = app.get_webview_window(MEETING_WINDOW).as_ref().and_then(hwnd_of) {
         PANEL.store(hwnd.0 as isize, Ordering::SeqCst);
     }
+    if let Some(hwnd) = app.get_webview_window(CODE_WINDOW).as_ref().and_then(hwnd_of) {
+        CODE_PANEL.store(hwnd.0 as isize, Ordering::SeqCst);
+    }
     for label in WINDOWS {
         let Some(window) = app.get_webview_window(label) else { continue };
         watch(&window);
@@ -252,7 +262,7 @@ pub fn apply_all(app: &AppHandle, enabled: bool) -> Protection {
     debug_dump(app, &format!("before apply_all({})", enabled));
     DESIRED.store(enabled, Ordering::SeqCst);
     for label in WINDOWS {
-        if label == MEETING_WINDOW {
+        if label == MEETING_WINDOW || label == CODE_WINDOW {
             continue; // always protected, see `init`
         }
         let Some(window) = app.get_webview_window(label) else { continue };

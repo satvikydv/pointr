@@ -363,6 +363,10 @@ pub fn run() {
             meeting::context::list_context_docs,
             meeting::context::add_context_doc,
             meeting::context::remove_context_doc,
+            meeting::code::get_code_status,
+            commands::settings::get_coding_settings,
+            commands::settings::set_coding_language,
+            commands::settings::set_coding_model,
             enable_escape_dismiss,
             disable_escape_dismiss
         ])
@@ -408,6 +412,10 @@ pub fn run() {
                             // which takes that same lock (a deadlock if run here).
                             let app = _app.clone();
                             std::thread::spawn(move || meeting::handle(&app, action));
+                        } else if let Some(action) = meeting::code::action_for(shortcut) {
+                            // Same reason as above: off the handler's thread.
+                            let app = _app.clone();
+                            std::thread::spawn(move || meeting::code::handle(&app, action));
                         }
                     })
                     .build(),
@@ -430,6 +438,7 @@ pub fn run() {
             // tauri.conf.json made them. The meeting panel is always kept out.
             stealth::init(app.handle());
             meeting::setup_panel(app.handle());
+            meeting::code::setup_panel(app.handle());
 
             // Push-to-talk (hold Ctrl+Win): its own keyboard hook, since
             // the shortcut plugin can't register a modifiers-only hold.

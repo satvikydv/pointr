@@ -90,6 +90,17 @@ struct PersistedSettings {
     /// answer request.
     #[serde(default)]
     meeting_brief: Option<String>,
+    /// Language for solutions to on-screen coding questions (meeting/code.rs)
+    /// when the screen doesn't settle it. None means Python.
+    #[serde(default)]
+    coding_language: Option<String>,
+    /// Model for coding solutions, per provider: a stronger, slower one than
+    /// `gemini_model`/`openai_model`, which stay fast for spoken answers.
+    /// None means DEFAULT_CODING_MODELS.
+    #[serde(default)]
+    gemini_coding_model: Option<String>,
+    #[serde(default)]
+    openai_coding_model: Option<String>,
 }
 
 fn default_speech_enabled() -> bool {
@@ -125,6 +136,9 @@ impl Default for PersistedSettings {
             install_id: None,
             stealth_enabled: false,
             meeting_brief: None,
+            coding_language: None,
+            gemini_coding_model: None,
+            openai_coding_model: None,
         }
     }
 }
@@ -582,6 +596,102 @@ pub fn set_llm_model(app: AppHandle, provider: String, model: String) -> Result<
         _ => return Err(format!("Unknown provider: {}", provider)),
     }
     save_settings(&app, &settings)
+}
+
+// ---------------------------------------------------------------------
+// Coding questions (meeting/code.rs): language and a stronger model
+// ---------------------------------------------------------------------
+
+/// Languages offered for coding solutions. The screen still wins: an editor
+/// or stub in another language, or a problem that names one (SQL, say),
+/// takes precedence over this choice.
+pub const CODING_LANGUAGES: [&str; 10] =
+    ["Python", "JavaScript", "TypeScript", "Java", "C++", "C#", "Go", "Rust", "Kotlin", "Swift"];
+
+/// The coding model when none is chosen: each provider's tier meant for
+/// hard coding work. Slower than the default models, which is fine here:
+/// a solve can take a few seconds, a spoken answer can't.
+pub fn default_coding_model(provider: &str) -> &'static str {
+    match provider {
+        "openai" => "gpt-6-sol",
+        _ => "gemini-3.1-pro-preview",
+    }
+}
+
+#[derive(Serialize)]
+pub struct CodingSettings {
+    pub language: String,
+    pub languages: Vec<&'static str>,
+    /// The provider chosen under "AI model"; coding uses the same provider
+    /// and key, only the model differs.
+    pub provider: &'static str,
+    pub gemini_coding_model: String,
+    pub openai_coding_model: String,
+}
+
+pub(crate) fn coding_language(app: &AppHandle) -> String {
+    load_settings(app)
+        .coding_language
+        .filter(|l| CODING_LANGUAGES.contains(&l.as_str()))
+        .unwrap_or_else(|| "Python".to_string())
+}
+
+#[tauri::command]
+pub fn get_coding_settings(app: AppHandle) -> Result<CodingSettings, String> {
+    let s = load_settings(&app);
+    Ok(CodingSettings {
+        language: coding_language(&app),
+        languages: CODING_LANGUAGES.to_vec(),
+        provider: normalize_provider(s.llm_provider.as_deref()),
+        gemini_coding_model: s.gemini_coding_model.unwrap_or_else(|| default_coding_model("gemini").to_string()),
+        openai_coding_model: s.openai_coding_model.unwrap_or_else(|| default_coding_model("openai").to_string()),
+    })
+}
+
+#[tauri::command]
+pub fn set_coding_language(app: AppHandle, language: String) -> Result<(), String> {
+    if !CODING_LANGUAGES.contains(&language.as_str()) {
+        return Err(format!("Unsupported language: {}", language));
+    }
+    let mut settings = load_settings(&app);
+    settings.coding_language = Some(language);
+    save_settings(&app, &settings)
+}
+
+/// Empty resets to the default coding model.
+#[tauri::command]
+pub fn set_coding_model(app: AppHandle, provider: String, model: String) -> Result<(), String> {
+    let model = model.trim();
+    let value = if model.is_empty() { None } else { Some(model.to_string()) };
+    let mut settings = load_settings(&app);
+    match provider.as_str() {
+        "gemini" => settings.gemini_coding_model = value,
+        "openai" => settings.openai_coding_model = value,
+        _ => return Err(format!("Unknown provider: {}", provider)),
+    }
+    save_settings(&app, &settings)
+}
+
+/// Like `llm_request_fields`, but with the coding model in place of the
+/// everyday one. Same provider and key.
+pub(crate) fn coding_request_fields(app: &AppHandle) -> serde_json::Value {
+    let s = load_settings(app);
+    let provider = normalize_provider(s.llm_provider.as_deref());
+    let model = match provider {
+        "openai" => s.openai_coding_model,
+        _ => s.gemini_coding_model,
+    }
+    .unwrap_or_else(|| default_coding_model(provider).to_string());
+    let openai_api_key = if provider == "openai" {
+        get_openai_key_for_request(app).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    serde_json::json!({
+        "provider": provider,
+        "model": model,
+        "openai_api_key": openai_api_key,
+    })
 }
 
 /// The provider/model fields every backend request carries. The OpenAI key

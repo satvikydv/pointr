@@ -133,3 +133,23 @@ class GeminiService:
             traceback.print_exc()
             print(f"[gemini] failed after {time.monotonic() - start:.2f}s: {e}")
             yield f"Error communicating with Gemini: {str(e)}"
+
+    async def analyze_images_stream(self, images: list[bytes], prompt: str):
+        """Like analyze_stream, with any number of screenshots. Used by
+        meeting mode's coding solver; kept separate so the screen-answer
+        path above stays exactly as it was."""
+        if not self.client:
+            yield "Gemini API key not configured."
+            return
+        start = time.monotonic()
+        try:
+            contents = [prompt] + [types.Part.from_bytes(data=img, mime_type="image/png") for img in images]
+            response_stream = await self.client.aio.models.generate_content_stream(model=self.model, contents=contents)
+            async for chunk in response_stream:
+                if chunk.text:
+                    yield chunk.text
+            print(f"[gemini] images stream done after {time.monotonic() - start:.2f}s, model={self.model}")
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield f"Error communicating with Gemini: {str(e)}"

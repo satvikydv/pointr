@@ -172,3 +172,69 @@ invoke('get_meeting_status')
         if (status.active) setState('listening', 'Listening');
     })
     .catch((e) => console.error('get_meeting_status failed:', e));
+
+// ---------------------------------------------------------------------
+// Coding solutions (meeting/code.rs): the code itself goes to the code
+// panel; this panel mirrors the Problem and Approach so the user can start
+// talking. Its own listeners, so the answer handlers above are untouched.
+// Whichever started last (an answer or a solve) owns this panel's body.
+// ---------------------------------------------------------------------
+
+let codeId = 0;
+let codeText = '';
+let showingCode = false;
+
+listen('meeting-answer-start', () => {
+    showingCode = false;
+});
+
+// "### Problem" and "### Approach" from a (possibly partial) solution, in
+// this panel's answer format: a Q line, then sentences.
+function codeSummary(src) {
+    const out = [];
+    let section = '';
+    for (const raw of src.split('\n')) {
+        const line = raw.trim();
+        const heading = line.match(/^#{1,4}\s+(.+)$/);
+        if (heading) {
+            section = heading[1].toLowerCase();
+            if (section.startsWith('code')) break;
+            continue;
+        }
+        if (!line || /^language:/i.test(line)) continue;
+        if (section.startsWith('problem')) out.push(`Q: ${line}`);
+        else if (section.startsWith('approach')) out.push(line);
+    }
+    return out.join('\n');
+}
+
+function renderCodeMirror(note) {
+    if (!showingCode) return;
+    const summary = renderAnswer(codeSummary(codeText));
+    body.innerHTML = (summary || '<div class="muted">Reading the coding question on screen…</div>') + `<div class="muted">${note}</div>`;
+}
+
+listen('code-start', ({ payload }) => {
+    codeId = payload.id;
+    codeText = '';
+    showingCode = true;
+    latencyEl.textContent = '';
+    renderCodeMirror(payload.revising ? 'Revising the solution → code panel' : 'Solving → code panel');
+});
+
+listen('code-chunk', ({ payload }) => {
+    if (payload.id !== codeId) return;
+    codeText += payload.text;
+    renderCodeMirror('Code → code panel');
+});
+
+listen('code-done', ({ payload }) => {
+    if (payload.id !== codeId) return;
+    codeText = payload.text || codeText;
+    renderCodeMirror('Full solution in the code panel');
+});
+
+listen('code-error', ({ payload }) => {
+    if (payload.id !== codeId || !showingCode) return;
+    showMessage(`<div class="error">${escapeHtml(payload.message)}</div>`);
+});

@@ -759,8 +759,57 @@ docsList.addEventListener('click', async (e) => {
     await loadDocs();
 });
 
+// Coding questions (Rust: meeting/code.rs, settings.rs coding_*).
+const codingLanguage = document.getElementById('coding-language');
+const codingModelGemini = document.getElementById('coding-model-gemini');
+const codingModelOpenai = document.getElementById('coding-model-openai');
+const codingStatus = document.getElementById('coding-status');
+const CODING_STATUS_DEFAULT = codingStatus.textContent;
+const btnCodingSave = document.getElementById('btn-coding-save');
+
+async function loadCoding() {
+    try {
+        const c = await invoke('get_coding_settings');
+        codingLanguage.innerHTML = c.languages
+            .map((l) => `<option value="${escapeHtml(l)}"${l === c.language ? ' selected' : ''}>${escapeHtml(l)}</option>`)
+            .join('');
+        codingModelGemini.value = c.gemini_coding_model;
+        codingModelOpenai.value = c.openai_coding_model;
+    } catch (e) {
+        console.error('Failed to load coding settings:', e);
+    }
+    try {
+        const status = await invoke('get_code_status');
+        if (status.solve_key) document.getElementById('coding-solve-key').textContent = status.solve_key;
+    } catch (e) {
+        console.error('Failed to load code status:', e);
+    }
+}
+
+codingLanguage.addEventListener('change', async () => {
+    try {
+        await invoke('set_coding_language', { language: codingLanguage.value });
+    } catch (e) {
+        console.error('Failed to save coding language:', e);
+    }
+});
+
+btnCodingSave.addEventListener('click', async () => {
+    try {
+        await invoke('set_coding_model', { provider: 'gemini', model: codingModelGemini.value });
+        await invoke('set_coding_model', { provider: 'openai', model: codingModelOpenai.value });
+        await loadCoding(); // shows the default again for a field left empty
+        codingStatus.textContent = 'Saved';
+    } catch (e) {
+        console.error('Failed to save coding models:', e);
+        codingStatus.textContent = 'Couldn\u2019t save';
+    }
+    setTimeout(() => { codingStatus.textContent = CODING_STATUS_DEFAULT; }, 2000);
+});
+
 async function loadStealthAndMeeting() {
     loadDocs();
+    loadCoding();
     try {
         renderStealth(await invoke('get_stealth_status'));
     } catch (e) {

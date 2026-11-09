@@ -15,6 +15,7 @@ _TIMED_PATHS = {
     "/api/agent/task",
     "/api/agent/step",
     "/api/meeting/answer-stream",
+    "/api/meeting/code-stream",
 }
 
 

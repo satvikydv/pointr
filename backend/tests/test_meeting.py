@@ -201,3 +201,84 @@ def test_extract_rejects_unsupported_empty_and_garbage(client):
     assert _extract(http, "broken.docx", b"not a zip").status_code == 422
     bad = http.post("/api/meeting/extract-text", json={"filename": "a.pdf", "data_base64": "%%%"})
     assert bad.status_code == 400
+
+
+# ---------------------------------------------------------------------
+# Coding questions shown on screen
+# ---------------------------------------------------------------------
+
+
+class FakeVisionLLM:
+    model = "fake-coding-model"
+
+    def __init__(self, pieces):
+        self.pieces = pieces
+        self.calls = []
+
+    async def analyze_images_stream(self, images, prompt):
+        self.calls.append((images, prompt))
+        for p in self.pieces:
+            yield p
+
+
+@pytest.fixture
+def code_client(monkeypatch):
+    fake = FakeVisionLLM(["Language: Java (from the editor)\n\n### Problem\nTwo sum", "\n\n### Code\n```java\nclass S {}\n```"])
+    seen = {}
+
+    def fake_get_llm(provider, model, gemini_api_key="", openai_api_key=""):
+        seen.update(provider=provider, model=model)
+        return fake
+
+    monkeypatch.setattr(meeting, "get_llm", fake_get_llm)
+    main.app.dependency_overrides[rate_limit] = _no_limit
+    main.app.dependency_overrides[verify_client_key] = _no_limit
+    try:
+        yield TestClient(main.app), fake, seen
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def _code_body(**overrides):
+    body = {
+        "screenshots": [base64.b64encode(b"\x89PNG fake").decode()],
+        "transcript": [{"t": 30.0, "text": "Assume the array is sorted."}],
+        "language": "Go",
+        "provider": "openai",
+        "model": "gpt-6-sol",
+    }
+    body.update(overrides)
+    return body
+
+
+def test_code_stream_sends_images_and_streams(code_client):
+    http, fake, seen = code_client
+    res = http.post("/api/meeting/code-stream", json=_code_body())
+    assert res.status_code == 200
+    events = [json.loads(line) for line in res.text.splitlines() if line.strip()]
+    assert [e["type"] for e in events] == ["chunk", "chunk", "done"]
+    assert events[-1]["answer_text"].startswith("Language: Java (from the editor)")
+    assert seen == {"provider": "openai", "model": "gpt-6-sol"}, "the coding model from the request is used"
+
+    images, prompt = fake.calls[0]
+    assert images == [b"\x89PNG fake"]
+    assert "Otherwise use Go." in prompt
+    assert "[00:30] Assume the array is sorted." in prompt
+    assert "previous_solution" not in prompt, "a first press isn't a revision"
+    assert "### Edge cases" in prompt
+
+
+def test_code_stream_revises_previous_solution(code_client):
+    http, fake, _ = code_client
+    res = http.post("/api/meeting/code-stream", json=_code_body(previous_solution="### Code\nold answer", transcript=[]))
+    assert res.status_code == 200
+    _, prompt = fake.calls[0]
+    assert "<previous_solution>\n### Code\nold answer\n</previous_solution>" in prompt
+    assert "(nothing)" in prompt, "empty transcript is stated, not omitted"
+
+
+def test_code_stream_rejects_bad_input(code_client):
+    http, _, _ = code_client
+    assert http.post("/api/meeting/code-stream", json=_code_body(screenshots=[])).status_code == 422
+    assert http.post("/api/meeting/code-stream", json=_code_body(screenshots=["%%%"])).status_code == 400
+    assert http.post("/api/meeting/code-stream", json=_code_body(screenshots=["a"] * 5)).status_code == 422
