@@ -2,7 +2,7 @@
 //!
 //! A coding problem in an interview is usually shown, not spoken: in a
 //! shared screen inside the meeting app, or on a coding site. During a
-//! meeting session, Ctrl+Alt+S (or the first free fallback key):
+//! meeting session, Ctrl+Alt+K (or the first free fallback key):
 //!
 //! 1. Captures the screen right away, cropped to the foreground window when
 //!    that helps (see code_util.rs), at up to 2400 px so small text stays
@@ -23,7 +23,8 @@
 //! into account. The previous solution is forgotten when the session ends.
 //!
 //! Keys, registered only for a session: the solve key, Ctrl+Alt+X to hide
-//! or show the code panel, Ctrl+Alt+PageUp/PageDown to scroll it.
+//! or show the code panel, Ctrl+Alt+PageUp/PageDown to scroll it,
+//! Ctrl+Alt+Left/Right/Home/End to move it left, right, up and down.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Mutex};
@@ -70,14 +71,25 @@ pub enum Action {
     Solve,
     TogglePanel,
     Scroll(i32),
+    /// Steps of one `MOVE_STEP` along x and y, each -1, 0 or 1.
+    Move(i32, i32),
 }
 
 const CTRL_ALT: Modifiers = Modifiers::CONTROL.union(Modifiers::ALT);
 
 /// Tried in order: another app may already own the first (as happened with
-/// Ctrl+Alt+M). None of these clash with the meeting keys.
+/// Ctrl+Alt+M). None of these clash with the meeting keys. Ctrl+Alt+S is
+/// left out on purpose: HP laptops open HP System Information on it, and
+/// that is a keyboard hook, so registering it here succeeds and both fire.
 const SOLVE_CANDIDATES: [(Code, &str); 3] =
-    [(Code::KeyS, "Ctrl+Alt+S"), (Code::KeyK, "Ctrl+Alt+K"), (Code::Semicolon, "Ctrl+Alt+;")];
+    [(Code::KeyK, "Ctrl+Alt+K"), (Code::Semicolon, "Ctrl+Alt+;"), (Code::Quote, "Ctrl+Alt+'")];
+
+/// How far one press moves the code panel, as a share of the monitor.
+const MOVE_STEP: f64 = 0.05;
+
+/// Where the user has moved the panel to, kept while the session runs so
+/// hiding and showing it again doesn't snap it back to the right edge.
+static MOVED_TO: Mutex<Option<(i32, i32)>> = Mutex::new(None);
 
 /// What's registered for this session, for `action_for` and `unregister`.
 static KEYS: Mutex<Vec<(Shortcut, Action)>> = Mutex::new(Vec::new());
@@ -107,6 +119,10 @@ pub fn register(app: &AppHandle) {
         (Code::KeyX, Action::TogglePanel),
         (Code::PageUp, Action::Scroll(-1)),
         (Code::PageDown, Action::Scroll(1)),
+        (Code::ArrowLeft, Action::Move(-1, 0)),
+        (Code::ArrowRight, Action::Move(1, 0)),
+        (Code::Home, Action::Move(0, -1)),
+        (Code::End, Action::Move(0, 1)),
     ] {
         let shortcut = Shortcut::new(Some(CTRL_ALT), code);
         match app.global_shortcut().register(shortcut) {
@@ -148,6 +164,7 @@ pub fn handle(app: &AppHandle, action: Action) {
         Action::Scroll(dir) => {
             let _ = app.emit_to(stealth::CODE_WINDOW, "code-scroll", dir);
         }
+        Action::Move(dx, dy) => nudge(app, dx, dy),
     }
 }
 
@@ -156,6 +173,7 @@ pub fn handle(app: &AppHandle, action: Action) {
 pub fn reset(app: &AppHandle) {
     CURRENT.fetch_add(1, Ordering::SeqCst);
     *LAST_SOLUTION.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *MOVED_TO.lock().unwrap_or_else(|e| e.into_inner()) = None;
     hide_panel(app);
     let _ = app.emit_to(stealth::CODE_WINDOW, "code-reset", ());
 }
@@ -201,6 +219,31 @@ fn place(app: &AppHandle, window: &WebviewWindow) {
     ));
 }
 
+/// Moves the panel one step, kept inside the monitor it's on. The panel
+/// never takes focus or the cursor, so this is the only way to reposition it.
+fn nudge(app: &AppHandle, dx: i32, dy: i32) {
+    if !PANEL_VISIBLE.load(Ordering::SeqCst) {
+        return;
+    }
+    let Some(window) = panel(app) else { return };
+    let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) else { return };
+    let (cx, cy) = (pos.x + size.width as i32 / 2, pos.y + size.height as i32 / 2);
+    let monitor = app.available_monitors().ok().and_then(|ms| {
+        ms.into_iter().find(|m| {
+            let (p, s) = (m.position(), m.size());
+            cx >= p.x && cx < p.x + s.width as i32 && cy >= p.y && cy < p.y + s.height as i32
+        })
+    });
+    let Some(monitor) = monitor else { return };
+    let (p, s) = (monitor.position(), monitor.size());
+    let x = (pos.x + dx * (s.width as f64 * MOVE_STEP) as i32)
+        .clamp(p.x, (p.x + s.width as i32 - size.width as i32).max(p.x));
+    let y = (pos.y + dy * (s.height as f64 * MOVE_STEP) as i32)
+        .clamp(p.y, (p.y + s.height as i32 - size.height as i32).max(p.y));
+    let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+    *MOVED_TO.lock().unwrap_or_else(|e| e.into_inner()) = Some((x, y));
+}
+
 /// Same guarantee as the meeting panel: never shown if this Windows build
 /// can't keep it out of capture, and hidden again straight away if its
 /// protection didn't apply.
@@ -211,7 +254,13 @@ fn show_panel(app: &AppHandle) {
         return;
     }
     if !PANEL_VISIBLE.load(Ordering::SeqCst) {
-        place(app, &window);
+        let moved = *MOVED_TO.lock().unwrap_or_else(|e| e.into_inner());
+        match moved {
+            Some((x, y)) => {
+                let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+            }
+            None => place(app, &window),
+        }
     }
     stealth::show_without_focus(&window);
     if !stealth::is_protected(&window) {

@@ -3,11 +3,11 @@
 Status: **Phase 1 built** (not yet run on Windows), experimental branch `claude/jolly-goldberg-ncov7s`.
 
 Built in Phase 1, with the defaults chosen:
-- `Ctrl+Alt+S` (fallbacks `Ctrl+Alt+K`, `Ctrl+Alt+;`), registered only during a meeting session. Captures the monitor under the cursor, cropped to the foreground window when that helps, up to 2400 px (`meeting/code.rs`, `meeting/code_util.rs`).
+- `Ctrl+Alt+K` (fallbacks `Ctrl+Alt+;`, `Ctrl+Alt+'`; not `Ctrl+Alt+S`, which HP laptops use for System Information), registered only during a meeting session. Captures the monitor under the cursor, cropped to the foreground window when that helps, up to 2400 px (`meeting/code.rs`, `meeting/code_util.rs`).
 - Sends the screenshot, the last 2 min of transcript, the preferred language, the meeting background and the previous solution (pressing again revises) to `POST /api/meeting/code-stream`.
 - **Separate coding model**, defaults `gemini-3.1-pro-preview` / `gpt-6-sol`, set in Settings → Coding questions. Spoken answers keep the everyday fast model; nothing in their path changed.
 - Settings → Coding questions: language (default Python; the editor or problem on screen wins) and the coding model per provider.
-- Code panel: a separate, always capture-excluded, non-focusable, click-through window docked right of the monitor under the cursor; Language line, Problem / Approach / Code / Complexity / Edge cases, highlight.js (vendored, `app/src/vendor/highlight/`) with line numbers. `Ctrl+Alt+X` hide/show, `Ctrl+Alt+PageUp/PageDown` scroll. The small meeting panel mirrors Problem and Approach.
+- Code panel: a separate, always capture-excluded, non-focusable, click-through window docked right of the monitor under the cursor; Language line, Problem / Approach / Code / Complexity / Edge cases, highlight.js (vendored, `app/src/vendor/highlight/`) with line numbers. `Ctrl+Alt+X` hide/show, `Ctrl+Alt+PageUp/PageDown` scroll, `Ctrl+Alt+Left/Right/Home/End` move the panel (5% of the monitor per press). The small meeting panel mirrors Problem and Approach.
 - Answer format: optimal solution, with the brute-force idea in one Approach line when it helps.
 
 Not built yet (Phase 2+): extra screenshots for long problems, second-monitor placement, font size and copy keys, routing code from spoken answers to the code panel, OCR assist.
