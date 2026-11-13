@@ -1,6 +1,6 @@
 import { parseVoiceCommand, voiceToQuery, looksLikeDraftEdit } from './voice-command.js';
 import { createExplainSession } from './explain-session.js';
-import { createStoryboardStage } from './storyboard-stage.js';
+import { createStoryboardStage, shapeGeometry, focusRect, rectsOverlap } from './storyboard-stage.js';
 
 const { listen } = window.__TAURI__.event;
 const { invoke } = window.__TAURI__.core;
@@ -639,6 +639,9 @@ listen('explain-resume-key', () => {
 });
 
 document.addEventListener('keydown', (e) => {
+    // The Enter that sends a follow-up arms the resume offer; that same
+    // keypress must not then bubble up here and resume straight away.
+    if (e.target === directQueryInput) return;
     if (explainResumeSession && (e.key === ' ' || e.key === 'Enter')) {
         e.preventDefault();
         resumeExplain(explainResumeSession);
@@ -706,10 +709,11 @@ async function playExplainSession(session) {
             dot.classList.toggle('done', i < idx);
         });
         renderCaption(caption, step.narration);
+        placeCaptionBar(bar, step);
         storyboardStage.show(session.steps, idx);
     };
 
-    bar.classList.remove('hidden');
+    bar.classList.remove('hidden', 'at-top');
     setExplainHint('Esc to stop', 4200);
 
     const outcome = await session.run({
@@ -727,6 +731,26 @@ async function playExplainSession(session) {
         closeTimer = setTimeout(() => dismissOverlay(), 5000);
     } else {
         clearStoryboardShapes();
+    }
+}
+
+/// The caption bar sits at the bottom centre unless that would cover what the
+/// step is pointing at; then it moves to the top, if the top is clear.
+function placeCaptionBar(bar, step) {
+    const w = window.innerWidth, h = window.innerHeight;
+    const target = focusRect(shapeGeometry(step, w, h));
+    if (!target) return; // nothing to keep clear: stay where it is
+    const barW = bar.offsetWidth || 400, barH = bar.offsetHeight || 80;
+    const x = (w - barW) / 2;
+    const bottomZone = { x, y: h - 76 - barH, w: barW, h: barH };
+    const topZone = { x, y: 92, w: barW, h: barH };
+    const toTop = rectsOverlap(target, bottomZone) && !rectsOverlap(target, topZone);
+    if (toTop !== bar.classList.contains('at-top')) {
+        bar.classList.toggle('at-top', toTop);
+        // Replay the entrance so the move reads as intentional, not a jump.
+        bar.style.animation = 'none';
+        void bar.offsetHeight; // restart the CSS animation
+        bar.style.animation = '';
     }
 }
 

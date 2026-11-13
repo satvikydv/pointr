@@ -790,6 +790,10 @@ body, html {
   opacity: 1;
 }
 
+.sb-cursor.on.resting {
+  opacity: 0.55;
+}
+
 .sb-cursor-arrow {
   fill: #fff;
   stroke: #14161b;
@@ -863,6 +867,11 @@ body, html {
   animation: pointr-fade-in 0.18s ease;
   z-index: 1001;
   pointer-events: none;
+}
+
+.storyboard-bar.at-top {
+  bottom: auto;
+  top: 92px;
 }
 
 .storyboard-bar.hidden {

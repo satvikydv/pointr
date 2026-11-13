@@ -99,6 +99,16 @@ export function travelDuration(from, to) {
   return clamp(280 + dist * 0.32, 320, 760);
 }
 
+export function rectsOverlap(a, b) {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+/// Where the ghost cursor waits once a shape is drawn: just off its tip, so
+/// it doesn't sit on the very spot it pointed out.
+export function restPosition(p, w, h) {
+  return { x: clamp(p.x + 22, 0, w - 16), y: clamp(p.y + 26, 0, h - 22) };
+}
+
 export function lerpRect(a, b, t) {
   return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), w: lerp(a.w, b.w, t), h: lerp(a.h, b.h, t) };
 }
@@ -259,7 +269,15 @@ export function createStoryboardStage(svg) {
     const from = state.cursor || to;
     const c = travelControl(from, to);
     parts.cursor.classList.add('on');
+    parts.cursor.classList.remove('resting');
     await tween(myGen, ms, (t) => placeCursor(bezierPoint(from, c, to, t)));
+  }
+
+  async function rest(myGen, w, h) {
+    const from = state.cursor;
+    const to = restPosition(from, w, h);
+    parts.cursor.classList.add('resting');
+    await tween(myGen, dur(280), (t) => placeCursor({ x: lerp(from.x, to.x, t), y: lerp(from.y, to.y, t) }), easeOutCubic);
   }
 
   async function drawIn(myGen, geo, g) {
@@ -356,7 +374,7 @@ export function createStoryboardStage(svg) {
         if (myGen !== gen) return;
         state.current = g;
         const badge = buildBadge(index + 1, geo, w, h, parts.current);
-        await popBadge(myGen, badge.g, badge.pos);
+        await Promise.all([popBadge(myGen, badge.g, badge.pos), rest(myGen, w, h)]);
       })();
     },
 
@@ -381,10 +399,17 @@ export function createStoryboardStage(svg) {
       gen++;
       parts.dim.classList.remove('on');
       parts.cursor.classList.remove('on');
-      // Resuming replays the step from its start, so its shape is drawn again
-      // from scratch rather than continuing a half-finished animation.
+      // The question is probably about what this step points at, so its shape
+      // stays, completed in place if it was still being drawn. Resuming
+      // replays the step and draws it again.
       parts.current.innerHTML = '';
-      state = { ...state, index: -1, geo: null, hole: null, current: null };
+      let current = null;
+      if (state.geo) {
+        const w = window.innerWidth, h = window.innerHeight;
+        current = buildShape(state.geo, parts.current);
+        buildBadge(state.index + 1, state.geo, w, h, parts.current);
+      }
+      state = { ...state, index: -1, hole: null, current };
     },
 
     clear() {

@@ -2,7 +2,7 @@
 // Geometry only: the DOM half of storyboard-stage.js needs a webview.
 import {
   shapeGeometry, focusRect, badgePosition, travelControl, bezierPoint,
-  travelDuration, lerpRect, easeInOutCubic, easeOutBack,
+  travelDuration, lerpRect, easeInOutCubic, easeOutBack, rectsOverlap, restPosition,
 } from '../src/storyboard-stage.js';
 
 let fail = 0;
@@ -57,6 +57,12 @@ eq('badge in the top-left corner is pulled on screen', badgePosition({ kind: 'bo
   eq('long trips have a ceiling', travelDuration(from, { x: 5000, y: 0 }), 760);
   eq('same spot needs no arc', travelControl(from, from), from);
 }
+
+// caption placement and cursor resting spot
+eq('overlapping rects', rectsOverlap({ x: 0, y: 0, w: 10, h: 10 }, { x: 5, y: 5, w: 10, h: 10 }), true);
+eq('touching edges do not overlap', rectsOverlap({ x: 0, y: 0, w: 10, h: 10 }, { x: 10, y: 0, w: 10, h: 10 }), false);
+eq('cursor rests just off the target', restPosition({ x: 100, y: 100 }, W, H), { x: 122, y: 126 });
+eq('cursor rest stays on screen', restPosition({ x: 995, y: 495 }, W, H), { x: 984, y: 478 });
 
 // tweening helpers
 eq('lerpRect halfway', lerpRect({ x: 0, y: 0, w: 10, h: 10 }, { x: 10, y: 20, w: 30, h: 50 }, 0.5), { x: 5, y: 10, w: 20, h: 30 });
