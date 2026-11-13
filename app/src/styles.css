@@ -883,16 +883,47 @@ body, html {
   transition: width 0.25s ease, background 0.25s ease;
 }
 
+.storyboard-progress-dot.done {
+  background: rgba(91, 140, 255, 0.5);
+}
+
 .storyboard-progress-dot.active {
   width: 16px;
   background: #5B8CFF;
+  box-shadow: 0 0 8px rgba(91, 140, 255, 0.7);
+  animation: storyboard-dot-arrive 0.35s ease-out;
+}
+
+@keyframes storyboard-dot-arrive {
+  from { transform: scaleX(0.4); }
+  to { transform: scaleX(1); }
 }
 
 .storyboard-caption {
   font-size: 14px;
   line-height: 1.55;
   color: rgba(255, 255, 255, 0.92);
-  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.storyboard-word {
+  display: inline-block;
+  opacity: 0;
+  animation: storyboard-word-in 0.32s ease-out forwards;
+}
+
+@keyframes storyboard-word-in {
+  from { opacity: 0; transform: translateY(5px); filter: blur(2px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .storyboard-word {
+    animation: none;
+    opacity: 1;
+  }
+  .storyboard-progress-dot.active {
+    animation: none;
+  }
 }
 
 /* ---------- Region-select toolbar ---------- */

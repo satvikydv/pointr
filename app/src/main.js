@@ -701,8 +701,11 @@ async function playExplainSession(session) {
             progress.appendChild(dot);
             dotEls.push(dot);
         }
-        dotEls.forEach((dot, i) => dot.classList.toggle('active', i === idx));
-        caption.textContent = step.narration;
+        dotEls.forEach((dot, i) => {
+            dot.classList.toggle('active', i === idx);
+            dot.classList.toggle('done', i < idx);
+        });
+        renderCaption(caption, step.narration);
         storyboardStage.show(session.steps, idx);
     };
 
@@ -725,6 +728,23 @@ async function playExplainSession(session) {
     } else {
         clearStoryboardShapes();
     }
+}
+
+/// The step's narration, word by word: each word rises in a moment after the
+/// one before, so the caption reads in roughly as it is spoken. The stagger
+/// is capped so a long sentence is fully shown within about a second.
+function renderCaption(caption, text) {
+    caption.textContent = '';
+    const words = text.split(/\s+/).filter(Boolean);
+    const step = Math.min(45, 1100 / Math.max(1, words.length));
+    words.forEach((word, i) => {
+        const span = document.createElement('span');
+        span.className = 'storyboard-word';
+        span.style.animationDelay = `${Math.round(i * step)}ms`;
+        span.textContent = word;
+        caption.appendChild(span);
+        if (i < words.length - 1) caption.appendChild(document.createTextNode(' '));
+    });
 }
 
 // Every walkthrough shape, the spotlight, the numbered trail and the ghost
