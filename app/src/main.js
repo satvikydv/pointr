@@ -308,8 +308,8 @@ const voiceMode = document.getElementById('voice-mode');
 function showVoiceMode(text) {
     const { mode } = parseVoiceCommand(text);
     voiceMode.classList.toggle('hidden', !mode);
-    voiceMode.classList.toggle('explain', mode === 'explain');
-    if (mode) voiceMode.textContent = mode === 'agent' ? 'Agent' : 'Explain';
+    voiceMode.classList.toggle('explain', mode === 'explain' || mode === 'whiteboard');
+    if (mode) voiceMode.textContent = { agent: 'Agent', explain: 'Explain', whiteboard: 'Whiteboard' }[mode];
 }
 
 /// Coarse buckets only; the transcript itself is never sent.

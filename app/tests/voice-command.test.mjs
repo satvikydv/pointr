@@ -32,6 +32,16 @@ check('Uh, age and, type hello', 'agent', 'type hello');
 check('Age and gender of this person?', null, 'Age and gender of this person?');
 check('Age and height please', null);
 
+// Whiteboard: its own keyword, or "explain on the whiteboard ..."
+check('Whiteboard how DNS works', 'whiteboard', 'how DNS works');
+check('Uh, whiteboard, recursion', 'whiteboard', 'recursion');
+check('White board, how a CPU cache works', 'whiteboard', 'how a CPU cache works');
+check('Explain on the whiteboard how DNS works', 'whiteboard', 'how DNS works');
+check('Can you explain using a whiteboard, TCP handshakes?', 'whiteboard', 'TCP handshakes?');
+check('Explain the whiteboard in this photo', 'explain', 'the whiteboard in this photo');
+check('Whiteboard', 'whiteboard', '');
+check('What is on this whiteboard?', null);
+
 // "Pointr"/"Pointer" as an address (wake word) — agent mode, but only
 // when no real "agent"/"explain" keyword is found (that still wins).
 check('Pointr, open notepad', 'agent', 'open notepad');

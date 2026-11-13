@@ -29,6 +29,8 @@ const KEYWORDS = {
     // "aj" family: reported from real use ("agent" transcribed as "A J").
     agent: new Set(['agent', 'agents', "agent's", 'agentic', 'ajent', 'eigent', 'agen', 'aj', 'a.j', 'a-j']),
     explain: new Set(['explain', 'explains', 'explained', 'explaining', 'explane', 'xplain']),
+    // An explanation drawn on the whiteboard, whatever is on screen.
+    whiteboard: new Set(['whiteboard', 'whiteboards', 'white-board']),
 };
 
 // The keyword split in two by the transcriber.
@@ -37,7 +39,13 @@ const SPLIT_KEYWORDS = {
     'a j': 'agent',
     'ex plain': 'explain',
     'x plain': 'explain',
+    'white board': 'whiteboard',
+    'white boards': 'whiteboard',
 };
+
+// "Explain on the whiteboard how DNS works": an explanation that asks for the
+// board right after the keyword.
+const ON_THE_BOARD = /^(?:on|using|with)\s+(?:a|the)\s+white[\s-]?boards?\b[\s,.:;!?-]*/i;
 
 // Mishears that are also ordinary sentence openers ("Age and gender of
 // this person?"), so they only count when a command verb follows.
@@ -114,7 +122,7 @@ function pointerWakeWord(original, words) {
     return null;
 }
 
-/// { mode: 'agent' | 'explain' | null, rest } — `rest` is what follows the
+/// { mode: 'agent' | 'explain' | 'whiteboard' | null, rest } — `rest` is what follows the
 /// keyword (original casing, leading punctuation trimmed), or the whole
 /// transcript unchanged when there's no keyword.
 export function parseVoiceCommand(text) {
@@ -128,6 +136,9 @@ export function parseVoiceCommand(text) {
             const rest = original.slice(i + kw.length).join(' ').replace(/^[\s,.:;!?-]+/, '');
             // "agent" alone (or "agent?") isn't a task; leave it as a question.
             if (kw.mode === 'agent' && !rest) break;
+            if (kw.mode === 'explain' && ON_THE_BOARD.test(rest)) {
+                return { mode: 'whiteboard', rest: rest.replace(ON_THE_BOARD, '') };
+            }
             return { mode: kw.mode, rest };
         }
         const skip = fillerLength(words, i);
