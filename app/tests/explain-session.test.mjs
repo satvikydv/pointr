@@ -192,5 +192,45 @@ function harness(session) {
   eq('pause after stop is ignored', [s.stopped, s.paused], [true, true]);
 }
 
+// 10. back / next jump between steps, cutting off the current narration
+{
+  const s = createExplainSession();
+  s.push({ narration: 'a' });
+  s.push({ narration: 'b' });
+  s.push({ narration: 'c' });
+  const h = harness(s);
+  await tick();
+  eq('back on the first step does nothing', s.back(), false);
+  eq('next jumps ahead', s.next(), true);
+  await tick();
+  eq('next cancels the step being spoken and shows the next', h.log, ['show:a#0', 'cancel:a', 'show:b#1']);
+  eq('back goes to the previous step', s.back(), true);
+  await tick();
+  eq('replays the earlier step', h.log.slice(-2), ['cancel:b', 'show:a#0']);
+  s.next();
+  await tick();
+  s.next();
+  await tick();
+  eq('next past the last written step waits for the model', s.next(), false);
+  s.finish();
+  eq('next past the last step once the stream is done ends it', s.next(), true);
+  eq('ends as finished', await h.result, 'finished');
+}
+
+// 11. back / next are ignored while paused or stopped
+{
+  const s = createExplainSession();
+  s.push({ narration: 'a' });
+  s.push({ narration: 'b' });
+  const h = harness(s);
+  await tick();
+  s.pause();
+  eq('next while paused is ignored', [s.next(), s.index], [false, 0]);
+  s.resume();
+  s.stop();
+  eq('next after stop is ignored', s.next(), false);
+  await h.result;
+}
+
 console.log(fail ? `${fail} failure(s)` : 'all explain-session checks passed');
 process.exit(fail ? 1 : 0);

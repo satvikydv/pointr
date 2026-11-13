@@ -57,6 +57,32 @@ export function createExplainSession({ topic = '', requestId = 0 } = {}) {
       wakeAll();
     },
 
+    // Jump to another step (Left / Right arrows). The step being spoken is
+    // cut off and the loop picks up at the new index. Returns false when
+    // there is nowhere to go: before the first step, or past the last one
+    // the model has written so far. Skipping past the last step once the
+    // stream is done ends the walkthrough as finished.
+    goTo(target) {
+      if (session.stopped || session.paused) return false;
+      if (target < 0) return false;
+      if (target >= session.steps.length) {
+        if (!session.streamDone || target !== session.steps.length) return false;
+      }
+      if (target === session.index) return false;
+      session.index = target;
+      if (session._speech) session._speech.cancel();
+      wakeAll();
+      return true;
+    },
+
+    next() {
+      return session.goTo(session.index + 1);
+    },
+
+    back() {
+      return session.goTo(session.index - 1);
+    },
+
     stop() {
       if (session.stopped) return;
       session.stopped = true;
