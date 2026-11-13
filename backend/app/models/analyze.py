@@ -73,6 +73,10 @@ class StoryboardStep(BaseModel):
     y_norm: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     x2_norm: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     y2_norm: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    # Whiteboard mode: shapes drawn on a blank board while this step is
+    # spoken, instead of an annotation on the screen. Already reduced to the
+    # shapes the client draws by app/services/whiteboard.py.
+    board: Optional[list[dict]] = None
 
 class StoryboardResponse(BaseModel):
     steps: list[StoryboardStep]

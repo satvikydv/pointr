@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from app.models.analyze import AnalyzeRequest, AnalyzeResponse, PointerTarget, StoryboardResponse, StoryboardStep
 from app.services.llm import get_llm
 from app.services.step_stream import JsonObjectStream, expand_steps
+from app.services import whiteboard
 from app.services import screenshot_stage
 from app.services.session_memory import build_session_context_block, arecord_exchange
 from app.config import settings
@@ -241,7 +242,10 @@ def _build_explain_prompt(request: AnalyzeRequest, session_context: str, streami
             '{"narration": "one short spoken sentence", "point": [300, 400]}\n'
             '{"narration": "another step", "box_2d": [200, 150, 500, 600]}\n'
             '{"narration": "another step", "line": [[300, 200], [450, 500]]}\n'
-            '{"narration": "a step with nothing to point at"}'
+            '{"narration": "a step with nothing to point at"}\n'
+            "Or, on the whiteboard:\n"
+            '{"narration": "a browser asks a server", "board": [{"type": "box", "id": "b", "x": 80, "y": 240, "w": 200, "h": 90, "label": "Browser", "color": "blue"}, {"type": "box", "id": "s", "x": 700, "y": 240, "w": 200, "h": 90, "label": "Server", "color": "green"}, {"type": "arrow", "from": "b", "to": "s", "label": "request"}]}\n'
+            '{"narration": "and the server answers", "board": [{"type": "arrow", "from": "s", "to": "b", "label": "response", "color": "yellow"}]}'
         )
     else:
         output_format = (
@@ -253,21 +257,31 @@ def _build_explain_prompt(request: AnalyzeRequest, session_context: str, streami
             '    {"narration": "another step", "line": [[300, 200], [450, 500]]},\n'
             '    {"narration": "a step with nothing to point at"}\n'
             "  ]\n"
-            "}"
+            "}\n"
+            'On the whiteboard, a step looks like {"narration": "...", "board": [{"type": "box", "id": "b", '
+            '"x": 80, "y": 240, "w": 200, "h": 90, "label": "Browser"}]}.'
+        )
+
+    board_forced, topic = whiteboard.forced(request.query_text)
+    if board_forced:
+        screen_part = whiteboard.PROMPT_FORCED + whiteboard.PROMPT
+    else:
+        screen_part = (
+            "First, actually look at the screenshot: is there a diagram, figure, chart, piece of UI, or document "
+            "on screen that relates to this topic, even loosely? If there is ANY relevant visual on screen, you "
+            "MUST use it — walk through it directly (e.g. \"here's the hypotenuse\", \"this is the middle element\") "
+            "and point at the specific part you're talking about in most steps, rather than giving a generic "
+            "textbook explanation that ignores what's actually shown.\n"
+            + whiteboard.PROMPT
         )
 
     return (
         f"Active window (reported by the OS, trust it over anything you infer from the image): '{request.active_window_title}'. "
         + (f"{session_context}\n" if session_context else "")
-        + f"The user wants a short step-by-step visual walkthrough explaining: '{request.query_text}'. "
-        "First, actually look at the screenshot: is there a diagram, figure, chart, piece of UI, or document "
-        "on screen that relates to this topic, even loosely? If there is ANY relevant visual on screen, you "
-        "MUST use it — walk through it directly (e.g. \"here's the hypotenuse\", \"this is the middle element\") "
-        "and point at the specific part you're talking about in most steps, rather than giving a generic "
-        "textbook explanation that ignores what's actually shown. Only explain purely abstractly, with no "
-        "coordinates at all, if the screen truly has nothing relevant to this topic.\n"
-        "Break the explanation into 3 to 6 short steps, each one sentence suitable for being spoken aloud. "
-        "For each step, add ONE visual annotation if it helps — pick whichever fits best:\n"
+        + f"The user wants a short step-by-step visual walkthrough explaining: '{topic}'. "
+        + screen_part
+        + "Break the explanation into 3 to 6 short steps, each one sentence suitable for being spoken aloud. "
+        "When pointing at the screen, add ONE visual annotation to a step if it helps — pick whichever fits best:\n"
         '  - "point": [y, x] — a single spot, e.g. a specific label or element\n'
         '  - "box_2d": [ymin, xmin, ymax, xmax] — a region/area, e.g. a whole shape, a group, a UI panel\n'
         '  - "line": [[y1, x1], [y2, x2]] — connects/indicates a relationship between two spots, e.g. a side '
@@ -324,6 +338,11 @@ def _normalize_step(raw_step) -> StoryboardStep | None:
         # not the step: the narration is still worth speaking.
         shape = x_norm = y_norm = x2_norm = y2_norm = None
 
+    # A step drawn on the whiteboard doesn't also point at the screen.
+    board = whiteboard.sanitize_board(raw_step.get("board"))
+    if board:
+        shape = x_norm = y_norm = x2_norm = y2_norm = None
+
     return StoryboardStep(
         narration=narration,
         shape=shape,
@@ -331,6 +350,7 @@ def _normalize_step(raw_step) -> StoryboardStep | None:
         y_norm=y_norm,
         x2_norm=x2_norm,
         y2_norm=y2_norm,
+        board=board,
     )
 
 
