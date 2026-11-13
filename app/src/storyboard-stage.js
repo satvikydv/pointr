@@ -212,7 +212,8 @@ export function createStoryboardStage(svg) {
       const start = performance.now();
       const frame = (now) => {
         if (myGen !== gen) return resolve();
-        const t = Math.min(1, (now - start) / ms);
+        // A frame's timestamp can predate `start`, so clamp at 0 too.
+        const t = clamp((now - start) / ms, 0, 1);
         onUpdate(ease(t));
         if (t < 1) requestAnimationFrame(frame);
         else resolve();

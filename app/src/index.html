@@ -16,6 +16,14 @@
            main.js); point reuses the plain .pointer-marker div below. -->
       <svg id="storyboard-svg"></svg>
 
+      <!-- "explain:" whiteboard mode: a blank board drawn on step by step
+           when nothing on screen relates to the topic (whiteboard.js). -->
+      <div id="whiteboard-backdrop" class="wb-backdrop hidden"></div>
+      <div id="whiteboard" class="whiteboard hidden">
+        <div id="whiteboard-title" class="wb-title"></div>
+        <svg id="whiteboard-svg" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid meet"></svg>
+      </div>
+
       <div id="storyboard-hint" class="storyboard-hint hidden">
         <span>Esc to stop</span>
       </div>

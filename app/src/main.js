@@ -1,6 +1,7 @@
 import { parseVoiceCommand, voiceToQuery, looksLikeDraftEdit } from './voice-command.js';
 import { createExplainSession } from './explain-session.js';
 import { createStoryboardStage, shapeGeometry, focusRect, rectsOverlap } from './storyboard-stage.js';
+import { createWhiteboard, usesBoard } from './whiteboard.js';
 
 const { listen } = window.__TAURI__.event;
 const { invoke } = window.__TAURI__.core;
@@ -423,7 +424,9 @@ directQueryInput.addEventListener('keydown', (e) => {
 
 async function runDirectAnalysis(queryText, source = 'typed') {
     const agentMatch = queryText.trim().match(/^agent:\s*(.*)$/i);
-    const explainMatch = queryText.trim().match(/^explain:\s*(.*)$/i);
+    // "whiteboard: <topic>" is an explanation drawn on the whiteboard whatever
+    // is on screen; the backend reads the prefix off the topic.
+    const explainMatch = queryText.trim().match(/^(explain|whiteboard):\s*(.*)$/i);
 
     // A plain question asked while an explanation is playing is a follow-up to
     // it: no keyword needed, answered on its own, then the walkthrough can be
@@ -441,7 +444,7 @@ async function runDirectAnalysis(queryText, source = 'typed') {
     const requestId = ++activeRequestId;
     if (followUp) {
         followUp.pause();
-        storyboardStage.pause();
+        pauseExplainDrawing(followUp);
     } else {
         stopExplainSession();
     }
@@ -459,7 +462,8 @@ async function runDirectAnalysis(queryText, source = 'typed') {
         if (explainMatch) {
             // "explain" said or typed on its own carries no topic: walk through
             // whatever is on screen instead of explaining the word "explain:".
-            const topic = explainMatch[1].trim() || 'what is on my screen right now';
+            const topic = explainMatch[2].trim() || 'what is on my screen right now';
+            const onBoard = explainMatch[1].toLowerCase() === 'whiteboard';
             captureTelemetry('direct_query_sent', { mode: 'explain', source });
 
             // Steps arrive one by one as the model writes them (explain-step
@@ -468,7 +472,7 @@ async function runDirectAnalysis(queryText, source = 'typed') {
             const session = createExplainSession({ topic, requestId });
             session.streamId = String(requestId); // steps are matched to the request that asked for them
             explainSession = session;
-            invoke('process_explain_stream', { topic, requestId: String(requestId) })
+            invoke('process_explain_stream', { topic: onBoard ? `whiteboard: ${topic}` : topic, requestId: String(requestId) })
                 .then(() => session.finish())
                 .catch((e) => session.finish(e));
 
@@ -596,7 +600,7 @@ let explainResumeSession = null;
 function beginExplainInterrupt() {
     cancelExplainResumeKey();
     explainSession.pause(); // stops the narration, keeps the step
-    storyboardStage.pause(); // lifts the spotlight so the answer is readable
+    pauseExplainDrawing(explainSession);
     stopSpeakingIndicator();
     invoke('stop_speech').catch(() => {}); // an earlier answer may still be speaking too
     setExplainHint('Paused');
@@ -673,7 +677,7 @@ function explainContextText(session) {
     const current = session.steps[session.index];
     const lines = shown.map((step, i) => `${i + 1}. ${step.narration}`).join('\n');
     return [
-        `The user is partway through a spoken, step-by-step walkthrough you gave them about "${session.topic}", over this same screen. The screenshot may show the walkthrough's own caption bar and annotations: ignore those, they are Pointr's interface.`,
+        `The user is partway through a spoken, step-by-step walkthrough you gave them about "${session.topic}", over this same screen. The screenshot may show the walkthrough's own caption bar and annotations: those are Pointr's interface. If it shows a dark whiteboard with a hand-drawn diagram, that is the diagram you drew for this walkthrough, and the question may be about it.`,
         `Steps so far:\n${lines}`,
         current
             ? `They interrupted during step ${session.index + 1} ("${current.narration}") to ask the question below. Answer it directly and briefly in light of the walkthrough; do not repeat the walkthrough.`
@@ -709,8 +713,16 @@ async function playExplainSession(session) {
             dot.classList.toggle('done', i < idx);
         });
         renderCaption(caption, step.narration);
-        placeCaptionBar(bar, step);
-        storyboardStage.show(session.steps, idx);
+        if (usesBoard(session.steps, idx)) {
+            // Whiteboard: the board replaces any annotation on the screen,
+            // and the caption stays at the bottom, under the board.
+            bar.classList.remove('at-top');
+            storyboardStage.clear();
+            whiteboard.show(session.steps, idx, session.topic);
+        } else {
+            placeCaptionBar(bar, step);
+            storyboardStage.show(session.steps, idx);
+        }
     };
 
     bar.classList.remove('hidden', 'at-top');
@@ -725,8 +737,9 @@ async function playExplainSession(session) {
     bar.classList.add('hidden');
     if (explainSession === session) explainSession = null;
     if (outcome === 'finished' && session.requestId === activeRequestId) {
-        // Every step's shape stays up, numbered, until the overlay closes.
-        storyboardStage.finish();
+        // Every step's drawing stays up until the overlay closes.
+        if (whiteboard.active) whiteboard.finish(session.steps);
+        else storyboardStage.finish();
         if (closeTimer) clearTimeout(closeTimer);
         closeTimer = setTimeout(() => dismissOverlay(), 5000);
     } else {
@@ -775,10 +788,27 @@ function renderCaption(caption, text) {
 // cursor live in #storyboard-svg and are drawn by storyboard-stage.js.
 const storyboardStage = createStoryboardStage(document.getElementById('storyboard-svg'));
 
+// Whiteboard mode draws on its own board instead (whiteboard.js).
+const whiteboard = createWhiteboard({
+    panel: document.getElementById('whiteboard'),
+    backdrop: document.getElementById('whiteboard-backdrop'),
+    svg: document.getElementById('whiteboard-svg'),
+    title: document.getElementById('whiteboard-title'),
+});
+
 function clearStoryboardShapes() {
     const oldMarker = document.getElementById('pointer-marker');
     if (oldMarker) oldMarker.remove();
     storyboardStage.clear();
+    whiteboard.clear();
+}
+
+/// A question interrupted the walkthrough: the screen spotlight lifts so the
+/// answer is readable, and the board, if there is one, is completed in place
+/// (the question is likely about it).
+function pauseExplainDrawing(session) {
+    storyboardStage.pause();
+    whiteboard.pause(session.steps, session.index);
 }
 
 // Speaks one walkthrough step. `done` resolves 'ended' once the narration has
