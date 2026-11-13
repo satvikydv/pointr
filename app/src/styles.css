@@ -898,6 +898,12 @@ body, html {
 
 .wb-text {
   font-family: 'Ink Free', 'Segoe Print', 'Comic Sans MS', cursive;
+  /* A halo in the board's own colour, so a label stays readable where it
+     crosses a line or an arrow. */
+  paint-order: stroke;
+  stroke: #12151c;
+  stroke-width: 6px;
+  stroke-linejoin: round;
 }
 
 /* Drawings from earlier steps step back so the current one leads; at the end

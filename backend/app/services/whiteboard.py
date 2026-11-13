@@ -35,8 +35,10 @@ PROMPT = (
     '(from and to are ids of shapes already drawn, or a spot like {"x": 120, "y": 400})\n'
     '  {"type": "highlight", "target": "db"} (circles a shape that is already drawn, to point back at it)\n'
     "Colors: white, blue, red, green, yellow. Labels are a few words, not sentences. Give every box and "
-    "circle an id. Spread the diagram over the whole canvas with room between shapes, keep everything "
-    "inside it, and never let shapes overlap. A step that only adds a highlight or an arrow is fine. "
+    "circle an id. Spread the diagram over the whole canvas, keep everything inside it, and never let "
+    "shapes overlap; leave at least 150 units between shapes joined by an arrow so the arrow and its "
+    "label have room. Step 1 draws at most 2 shapes so it can start right away. A step that only adds "
+    "a highlight or an arrow is fine. "
     "Never mix board shapes with point, box_2d or line in the same walkthrough.\n"
 )
 
