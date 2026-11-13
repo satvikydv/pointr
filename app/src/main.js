@@ -1,5 +1,6 @@
 import { parseVoiceCommand, voiceToQuery, looksLikeDraftEdit } from './voice-command.js';
 import { createExplainSession } from './explain-session.js';
+import { createStoryboardStage } from './storyboard-stage.js';
 
 const { listen } = window.__TAURI__.event;
 const { invoke } = window.__TAURI__.core;
@@ -438,7 +439,12 @@ async function runDirectAnalysis(queryText, source = 'typed') {
     const runsAsAgent = !!agentMatch || !!draft;
 
     const requestId = ++activeRequestId;
-    if (followUp) followUp.pause(); else stopExplainSession();
+    if (followUp) {
+        followUp.pause();
+        storyboardStage.pause();
+    } else {
+        stopExplainSession();
+    }
     const appWindow = Window.getCurrent();
 
     loadingLabel.textContent = runsAsAgent ? 'Queueing…' : (explainMatch ? 'Preparing…' : 'Thinking…');
@@ -590,6 +596,7 @@ let explainResumeSession = null;
 function beginExplainInterrupt() {
     cancelExplainResumeKey();
     explainSession.pause(); // stops the narration, keeps the step
+    storyboardStage.pause(); // lifts the spotlight so the answer is readable
     stopSpeakingIndicator();
     invoke('stop_speech').catch(() => {}); // an earlier answer may still be speaking too
     setExplainHint('Paused');
@@ -696,7 +703,7 @@ async function playExplainSession(session) {
         }
         dotEls.forEach((dot, i) => dot.classList.toggle('active', i === idx));
         caption.textContent = step.narration;
-        renderStoryboardShape(step);
+        storyboardStage.show(session.steps, idx);
     };
 
     bar.classList.remove('hidden');
@@ -709,120 +716,25 @@ async function playExplainSession(session) {
 
     setExplainHint(null);
     bar.classList.add('hidden');
-    clearStoryboardShapes();
     if (explainSession === session) explainSession = null;
     if (outcome === 'finished' && session.requestId === activeRequestId) {
+        // Every step's shape stays up, numbered, until the overlay closes.
+        storyboardStage.finish();
         if (closeTimer) clearTimeout(closeTimer);
         closeTimer = setTimeout(() => dismissOverlay(), 5000);
+    } else {
+        clearStoryboardShapes();
     }
 }
+
+// Every walkthrough shape, the spotlight, the numbered trail and the ghost
+// cursor live in #storyboard-svg and are drawn by storyboard-stage.js.
+const storyboardStage = createStoryboardStage(document.getElementById('storyboard-svg'));
 
 function clearStoryboardShapes() {
     const oldMarker = document.getElementById('pointer-marker');
     if (oldMarker) oldMarker.remove();
-    const oldBox = document.getElementById('storyboard-box');
-    if (oldBox) oldBox.remove();
-    const oldLine = document.getElementById('storyboard-line');
-    if (oldLine) oldLine.remove();
-    const oldHead = document.getElementById('storyboard-line-head');
-    if (oldHead) oldHead.remove();
-}
-
-// Renders whichever single shape a storyboard step carries. "point" reuses
-// the same red (#ff5470) marker the normal single-answer flow draws. "box"
-// and "line" are blue (#5B8CFF, the UI-chrome accent — point stays a distinct
-// "reference" red, box/line read as "here's the relevant area") SVG elements
-// in #storyboard-svg, each with a draw-on animation: box traces its own
-// perimeter via stroke-dashoffset, line extends from start to end the same
-// way with a computed arrowhead (perpendicular-offset triangle, not an SVG
-// <marker>) that only fades in once the line is mostly drawn.
-function renderStoryboardShape(step) {
-    clearStoryboardShapes();
-    if (!step.shape) return;
-
-    const x1 = clampUnit(step.x_norm) * window.innerWidth;
-    const y1 = clampUnit(step.y_norm) * window.innerHeight;
-
-    if (step.shape === 'point') {
-        const marker = document.createElement('div');
-        marker.id = 'pointer-marker';
-        marker.className = 'pointer-marker';
-        marker.style.left = x1 + 'px';
-        marker.style.top = y1 + 'px';
-        container.appendChild(marker);
-        return;
-    }
-
-    if (step.x2_norm == null || step.y2_norm == null) return;
-    const x2 = clampUnit(step.x2_norm) * window.innerWidth;
-    const y2 = clampUnit(step.y2_norm) * window.innerHeight;
-    const svg = document.getElementById('storyboard-svg');
-    const SVG_NS = 'http://www.w3.org/2000/svg';
-
-    if (step.shape === 'box') {
-        const bx = Math.min(x1, x2);
-        const by = Math.min(y1, y2);
-        const bw = Math.abs(x2 - x1);
-        const bh = Math.abs(y2 - y1);
-        const perimeter = 2 * (bw + bh);
-
-        const rect = document.createElementNS(SVG_NS, 'rect');
-        rect.id = 'storyboard-box';
-        rect.setAttribute('x', bx);
-        rect.setAttribute('y', by);
-        rect.setAttribute('width', bw);
-        rect.setAttribute('height', bh);
-        rect.setAttribute('rx', 5);
-        rect.setAttribute('fill', 'rgba(91,140,255,0.03)');
-        rect.setAttribute('stroke', '#5B8CFF');
-        rect.setAttribute('stroke-width', 2);
-        rect.setAttribute('stroke-dasharray', String(perimeter));
-        rect.setAttribute('stroke-dashoffset', String(perimeter));
-        svg.appendChild(rect);
-
-        rect.getBoundingClientRect(); // force layout before animating
-        rect.style.transition = 'stroke-dashoffset 0.5s ease, fill 0.5s ease';
-        requestAnimationFrame(() => {
-            rect.setAttribute('stroke-dashoffset', '0');
-            rect.setAttribute('fill', 'rgba(91,140,255,0.12)');
-        });
-    } else if (step.shape === 'line') {
-        const dx = x2 - x1;
-        const dy = y2 - y1;
-        const len = Math.hypot(dx, dy) || 1;
-        const ux = dx / len, uy = dy / len;
-        const px = -uy, py = ux; // perpendicular unit vector, for the arrowhead's width
-        const headLen = 11, headWidth = 4.5;
-        const backX = x2 - ux * headLen;
-        const backY = y2 - uy * headLen;
-
-        const path = document.createElementNS(SVG_NS, 'path');
-        path.id = 'storyboard-line';
-        path.setAttribute('d', `M ${x1} ${y1} L ${x2} ${y2}`);
-        path.setAttribute('stroke', '#5B8CFF');
-        path.setAttribute('stroke-width', 2.5);
-        path.setAttribute('fill', 'none');
-        path.setAttribute('stroke-linecap', 'round');
-        path.setAttribute('stroke-dasharray', String(len));
-        path.setAttribute('stroke-dashoffset', String(len));
-        svg.appendChild(path);
-
-        const head = document.createElementNS(SVG_NS, 'polygon');
-        head.id = 'storyboard-line-head';
-        const points = `${x2},${y2} ${(backX + px * headWidth).toFixed(1)},${(backY + py * headWidth).toFixed(1)} ${(backX - px * headWidth).toFixed(1)},${(backY - py * headWidth).toFixed(1)}`;
-        head.setAttribute('points', points);
-        head.setAttribute('fill', '#5B8CFF');
-        head.style.opacity = '0';
-        svg.appendChild(head);
-
-        path.getBoundingClientRect();
-        path.style.transition = 'stroke-dashoffset 0.4s ease';
-        head.style.transition = 'opacity 0.15s ease';
-        requestAnimationFrame(() => {
-            path.setAttribute('stroke-dashoffset', '0');
-            setTimeout(() => { head.style.opacity = '1'; }, 280); // appear once the line's nearly drawn, not before
-        });
-    }
+    storyboardStage.clear();
 }
 
 // Speaks one walkthrough step. `done` resolves 'ended' once the narration has
