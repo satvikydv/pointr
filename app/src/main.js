@@ -451,7 +451,9 @@ async function runDirectAnalysis(queryText, source = 'typed') {
 
     try {
         if (explainMatch) {
-            const topic = explainMatch[1] || queryText;
+            // "explain" said or typed on its own carries no topic: walk through
+            // whatever is on screen instead of explaining the word "explain:".
+            const topic = explainMatch[1].trim() || 'what is on my screen right now';
             captureTelemetry('direct_query_sent', { mode: 'explain', source });
 
             // Steps arrive one by one as the model writes them (explain-step
