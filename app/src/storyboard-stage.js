@@ -15,6 +15,7 @@
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const POINT_COLOR = '#ff5470';
 const AREA_COLOR = '#5B8CFF';
+const BOX_OUTSET = 6;
 
 const clampUnit = (n) => Math.max(0, Math.min(1, Number(n) || 0));
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
@@ -48,7 +49,11 @@ export function shapeGeometry(step, w, h) {
       const cx = x + bw / 2, cy = y + bh / 2;
       return { kind: 'point', x: cx, y: cy, anchor: { x: cx, y: cy } };
     }
-    return { kind: 'box', x, y, w: bw, h: bh, anchor: { x, y } };
+    // Model boxes hug their content; a few pixels of air keeps the outline
+    // off the text it surrounds.
+    const ox = Math.max(0, x - BOX_OUTSET), oy = Math.max(0, y - BOX_OUTSET);
+    const ow = Math.min(w, x + bw + BOX_OUTSET) - ox, oh = Math.min(h, y + bh + BOX_OUTSET) - oy;
+    return { kind: 'box', x: ox, y: oy, w: ow, h: oh, anchor: { x: ox, y: oy } };
   }
   if (step.shape === 'line') {
     if (Math.hypot(x2 - x1, y2 - y1) < 6) return { kind: 'point', x: x1, y: y1, anchor: { x: x1, y: y1 } };

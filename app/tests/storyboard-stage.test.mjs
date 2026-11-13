@@ -19,9 +19,12 @@ eq('no shape', shapeGeometry({ narration: 'x' }, W, H), null);
 eq('point scales to the screen',
   shapeGeometry({ shape: 'point', x_norm: 0.5, y_norm: 0.2 }, W, H),
   { kind: 'point', x: 500, y: 100, anchor: { x: 500, y: 100 } });
-eq('box normalised whichever corners come first',
+eq('box normalised whichever corners come first, with a little air around it',
   shapeGeometry({ shape: 'box', x_norm: 0.6, y_norm: 0.8, x2_norm: 0.2, y2_norm: 0.2 }, W, H),
-  { kind: 'box', x: 200, y: 100, w: 400, h: 300, anchor: { x: 200, y: 100 } });
+  { kind: 'box', x: 194, y: 94, w: 412, h: 312, anchor: { x: 194, y: 94 } });
+eq('box air stops at the screen edge',
+  shapeGeometry({ shape: 'box', x_norm: 0, y_norm: 0, x2_norm: 1, y2_norm: 1 }, W, H),
+  { kind: 'box', x: 0, y: 0, w: 1000, h: 500, anchor: { x: 0, y: 0 } });
 eq('a box too thin to see becomes a point at its centre',
   shapeGeometry({ shape: 'box', x_norm: 0.2, y_norm: 0.2, x2_norm: 0.201, y2_norm: 0.6 }, W, H).kind, 'point');
 eq('line keeps its direction',
